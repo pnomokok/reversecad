@@ -2,7 +2,8 @@
 
 Starting a new process per slider move spent about 5.5 s of 8.7 s just importing CadQuery.
 Each job is one JSON line {"code": path, "output": path, "overrides": {...}}; the program runs
-in a fresh namespace and the part is exported (STL/STEP by extension). The reply is one JSON
+in a fresh namespace and the part is exported (STL/STEP by extension, or a top-view silhouette
+mask for .npy, with "mm_per_pixel"). The reply is one JSON
 line {"ok": true} or {"ok": false, "error": "..."}. Programs are checked (check_code) by the
 caller before they get here; webapp/builder.py restarts this process if a job hangs or it dies.
 """
@@ -24,7 +25,14 @@ def build(job):
     result = namespace[FUNCTION_NAME](**job.get("overrides", {}))
     if not isinstance(result, cq.Workplane):
         result = cq.Workplane("XY").add(result)
-    cq.exporters.export(result, job["output"])
+    if job["output"].endswith(".npy"):  # top-view silhouette instead of a CAD file
+        import numpy as np
+
+        from render_silhouette import render_top_silhouette
+
+        np.save(job["output"], render_top_silhouette(result, float(job["mm_per_pixel"])) > 0)
+    else:
+        cq.exporters.export(result, job["output"])
 
 
 def main():

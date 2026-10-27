@@ -10,6 +10,8 @@ import sys
 import threading
 from pathlib import Path
 
+import numpy as np
+
 from candidates import check_code
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,7 +51,16 @@ class Builder:
             if self.process is None or self.process.poll() is not None:
                 self._start()
 
-    def build(self, code_path, output_path, overrides=None):
+    def silhouette(self, code_path, mm_per_pixel):
+        """(mask, error) like run_candidate.run_candidate, but in the long-running process.
+
+        The mask is also saved next to the program as <name>.default.mask.npy, as run_candidate does.
+        """
+        mask_path = Path(code_path).with_suffix(".default.mask.npy").resolve()
+        error = self.build(code_path, mask_path, mm_per_pixel=mm_per_pixel)
+        return (None, error) if error else (np.load(mask_path), None)
+
+    def build(self, code_path, output_path, overrides=None, mm_per_pixel=None):
         """Export the program with overrides to output_path. Returns an error message or None."""
         problems = check_code(Path(code_path).read_text(encoding="utf-8"))
         if problems:
@@ -57,7 +68,8 @@ class Builder:
         with self.lock:
             if self.process is None or self.process.poll() is not None:
                 self._start()
-            job = {"code": str(code_path), "output": str(output_path), "overrides": overrides or {}}
+            job = {"code": str(Path(code_path).resolve()), "output": str(output_path), "overrides": overrides or {},
+                   "mm_per_pixel": mm_per_pixel}
             self.process.stdin.write(json.dumps(job) + "\n")
             self.process.stdin.flush()
             try:

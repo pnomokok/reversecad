@@ -27,15 +27,17 @@ def list_runs():
         if RUNS_DIR.exists() else []
 
 
-def run_dir(name):
+def run_dir(name, measured=True):
+    """A run's folder; measured=False also accepts a live upload that has not been measured yet."""
     path = (RUNS_DIR / name).resolve()
-    if path.parent != RUNS_DIR.resolve() or not (path / "3_measurements.json").exists():
+    required = "3_measurements.json" if measured else "1_scene.png"
+    if path.parent != RUNS_DIR.resolve() or not (path / required).exists():
         raise FileNotFoundError(f"no saved run named {name!r}")
     return path
 
 
 def photo_path(name):
-    return run_dir(name) / "1_scene.png"
+    return run_dir(name, measured=False) / "1_scene.png"
 
 
 def _cached_card_mask(folder, image):
@@ -85,34 +87,39 @@ def _status(row):
     return ("rejected" if reasons else "passed"), reasons
 
 
+def candidate_event(name, row):
+    """One candidate row (as saved in a summary) as a screen-3 event; live mode sends the same."""
+    status, reasons = _status(row)
+    return {"type": "candidate", "candidate": row["candidate"], "status": status, "reasons": reasons,
+            "iou": row.get("iou"), "parameters": row.get("parameter_count"),
+            "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png"
+            if status != "failed" else None}
+
+
+def done_event(summary, round_name):
+    """The end of a candidate round: the winner (or the fallback) and counts."""
+    winner = (summary.get("winner") or {}).get("candidate")
+    return {"type": "done", "round": round_name, "winner": winner,
+            "result_source": summary.get("result_source", "candidate" if winner else None),
+            "compiled": summary["compiled"], "candidate_count": summary["candidate_count"]}
+
+
 def candidate_events(name):
     """The saved candidate round as a list of events, in the order they would arrive live."""
     round_name = candidate_round(name)
     summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
-    events = []
-    for row in summary["candidates"]:
-        status, reasons = _status(row)
-        events.append({"type": "candidate", "candidate": row["candidate"], "status": status, "reasons": reasons,
-                       "iou": row.get("iou"), "parameters": row.get("parameter_count"),
-                       "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png"
-                       if status != "failed" else None})
-    result = summary.get("result") or summary.get("winner")
-    winner = None
-    if result and "candidate" in result:
-        winner = result["candidate"]
-    elif summary.get("winner"):
-        winner = next((r["candidate"] for r in summary["candidates"] if r.get("file") == summary["winner"]["file"]),
-                      None)
-    events.append({"type": "done", "round": round_name, "winner": winner,
-                   "result_source": summary.get("result_source", "candidate" if winner else None),
-                   "compiled": summary["compiled"], "candidate_count": summary["candidate_count"]})
-    return events
+    return [candidate_event(name, row) for row in summary["candidates"]] + [done_event(summary, round_name)]
 
 
 def silhouette_png(name, candidate):
-    """A candidate's saved top-view silhouette (from its render), cropped, as PNG bytes."""
-    path = run_dir(name) / candidate_round(name) / f"cand_{int(candidate)}.default.mask.npy"
-    if not path.exists():
+    """A candidate's saved top-view silhouette (from its render), cropped, as PNG bytes.
+
+    Found by file, not by summary, so live runs can show it before their round is finished.
+    """
+    folder = run_dir(name)
+    paths = [folder / round_name / f"cand_{int(candidate)}.default.mask.npy" for round_name in CANDIDATE_ROUNDS]
+    path = next((p for p in paths if p.exists()), None)
+    if path is None:
         raise FileNotFoundError(f"no saved silhouette for candidate {candidate}")
     mask = np.load(path)
     ys, xs = np.nonzero(mask)

@@ -11,7 +11,7 @@ import inspect
 import json
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import partkit
 from baseten_client import MODEL, image_data_url, make_client
@@ -47,7 +47,7 @@ Holes are through-holes. Each hole has a "shape":
   angle_deg (rotation of its length from the u axis). CadQuery's `slot2D(length, diameter, angle)` takes the
   overall end-to-end length; `ellipse(x_radius, y_radius)` takes half the length and half the width;
 - "polygon": use polygon_mm, its corners in order.
-Thickness cannot be seen from the top; use 3.0 mm.
+Thickness cannot be seen from the top; use {thickness} mm.
 
 Requirements:
 - Define exactly one function `def {function}(...)` that returns a cadquery Workplane.
@@ -95,14 +95,14 @@ def partkit_reference():
     return "\n".join(lines)
 
 
-def build_prompt(view):
-    """Prompt text for a model view of the table (see model_view.py)."""
+def build_prompt(view, thickness=3.0):
+    """Prompt text for a model view of the table (see model_view.py); thickness comes from the user."""
     shown = {"outline": {key: view["outline"][key]
                          for key in ("length_mm", "width_mm", "vertex_count", "polygon_mm", "arcs")},
              "hole_count": view["hole_count"],
              "holes": [{field: hole[field] for field in HOLE_FIELDS[hole["shape"]]} for hole in view["holes"]]}
     return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME,
-                                  partkit=partkit_reference())
+                                  partkit=partkit_reference(), thickness=round(float(thickness), 2))
 
 
 def extract_python_block(text):
@@ -159,24 +159,35 @@ def _request_one(client, prompt, image_url, reasoning_effort=None):
     return result
 
 
-def generate_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT):
-    """Return (prompt, `count` results: each the raw response dict, or {"error": message}).
+def iter_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT, thickness=3.0):
+    """Yield (prompt, index from 1, response) as each request finishes (live mode streams these).
+
+    A failed request yields {"error": message} so the other candidates still arrive.
+    """
+    client = make_client()
+    prompt = build_prompt(view, thickness)
+    image_url = image_data_url(mask_image_path)
+    with ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS)) as pool:
+        futures = {pool.submit(_request_one, client, prompt, image_url, reasoning_effort): i
+                   for i in range(1, count + 1)}
+        for future in as_completed(futures):
+            try:
+                response = future.result()
+            except Exception as error:  # keep the other candidates if one request fails
+                response = {"error": f"{type(error).__name__}: {error}"}
+            yield prompt, futures[future], response
+
+
+def generate_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT, thickness=3.0):
+    """Return (prompt, `count` results in request order: each the raw response dict, or {"error": message}).
 
     view is the model's view of the measurement table (model_view.py); reasoning_effort None
     leaves the model's default.
     """
-    client = make_client()
-    prompt = build_prompt(view)
-    image_url = image_data_url(mask_image_path)
     started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS)) as pool:
-        futures = [pool.submit(_request_one, client, prompt, image_url, reasoning_effort) for _ in range(count)]
-        results = []
-        for future in futures:
-            try:
-                results.append(future.result())
-            except Exception as error:  # keep the other candidates if one request fails
-                results.append({"error": f"{type(error).__name__}: {error}"})
+    prompt, results = build_prompt(view, thickness), [None] * count
+    for prompt, index, response in iter_candidates(view, mask_image_path, count, reasoning_effort, thickness):
+        results[index - 1] = response
     batch_seconds = round(time.perf_counter() - started, 1)
     for result in results:
         result["batch_elapsed_s"] = batch_seconds  # all requests, MAX_PARALLEL_REQUESTS at a time

@@ -39,10 +39,11 @@
       <label>Saved run (replay, no API calls)
         <select id="run-select"></select>
       </label>
-      <label>Or upload a photo
-        <input type="file" id="photo-upload" accept="image/*" disabled>
+      <label>Or upload a photo (live: calls the models)
+        <input type="file" id="photo-upload" accept="image/*">
       </label>
-      <p class="hint">Upload works once the live pipeline is connected (a later step).</p>
+      <p class="hint">Live mode sends the photo to Meta's SAM to find the card and the part. Candidate requests
+        send only the part's black-and-white outline. Put the card right next to the part.</p>
       <p class="hint">Click the part in the photo (not a hole). The red cross marks the click.</p>
       <label>Thickness (mm)
         <input type="number" id="thickness" value="3.0" min="0.1" step="0.1">
@@ -55,6 +56,9 @@
       <h2>2. Measurements</h2>
       <p class="hint" id="measure-summary"></p>
       <table class="measurements" id="measure-table"></table>
+      <label class="live-only hidden">Candidates to ask for (live)
+        <input type="number" id="candidate-count" value="5" min="1" max="10">
+      </label>
       <button id="to-candidates">Generate candidates</button>
       <button id="back-to-1">Back</button>
     </aside>

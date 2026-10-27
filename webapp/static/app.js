@@ -5,7 +5,8 @@
 // Screen 4: the result in 3D (three.js); a slider per named parameter rebuilds the part on release.
 import { createViewer } from "./viewer.js";
 
-const state = { run: null, image: null, click: null, analysis: null, stream: null, viewer: null, winner: null };
+const state = { run: null, live: false, image: null, click: null, analysis: null, stream: null, viewer: null,
+                winner: null };
 const canvas = document.getElementById("photo-canvas");
 const context = canvas.getContext("2d");
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -83,7 +84,13 @@ function render() {
 }
 
 // ---------- screen 1 ----------
+function setLive(live) {
+  state.live = live;
+  document.querySelectorAll(".live-only").forEach((element) => element.classList.toggle("hidden", !live));
+}
+
 async function chooseRun(name) {
+  setLive(false);
   state.run = name;
   state.analysis = null;
   state.image = await loadImage(`/api/runs/${name}/photo`);
@@ -102,9 +109,30 @@ canvas.addEventListener("click", (event) => {
     Math.round((event.clientY - box.top) * (canvas.height / box.height)),
   ];
   render();
+  document.getElementById("analyze").disabled = false;
 });
 
 document.getElementById("run-select").addEventListener("change", (event) => chooseRun(event.target.value));
+
+document.getElementById("photo-upload").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("photo", file);
+  const response = await fetch("/api/live/upload", { method: "POST", body: form });
+  if (!response.ok) {
+    alert(`Upload failed: ${(await response.json()).detail}`);
+    return;
+  }
+  const { name } = await response.json();
+  setLive(true);
+  state.run = name;
+  state.analysis = null;
+  state.click = null;  // live: the user must click the part
+  state.image = await loadImage(`/api/runs/${name}/photo`);
+  render();
+  document.getElementById("analyze").disabled = true;
+});
 
 // ---------- screen 2 ----------
 function fillTable(a) {
@@ -127,11 +155,39 @@ function fillTable(a) {
     `holes by ${a.hole_method}.`;
 }
 
-document.getElementById("analyze").addEventListener("click", async () => {
-  state.analysis = await getJSON(`/api/runs/${state.run}/analysis`);
-  fillTable(state.analysis);
+function showAnalysis(analysis) {
+  state.analysis = analysis;
+  fillTable(analysis);
   render();
+}
+
+function measureLive() {
+  // Progress messages while SAM runs (decoding its masks takes seconds), then the overlay.
+  const summary = document.getElementById("measure-summary");
+  document.getElementById("measure-table").innerHTML = "";
+  document.getElementById("to-candidates").disabled = true;
+  const [x, y] = state.click;
+  const stream = new EventSource(`/api/live/${state.run}/measure/stream?x=${x}&y=${y}`);
+  stream.addEventListener("progress", (message) => (summary.textContent = JSON.parse(message.data).message));
+  stream.addEventListener("analysis", (message) => {
+    stream.close();
+    showAnalysis(JSON.parse(message.data));
+    document.getElementById("to-candidates").disabled = false;
+  });
+  stream.addEventListener("error", (message) => {
+    stream.close();
+    summary.textContent = message.data ? `Failed: ${JSON.parse(message.data).message}` : "The connection was lost.";
+  });
+}
+
+document.getElementById("analyze").addEventListener("click", async () => {
   showStep(2);
+  if (state.live) {
+    measureLive();
+  } else {
+    showAnalysis(await getJSON(`/api/runs/${state.run}/analysis`));
+    document.getElementById("to-candidates").disabled = false;
+  }
 });
 
 document.getElementById("back-to-1").addEventListener("click", () => {
@@ -163,7 +219,12 @@ function streamCandidates() {
   result.textContent = "";
   document.getElementById("to-model").disabled = true;
   let received = 0;
-  state.stream = new EventSource(`/api/runs/${state.run}/candidates/stream`);
+  const thickness = document.getElementById("thickness").value;
+  const count = document.getElementById("candidate-count").value;
+  state.stream = new EventSource(state.live
+    ? `/api/live/${state.run}/candidates/stream?count=${count}&thickness=${thickness}`
+    : `/api/runs/${state.run}/candidates/stream`);
+  state.stream.addEventListener("progress", (message) => (progress.textContent = JSON.parse(message.data).message));
   state.stream.addEventListener("candidate", (message) => {
     grid.appendChild(candidateCard(JSON.parse(message.data)));
     progress.textContent = `${++received} candidates received…`;
@@ -180,10 +241,12 @@ function streamCandidates() {
     }
     document.getElementById("to-model").disabled = !done.result_source || done.result_source.startsWith("none");
   });
-  state.stream.onerror = () => {
-    progress.textContent = "The candidate stream stopped unexpectedly.";
+  state.stream.addEventListener("error", (message) => {
+    // A server 'error' event carries a message; a lost connection does not.
+    progress.textContent = message.data ? `Failed: ${JSON.parse(message.data).message}`
+      : "The candidate stream stopped unexpectedly.";
     state.stream.close();
-  };
+  });
 }
 
 document.getElementById("to-candidates").addEventListener("click", () => {

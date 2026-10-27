@@ -320,13 +320,14 @@ def make_candidates(out, folder_name, table, count, reasoning_effort=DEFAULT_REA
 
 
 # ---------- step 5 ----------
-def check_program(path, reference, truth=None, measured_table=None):
+def check_program(path, reference, truth=None, measured_table=None, render=None):
     """Compile and score one program; returns a result row (without 'candidate').
 
     Without a truth (real photos) topology_ok is None. With the measured table, the deviation check
     says whether the program's dimensions stay within the allowed distance of the measurements.
+    render(path, mm_per_pixel) -> (mask, error) builds the silhouette; default: a new process per program.
     """
-    mask, error = run_candidate(path, MM_PER_PIXEL)
+    mask, error = (render or run_candidate)(path, MM_PER_PIXEL)
     if error:
         return {"file": str(path), "error": error}
     alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)

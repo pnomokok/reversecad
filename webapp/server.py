@@ -1,8 +1,8 @@
 """FastAPI back end for the ReverseCAD web app.
 
-Serves the front end (webapp/static/) and a JSON API. For now it replays saved
-runs (outputs/e2e/<scene>/) without calling any model; the live pipeline is
-connected in a later step.
+Serves the front end (webapp/static/) and a JSON API. Saved runs (outputs/e2e/<scene>/)
+replay without calling any model; live mode (/api/live/...) runs the pipeline on an
+uploaded photo and saves it as a run in the same format.
 
 Run from the repository root:
     .venv\\Scripts\\python.exe -m uvicorn webapp.server:app --reload
@@ -15,11 +15,11 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from webapp import replay
+from webapp import live, replay
 from webapp.builder import Builder
 
 STATIC = Path(__file__).parent / "static"
@@ -159,6 +159,71 @@ async def download(name: str, request: Request, format: str = "stl"):
         data = await _export(name, overrides, suffix)
     filename = f"reversecad_{name}{suffix}"
     return Response(data, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ---------- live mode ----------
+def _event_text(event):
+    return f"event: {event['type']}\ndata: {json.dumps(event, default=lambda o: o.item())}\n\n"
+
+
+def job_stream(job):
+    """Run job(emit) in a thread and stream what it emits as server-sent events.
+
+    An exception becomes an 'error' event, so the page can show it instead of waiting forever.
+    """
+    loop = asyncio.get_running_loop()
+    events = asyncio.Queue()
+
+    def emit(event):
+        loop.call_soon_threadsafe(events.put_nowait, event)
+
+    def run():
+        try:
+            job(emit)
+        except Exception as error:
+            emit({"type": "error", "message": f"{type(error).__name__}: {error}"})
+        finally:
+            emit(None)
+
+    threading.Thread(target=run, daemon=True).start()
+
+    async def stream():
+        while (event := await events.get()) is not None:
+            yield _event_text(event)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.post("/api/live/upload")
+async def live_upload(photo: UploadFile = File(...)):
+    """Screen 1 live: store the photo (upright, without EXIF) as a new live run."""
+    try:
+        return live.save_upload(await photo.read())
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+
+
+@app.get("/api/live/{name}/measure/stream")
+async def live_measure(name: str, x: int, y: int):
+    """Screens 1-2 live: SAM and measurement for the click at (x, y), with progress events."""
+    try:
+        live.live_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    return job_stream(lambda emit: live.measure_job(name, (x, y), emit))
+
+
+@app.get("/api/live/{name}/candidates/stream")
+async def live_candidates(name: str, count: int = 5, thickness: float = 3.0):
+    """Screen 3 live: candidates from Muse Spark Open, each checked and sent as soon as it arrives."""
+    try:
+        replay.run_dir(name)  # must be measured first
+        live.live_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    if not 1 <= count <= 10 or not 0.1 <= thickness <= 100:
+        raise HTTPException(400, "count must be 1-10 and thickness 0.1-100 mm")
+    return job_stream(lambda emit: live.candidates_job(name, count, thickness, builder.silhouette, emit))
 
 
 @app.get("/")
