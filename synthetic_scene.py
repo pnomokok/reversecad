@@ -1,9 +1,9 @@
-"""Synthetic top-down photo for the end-to-end test: the holed plate next to an ID-1 card.
+"""Synthetic top-down photo for end-to-end tests: a CadQuery part next to an ID-1 card.
 
 The scene is laid out on the table in millimeters (x right, y down), drawn on a
 fine canvas, then projected into a 2048 x 1536 photo with a slight perspective
-tilt, blur and noise. The plate silhouette comes from the CadQuery part itself.
-Returns the photo, ground-truth masks in photo pixels, and the true dimensions.
+tilt, blur and noise. The part's silhouette comes from its CadQuery model.
+Returns the photo and ground-truth masks in photo pixels.
 """
 import math
 
@@ -11,16 +11,15 @@ import cv2
 import numpy as np
 
 from measure import CARD_LONG_MM, CARD_SHORT_MM
-from parts.holed_plate import make_holed_plate
+from parts.template_parts import make_part
 from render_silhouette import render_top_silhouette
 
 CANVAS_MM_PER_PIXEL = 0.05
 WORLD_MM = (-20.0, -60.0, 215.0, 115.0)  # x_min, y_min, x_max, y_max of the drawn table area
 PHOTO_SIZE = (2048, 1536)
 CARD_CORNER_RADIUS_MM = 3.18  # ID-1 corner radius
-PLATE = {"length": 80.0, "width": 40.0, "thickness": 3.0, "hole_diameter": 6.0, "hole_inset": 8.0}
-PLATE_CENTER_MM = (145.0, 27.0)
-PLATE_ANGLE_DEG = 8.0
+LIGHT_METAL = (172, 175, 180)
+DARK_PART = (30, 30, 33)  # e.g. black anodized aluminum: darker than the fabric
 # Field of view on the table and how its corners land in the photo. Squeezing the
 # top edge by TILT_PX on each side imitates a camera tilted slightly toward the bottom.
 FIELD_CENTER_MM = (95.0, 27.5)
@@ -85,12 +84,12 @@ def _card_mask_and_art(shape):
     return mask, art
 
 
-def _plate_mask(shape):
-    """CadQuery plate silhouette, rotated and placed on the canvas."""
-    silhouette = render_top_silhouette(make_holed_plate(**PLATE), CANVAS_MM_PER_PIXEL, margin_mm=2.0)
+def _part_mask(shape, workplane, center_mm, angle_deg):
+    """CadQuery part silhouette, rotated and placed on the canvas around its bounding-box center."""
+    silhouette = render_top_silhouette(workplane, CANVAS_MM_PER_PIXEL, margin_mm=2.0)
     source_center = ((silhouette.shape[1] - 1) / 2, (silhouette.shape[0] - 1) / 2)
-    matrix = cv2.getRotationMatrix2D(source_center, PLATE_ANGLE_DEG, 1.0)
-    target_center = _to_canvas([PLATE_CENTER_MM])[0]
+    matrix = cv2.getRotationMatrix2D(source_center, angle_deg, 1.0)
+    target_center = _to_canvas([center_mm])[0]
     matrix[:, 2] += target_center - np.array(source_center)
     placed = cv2.warpAffine(silhouette.astype(np.float32) / 255, matrix, (shape[1], shape[0]))
     return (placed >= 0.5).astype(np.uint8) * 255
@@ -107,20 +106,21 @@ def photo_from_world():
     return cv2.getPerspectiveTransform(world, photo)
 
 
-def make_scene(seed=0):
-    """Return (photo_rgb, {"card": mask, "plate": mask}, truth dict)."""
+def make_scene(workplane=None, part_color=LIGHT_METAL, center_mm=(145.0, 27.0), angle_deg=8.0, seed=0):
+    """Return (photo_rgb, {"card": mask, "part": mask}). Default part: template plate A."""
+    workplane = workplane if workplane is not None else make_part("A")
     rng = np.random.default_rng(seed)
     width = round((WORLD_MM[2] - WORLD_MM[0]) / CANVAS_MM_PER_PIXEL)
     height = round((WORLD_MM[3] - WORLD_MM[1]) / CANVAS_MM_PER_PIXEL)
 
     canvas = _background(height, width, rng)
     card_mask, card_art = _card_mask_and_art((height, width, 3))
-    plate_mask = _plate_mask((height, width))
-    canvas = np.where(card_mask[..., None] > 0, card_art.astype(np.float32) * (card_mask[..., None] / 255)
-                      + canvas * (1 - card_mask[..., None] / 255), canvas)
+    part_mask = _part_mask((height, width), workplane, center_mm, angle_deg)
+    alpha = card_mask[..., None] / 255
+    canvas = card_art.astype(np.float32) * alpha + canvas * (1 - alpha)
     brushed = cv2.blur(rng.normal(0, 6, (height, width)).astype(np.float32), (41, 1))  # brushed metal streaks
-    metal = np.dstack([172 + brushed, 175 + brushed, 180 + brushed])
-    canvas = np.where(plate_mask[..., None] > 0, metal, canvas)
+    surface = np.dstack([part_color[i] + brushed for i in range(3)])
+    canvas = np.where(part_mask[..., None] > 0, surface, canvas)
     canvas = cv2.GaussianBlur(canvas.astype(np.float32), (0, 0), 1.0)  # avoid aliasing when shrinking
 
     to_photo = photo_from_world() @ np.linalg.inv(_canvas_from_world())
@@ -130,19 +130,6 @@ def make_scene(seed=0):
 
     masks = {
         name: cv2.warpPerspective(mask, to_photo, PHOTO_SIZE, flags=cv2.INTER_LINEAR) >= 128
-        for name, mask in [("card", card_mask), ("plate", plate_mask)]
+        for name, mask in [("card", card_mask), ("part", part_mask)]
     }
-    inset = PLATE["hole_inset"]
-    half_u, half_v = PLATE["length"] / 2 - inset, PLATE["width"] / 2 - inset
-    truth = {
-        "plate": {
-            **PLATE,
-            "hole_count": 4,
-            "hole_centers_from_part_center_mm": [[su * half_u, sv * half_v] for su in (-1, 1) for sv in (-1, 1)],
-            "center_on_table_mm": list(PLATE_CENTER_MM),
-            "angle_deg": PLATE_ANGLE_DEG,
-        },
-        "card_mm": [CARD_LONG_MM, CARD_SHORT_MM],
-        "photo_from_world": photo_from_world().tolist(),
-    }
-    return photo, masks, truth
+    return photo, masks

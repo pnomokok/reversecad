@@ -15,6 +15,7 @@ from baseten_client import MODEL, image_data_url, make_client
 
 MAX_TOKENS = 16000  # reasoning tokens count toward this limit; 8000 ran out before any code
 TEMPERATURE = 0.8  # some variety between candidates
+MAX_PARALLEL_REQUESTS = 5
 FUNCTION_NAME = "build_part"
 ALLOWED_IMPORTS = {"cadquery", "math"}
 BLOCKED_NAMES = {
@@ -30,20 +31,23 @@ Use it only to understand the shape (outline, holes). Do not measure pixels.
 Measurement table in millimeters, measured by deterministic code. Take every number from here:
 {table}
 
-Hole centers are given as [u, v]: u along the part's length, v along its width, from the part's center.
-Thickness cannot be seen from the top; use 3.0 mm.
+Coordinates are [u, v]: u along the part's length, v along its width, origin at the center of the
+outline's bounding rectangle. "outline.polygon_mm" lists the outer boundary's corners in order.
+Holes are circular through-holes. Thickness cannot be seen from the top; use 3.0 mm.
 
 Requirements:
 - Define exactly one function `def {function}(...)` that returns a cadquery Workplane.
 - Every dimension is a keyword argument with its default taken from the table, so it can be edited later.
-- Placement: centered at the origin in X and Y, length along X, width along Y, bottom face at Z = 0, top face at Z = thickness.
-- Holes are through-holes.
+- Placement: X = u, Y = v, bottom face at Z = 0, top face at Z = thickness.
+- Place holes at their absolute [u, v] coordinates, e.g. with `.pushPoints([...])`. Avoid `.center()` for this:
+  it moves the workplane origin cumulatively, so a second `.center()` is relative to the first.
 - Only `import cadquery as cq` (and `import math` if needed). Do not use show_object, file I/O or print.
 - Reply with a single ```python code block and nothing else."""
 
 
 def build_prompt(table):
-    return PROMPT_TEMPLATE.format(table=json.dumps(table, indent=2), function=FUNCTION_NAME)
+    shown = {key: value for key, value in table.items() if key != "center_on_table_mm"}  # irrelevant to the model
+    return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME)
 
 
 def extract_python_block(text):
@@ -95,11 +99,11 @@ def _request_one(client, prompt, image_url):
 
 
 def generate_candidates(table, mask_image_path, count):
-    """Return `count` results: each the raw response dict, or {"error": message}."""
+    """Return (prompt, `count` results: each the raw response dict, or {"error": message})."""
     client = make_client()
     prompt = build_prompt(table)
     image_url = image_data_url(mask_image_path)
-    with ThreadPoolExecutor(max_workers=count) as pool:
+    with ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS)) as pool:
         futures = [pool.submit(_request_one, client, prompt, image_url) for _ in range(count)]
         results = []
         for future in futures:

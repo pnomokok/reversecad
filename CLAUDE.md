@@ -139,11 +139,37 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   | **mean absolute error** | | **0.86%** (max 1.45%) | **0.48%** (max 1.44%) |
 
   **Decision: the homography is the default measurement method.** Lens distortion is small (at most ~1% at opposite frame edges; no lens correction needed). Rotation is handled. Each photo's two directions mirror each other (the reference card's own mask error flips sign), so the error of a single measurement is roughly half of these numbers. The key's +1.6% in the swapped photo fits within this plus the ruler's ±1%.
-- [x] End-to-end skeleton on a **synthetic scene** (`run_synthetic_e2e.py`, outputs in `outputs/e2e/`): photo → SAM → homography measurements → 5 Muse Spark Open candidates → compile in a separate process → silhouette → IoU → best.
+- [x] End-to-end skeleton on a **synthetic scene** (first version; now `e2e_pipeline.py` + `run_template_scenes.py`, outputs in `outputs/e2e/<scene>/`): photo → SAM → homography measurements → 5 Muse Spark Open candidates → compile in a separate process → silhouette → IoU → best.
   - Scene (`synthetic_scene.py`): the CadQuery 80 × 40 plate (4 × Ø6, 8 mm in), rotated 8°, next to a card on dark fabric, slight tilt (card top-bottom 1.30%), blur and noise.
   - SAM: `credit card` found the synthetic card; `plate` found nothing, `metal plate` worked.
   - **SAM fills or fragments small holes** (6 mm ≈ 55 px): 7 "holes" measured. Fix: `refine_holes.py` keeps SAM's outer outline and finds holes from brightness inside it (Otsu; assumes the part is lighter than the background). Result: 4 holes, Ø 6.08-6.09 mm, centers within 0.23 mm, outline 80.38 × 40.24 mm, mask IoU vs truth 0.974 → 0.990.
   - Muse Spark Open: with `max_tokens=8000` all 5 candidates spent everything on reasoning (the 7-hole table and an ambiguous "thickness along +Z") and returned no code. With a clean table, "bottom face at Z = 0" and `max_tokens=16000`: 5/5 returned code (2.7-4k output tokens), 5/5 compiled, all IoU 0.9923 (true-part ceiling 0.9916; candidates use the measured numbers, which fit the mask slightly better).
   - Candidate code is screened before running (`candidates.check_code`: only cadquery/math imports, no open/exec/eval/show_object) and run in a separate process with a timeout (`run_candidate.py`).
   - All 5 candidates are geometrically identical: for a plate the table fixes everything. Candidate variety will only matter for parts whose topology is ambiguous.
+- [x] Hole methods, prompt suggestions, structurally different parts (`run_template_scenes.py`; template parts in `parts/template_parts.py`: A 80 × 40 plate, B asymmetric plate, C flat L, D tabbed part).
+  - **Holes, three methods** (max diameter / center error vs truth):
+
+    | Scene | SAM on full photo | SAM on crop | Color |
+    |---|---|---|---|
+    | A light | 0 holes (all filled) | 0.17 / 0.24 mm | 0.08 / 0.21 mm |
+    | A dark part | 2 broken holes | 0.20 / 0.14 mm | 0.06 / 0.14 mm |
+    | B | 0.13 / 0.10 mm | 0.19 / 0.06 mm | 0.11 / 0.10 mm |
+    | C | 0.10 / 0.15 mm | crop found nothing | 0.04 / 0.13 mm |
+    | D | 0 holes (all filled) | crop found nothing | 0.12 / 0.14 mm |
+
+    Pipeline uses the crop mask unless it fails or a hole looks wrong (roundness < 0.85, Ø < 1.5 mm), then color. The color method now samples the background from a ring outside the outline and the part color from inside, so it also works for parts darker than the background.
+  - **Prompt suggestions** (Muse Spark Open names the part, every suggestion is tried on SAM, the most confident mask wins): about half the suggestions find nothing; the model called B a "banknote" and D a "camera icon" (D still segmented as "camera icon", 0.82). If no suggestion works, fixed fallbacks are tried (`metal plate`, `plate`, `flat metal part`); B was found by `flat metal part`.
+  - The measurement table now includes the outline's corners (`outline.polygon_mm`, lines fitted per edge and intersected), so L arms and tabs come from code, not from the model reading pixels.
+  - **Candidates, 10 per part** (correct topology = corner count, hole count, every hole within 3 mm and ±25% diameter; mirroring allowed):
+
+    | Part | Compiled | Correct topology | Cause of failures |
+    |---|---|---|---|
+    | B, first prompt | 10/10 | 7/10 | 3 used `.center()` for holes; it is cumulative, so the 2nd hole moved by the 1st one's offset (IoU still 0.95) |
+    | B, with a `pushPoints` hint | 10/10 | 10/10 | |
+    | C | 10/10 | 10/10 | |
+    | D | 9/10 | 7/10 | 2 used `moveTo(p0).polyline(p[1:])`; `polyline` drops the current point by default, so the outline lost a corner and the closing edge cut through the tab's hole; 1 ran out of 16000 tokens |
+
+    Best IoU 0.993-0.994 for every part; the topology check catches errors that IoU passes.
+  - **No geometric variety, only code variety:** all candidate files differ as text and use different CadQuery calls, but every correct one gives the same shape, because the table fixes every number (corners and holes). The wrong ones are CadQuery API pitfalls, not alternative readings of the part. Variety would need ambiguity the table does not resolve (e.g. hidden features, chamfers, multi-view parts).
+  - Next idea: add a hint about `polyline(points).close()` with the full list (or `includeCurrent=True`), like the `pushPoints` hint.
 - [ ] End-to-end on a real photo of a holed part
