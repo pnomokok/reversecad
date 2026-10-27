@@ -4,6 +4,9 @@
 # Secrets
 .env
 
+# Private test photos (may contain GPS data or card details)
+data/private/
+
 # Python virtual environment and caches
 .venv/
 __pycache__/
