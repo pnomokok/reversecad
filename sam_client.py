@@ -10,6 +10,7 @@ import io
 import os
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 from dotenv import load_dotenv
 from meta_sam_parser import (
@@ -109,12 +110,25 @@ def segment(client, image, prompt):
 
 
 def _place_mask(record, image_size):
-    """Put SAM's box-local raster into a full-size boolean mask at its bounds."""
-    width, height = image_size
     raster = np.frombuffer(decode_mask_to_raster(record.mask), dtype=np.uint8)
     local = raster.reshape(record.mask.height, record.mask.width).astype(bool)
+    bounds = (record.bounds.left, record.bounds.top, record.bounds.right, record.bounds.bottom)
+    return place_mask(local, bounds, image_size)
 
-    left, top = int(round(record.bounds.left)), int(round(record.bounds.top))
+
+def place_mask(local, bounds, image_size):
+    """Put SAM's box-local raster into a full-size boolean mask at its bounds.
+
+    SAM caps the raster's long side (1024 px seen), so masks of large objects
+    arrive downscaled; they are scaled back up to the box size first.
+    """
+    width, height = image_size
+    left, top = int(round(bounds[0])), int(round(bounds[1]))
+    box_width, box_height = int(round(bounds[2])) - left, int(round(bounds[3])) - top
+    if local.shape != (box_height, box_width):
+        resized = cv2.resize(local.astype(np.float32), (box_width, box_height), interpolation=cv2.INTER_LINEAR)
+        local = resized >= 0.5
+
     full = np.zeros((height, width), dtype=bool)
     bottom, right = min(top + local.shape[0], height), min(left + local.shape[1], width)
     full[top:bottom, left:right] = local[: bottom - top, : right - left]

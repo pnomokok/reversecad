@@ -69,7 +69,7 @@ Summary of Meta's docs. Source: Meta Model API docs, "Segment Anything Model" pa
 **Response**
 - Comes as text, with a special syntax. Example: `<0f>0<|box;x1=353;y1=382;x2=453;y2=427;w=537;h=561;c=0.96|><|mask;x=0;y=0;c=0.96;data=46,101,!...|>`
 - The box (`box`) is in the source photo's pixels; `x2`, `y2` are inclusive. `w`, `h` are the photo's size.
-- The mask (`mask`) is not full photo size but a smaller raster: `data=<height>,<width>,...`. It covers **the inside of the box** and is placed on the full photo at the box's top-left corner (`x1`, `y1`). **Verified** on the first real call: raster size equals box size and the placed mask's extent matches the box exactly. The parser exposes this as the mask record's `bounds`.
+- The mask (`mask`) is not full photo size but a smaller raster: `data=<height>,<width>,...`. It covers **the inside of the box** and is placed on the full photo at the box's top-left corner (`x1`, `y1`). The parser exposes this as the mask record's `bounds`. **The raster's long side is capped at 1024 px:** for larger objects it arrives downscaled (a 750 × 1181 card box came with a 650 × 1024 mask) and must be stretched to the box size before placing (`place_mask` in `sam_client.py`). Without that the card mask was cut off and the key measured +14%.
 - If there is no match, the response is empty; this is not an error but a normal result, handle it separately in code.
 - When the same request is repeated, box and mask edges may vary slightly. Account for this in measurement tests.
 
@@ -108,5 +108,14 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
 - [x] Hand-written simple CadQuery part + orthographic silhouette render (`parts/holed_plate.py`, `render_silhouette.py`, tests: `.venv\Scripts\python.exe -m pytest`). A holed plate was chosen over an L-bracket: from above, an L-bracket's silhouette is just a rectangle and the "L" is lost (that belongs to alignment and multi-view validation), while a holed plate shows both the outer edge and the holes.
 - [x] IoU function (centering + alignment) and its tests (`iou.py`). Scale is normalized from known mm/px, never fitted (a 10% larger plate scores 0.83). Tries 0/180 degrees x mirrored and reports the winner. **Known weakness:** small holes barely move IoU (plate without holes 0.963, wrong orientation of an asymmetric plate about 0.90), so IoU alone cannot validate holes; hole count/diameter/position must be checked separately against the measurement table.
 - [x] First call to Baseten (`try_baseten.py`): text → CadQuery code and image → shape description both work; outputs in `outputs/baseten/`.
-- [x] Calling SAM 3.1 from code (`sam_client.py`, `measure.py`, `overlay.py`, `try_sam.py`). Sample photo: card mm/px long 0.09583 vs short 0.09429 (1.62%, under the 2% oblique threshold); key 55.60 mm vs ruler 55-56 mm (+0.18% vs 55.5); 3 identical runs gave 0.00 mm spread.
+- [x] Calling SAM 3.1 from code (`sam_client.py`, `measure.py`, `overlay.py`, `try_sam.py`). Key vs ruler 55-56 mm over four photos in `data/private/`:
+
+  | Photo | Key | Error vs 55.5 mm |
+  |---|---|---|
+  | original | 55.60 mm | +0.18% |
+  | camera closer | 55.02 mm | -0.87% |
+  | blurred | 55.23 mm | -0.48% |
+  | positions swapped, key rotated, camera farther | 57.98 mm | **+4.47%** |
+
+  Blur and distance are handled. The swapped shot fails because of **camera tilt**: the card's left edge is 1.29% longer than its right edge, and the key sits far to the left of the card, where the scale is larger. The 2% two-ratio check cannot see this. Fix: homography from the card's four corners (pipeline step 3) and/or keep the part close to the card. Not yet measured: pure repeat shots with nothing moved.
 - [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU

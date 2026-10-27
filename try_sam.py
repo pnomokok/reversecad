@@ -1,9 +1,10 @@
-"""SAM 3.1 scale test on the sample photo: card scale, key length, repeatability.
+"""SAM 3.1 scale test across several photos of the same key and card.
 
-Sends the same photo RUNS times (one card request + one key request per run),
-prints both mm/px ratios, an oblique-shot warning, the key length vs the ruler,
-and the spread across runs. Saves overlays and raw SAM output to outputs/sam/
-(git-ignored: the overlays show the card).
+For each photo: one card request + one key request, both mm/px ratios, an
+oblique-shot warning, and the key length vs the ruler. Ends with the spread of
+key lengths across photos. Each photo gets its own scale from the card, so
+camera distance should not change the result. Saves overlays and raw SAM
+output to outputs/sam/ (git-ignored: the overlays show the card).
 
 Run: .venv\\Scripts\\python.exe try_sam.py
 """
@@ -12,76 +13,77 @@ from pathlib import Path
 
 import cv2
 
-from measure import MAX_RATIO_DIFFERENCE, card_scale, long_side_mm
+from measure import MAX_RATIO_DIFFERENCE, card_scale, long_side_mm, side_lengths_px
 from overlay import draw_overlay
 from sam_client import load_photo, make_client, segment
 
-PHOTO_PATH = Path("data") / "private" / "ornek_anahtar.jpg"
+PHOTO_DIR = Path("data") / "private"
+# (label, file name, what is different about the shot)
+PHOTOS = [
+    ("original", "ornek_anahtar.jpg", "reference shot"),
+    ("closer", "key_repeat_1.jpg.jpeg", "camera closer"),
+    ("swapped", "key_replace.png.jpeg", "positions swapped, key rotated, camera farther"),
+    ("blurred", "key_repeat_blur.jpg.jpeg", "out of focus"),
+]
 OUTPUT_DIR = Path("outputs") / "sam"
-RUNS = 3
 RULER_MM = (55.0, 56.0)  # key length measured with a ruler
 CARD_PROMPT = "card"  # "credit card" returns nothing for the sample's transit card
 PART_PROMPT = "key"
 
 
-def best_detection(client, image, prompt, run):
+def best_detection(client, image, prompt, label):
     detections, raw_text = segment(client, image, prompt)
-    (OUTPUT_DIR / f"run{run}_{prompt.replace(' ', '_')}_raw.txt").write_text(raw_text, encoding="utf-8")
+    (OUTPUT_DIR / f"{label}_{prompt.replace(' ', '_')}_raw.txt").write_text(raw_text, encoding="utf-8")
     if not detections:
-        raise RuntimeError(f"SAM found no '{prompt}' in run {run}")
+        raise RuntimeError(f"SAM found no '{prompt}' in photo '{label}'")
     best = max(detections, key=lambda d: d.confidence or 0)
-    print(f"  {prompt}: {len(detections)} detection(s), using confidence {best.confidence}")
-    check_mask_inside_box(best)
+    print(f"  {prompt}: {len(detections)} detection(s), confidence {best.confidence:.3f}")
+    box_size = (round(best.box[2] - best.box[0]), round(best.box[3] - best.box[1]))
+    if best.mask_size != box_size:
+        print(f"    mask raster {best.mask_size[0]}x{best.mask_size[1]} scaled up to box {box_size[0]}x{box_size[1]}")
     return best
-
-
-def check_mask_inside_box(detection):
-    """Verify the CLAUDE.md inference that SAM's mask covers the inside of its box."""
-    ys, xs = detection.mask.nonzero()
-    mask_box = (xs.min(), ys.min(), xs.max() + 1, ys.max() + 1)
-    sam_box = tuple(round(v) for v in detection.box)
-    box_size = (sam_box[2] - sam_box[0], sam_box[3] - sam_box[1])
-    print(f"    raster {detection.mask_size[0]}x{detection.mask_size[1]}, SAM box size {box_size[0]}x{box_size[1]}")
-    print(f"    mask extent {mask_box} vs SAM box {sam_box}")
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     client = make_client()
-    image = load_photo(PHOTO_PATH)
-    print(f"photo {PHOTO_PATH} ({image.size[0]}x{image.size[1]} px after EXIF orientation)")
-
     ruler_mid = sum(RULER_MM) / 2
-    lengths = []
-    for run in range(1, RUNS + 1):
-        print(f"\n=== run {run} ===")
-        card = best_detection(client, image, CARD_PROMPT, run)
-        key = best_detection(client, image, PART_PROMPT, run)
+    rows = []
+
+    for label, file_name, note in PHOTOS:
+        image = load_photo(PHOTO_DIR / file_name)
+        print(f"\n=== {label}: {file_name} ({note}) ===")
+        card = best_detection(client, image, CARD_PROMPT, label)
+        key = best_detection(client, image, PART_PROMPT, label)
 
         scale = card_scale(card.mask)
-        print(f"  mm/px from long edge  (85.60 mm): {scale.mm_per_pixel_long:.5f}")
-        print(f"  mm/px from short edge (53.98 mm): {scale.mm_per_pixel_short:.5f}")
-        print(f"  difference: {scale.relative_difference:.2%}")
+        card_long_px, _ = side_lengths_px(scale.rect)
+        print(f"  card long side: {card_long_px:.0f} px")
+        print(f"  mm/px long edge {scale.mm_per_pixel_long:.5f}, short edge {scale.mm_per_pixel_short:.5f}, "
+              f"difference {scale.relative_difference:.2%}")
         if scale.is_oblique:
             print(f"  WARNING: ratios differ by more than {MAX_RATIO_DIFFERENCE:.0%}; the shot is probably oblique")
 
         length, key_rect = long_side_mm(key.mask, scale.mm_per_pixel)
-        lengths.append(length)
+        error = (length - ruler_mid) / ruler_mid
         in_range = RULER_MM[0] <= length <= RULER_MM[1]
-        print(f"  key length: {length:.2f} mm (ruler {RULER_MM[0]}-{RULER_MM[1]} mm, "
-              f"{(length - ruler_mid) / ruler_mid:+.2%} vs {ruler_mid} mm, "
-              f"{'inside' if in_range else 'outside'} ruler range)")
+        print(f"  key length: {length:.2f} mm ({error:+.2%} vs {ruler_mid} mm, "
+              f"{'inside' if in_range else 'outside'} ruler range {RULER_MM[0]}-{RULER_MM[1]})")
+        rows.append((label, card_long_px, scale.relative_difference, length, error))
 
         overlay = draw_overlay(image, [
             ("card", card.mask, card.box, scale.rect, (255, 140, 0)),
             ("key", key.mask, key.box, key_rect, (0, 0, 255)),
         ])
-        cv2.imwrite(str(OUTPUT_DIR / f"run{run}_overlay.jpg"), overlay)
+        cv2.imwrite(str(OUTPUT_DIR / f"{label}_overlay.jpg"), overlay)
 
-    print("\n=== repeatability ===")
-    print(f"  key lengths: {', '.join(f'{v:.2f}' for v in lengths)} mm")
-    print(f"  spread (max - min): {max(lengths) - min(lengths):.2f} mm")
-    print(f"  standard deviation: {statistics.stdev(lengths):.3f} mm")
+    print("\n=== summary ===")
+    print(f"  {'photo':10s} {'card px':>8s} {'ratio diff':>10s} {'key mm':>8s} {'error':>8s}")
+    for label, card_px, ratio_diff, length, error in rows:
+        print(f"  {label:10s} {card_px:8.0f} {ratio_diff:10.2%} {length:8.2f} {error:+8.2%}")
+    lengths = [row[3] for row in rows]
+    print(f"  spread (max - min): {max(lengths) - min(lengths):.2f} mm, "
+          f"standard deviation: {statistics.stdev(lengths):.3f} mm")
     print(f"overlays saved in {OUTPUT_DIR}")
 
 
