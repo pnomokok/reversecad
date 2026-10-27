@@ -103,32 +103,62 @@ def run_winner(name: str):
         raise HTTPException(404, str(error))
 
 
-@app.post("/api/runs/{name}/model")
-async def build_model(name: str, request: Request):
-    """Build the result program with the posted parameter values and return it as binary STL.
-
-    Body: {"parameters": {"name": value, ...}}; only the program's own numeric parameters are accepted.
-    """
+async def _parameters(name, request):
+    """The posted {"parameters": {...}}, checked: only the program's own numeric parameters."""
     try:
-        info = replay.winner(name)
-        program, _ = replay.result_program(name)
+        allowed = {p["name"] for p in replay.winner(name)["parameters"]}
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
-    allowed = {p["name"] for p in info["parameters"]}
-    body = await request.json()
     overrides = {}
-    for key, value in (body.get("parameters") or {}).items():
+    for key, value in ((await request.json()).get("parameters") or {}).items():
         if key not in allowed or not isinstance(value, (int, float)) or isinstance(value, bool):
             raise HTTPException(400, f"unknown or non-numeric parameter: {key}")
         overrides[key] = float(value)
+    return overrides
+
+
+async def _export(name, overrides, suffix):
+    """Build the result program with overrides into a .stl or .step file; return its bytes."""
+    program, _ = replay.result_program(name)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    output = MODEL_DIR / f"{name}_{uuid.uuid4().hex}.stl"
-    error = await asyncio.to_thread(builder.build, program, output.resolve(), overrides)
+    output = (MODEL_DIR / f"{name}_{uuid.uuid4().hex}{suffix}").resolve()
+    error = await asyncio.to_thread(builder.build, program, output, overrides)
     if error:
         raise HTTPException(422, f"the program did not build with these values: {error.splitlines()[-1]}")
     data = output.read_bytes()
     output.unlink()
-    return Response(data, media_type="model/stl")
+    return data
+
+
+@app.post("/api/runs/{name}/model")
+async def build_model(name: str, request: Request):
+    """Screen 4: build with the posted parameter values; binary STL for the viewer.
+
+    Body: {"parameters": {"name": value, ...}}; only the program's own numeric parameters are accepted.
+    """
+    return Response(await _export(name, await _parameters(name, request), ".stl"), media_type="model/stl")
+
+
+DOWNLOADS = {  # format -> (file suffix, media type)
+    "stl": (".stl", "model/stl"),
+    "step": (".step", "application/step"),
+    "py": (".py", "text/x-python"),
+}
+
+
+@app.post("/api/runs/{name}/download")
+async def download(name: str, request: Request, format: str = "stl"):
+    """Screen 5: the part with the current slider values as STL, STEP or the CadQuery program (.py)."""
+    if format not in DOWNLOADS:
+        raise HTTPException(400, f"format must be one of {', '.join(DOWNLOADS)}")
+    overrides = await _parameters(name, request)
+    suffix, media_type = DOWNLOADS[format]
+    if format == "py":  # the parametric program itself, with the slider values as its new defaults
+        data = replay.program_with_defaults(name, overrides).encode("utf-8")
+    else:
+        data = await _export(name, overrides, suffix)
+    filename = f"reversecad_{name}{suffix}"
+    return Response(data, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/")

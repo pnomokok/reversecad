@@ -4,6 +4,7 @@ Replay mode: everything comes from files a run already wrote, plus SAM's cached
 answers; no API is called (a missing cache file is an error, not a new request).
 The measurement functions are only reused, never changed.
 """
+import ast
 import functools
 import json
 from pathlib import Path
@@ -58,7 +59,8 @@ def _cached_card_mask(folder, image):
     raise FileNotFoundError("no cached card mask for this run (replay never calls SAM)")
 
 
-CANDIDATE_ROUNDS = ["candidates_arcs", "candidates_kit", "candidates_intent"]  # newest first
+# newest first; medium reasoning effort is the default since the effort comparison
+CANDIDATE_ROUNDS = ["candidates_arcs_effort_medium", "candidates_arcs", "candidates_kit", "candidates_intent"]
 
 
 def candidate_round(name):
@@ -136,6 +138,34 @@ def winner(name):
     params = [{"name": p, "default": v} for p, v in parameters(path.read_text(encoding="utf-8"))
               if isinstance(v, (int, float)) and not isinstance(v, bool)]
     return {"name": name, "program": path.name, "source": source, "parameters": params}
+
+
+def program_with_defaults(name, values):
+    """The result program's source with build_part's defaults replaced by `values` (name -> number).
+
+    Only the default values change (located by the parser, replaced from the end of the text so
+    earlier positions stay valid); the rest of the code is kept as written.
+    """
+    path, _ = result_program(name)
+    source = path.read_text(encoding="utf-8")
+    function = next(node for node in ast.parse(source).body
+                    if isinstance(node, ast.FunctionDef) and node.name == "build_part")
+    args = function.args
+    pairs = list(zip(args.args[len(args.args) - len(args.defaults):], args.defaults))
+    pairs += [(arg, default) for arg, default in zip(args.kwonlyargs, args.kw_defaults) if default is not None]
+    lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    edits = []
+    for arg, default in pairs:
+        if arg.arg in values:
+            start = offsets[default.lineno - 1] + default.col_offset
+            end = offsets[default.end_lineno - 1] + default.end_col_offset
+            edits.append((start, end, repr(round(float(values[arg.arg]), 4))))
+    for start, end, text in sorted(edits, reverse=True):
+        source = source[:start] + text + source[end:]
+    return source
 
 
 def _pixels(points):

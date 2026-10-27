@@ -12,11 +12,11 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 
 function showStep(step) {
   document.querySelectorAll("#steps li").forEach((li) => li.classList.toggle("active", li.dataset.step === String(step)));
-  [1, 2, 3, 4].forEach((n) => document.getElementById(`screen-${n}`).classList.toggle("hidden", step !== n));
-  // The stage shows the photo for screens 1-2, the candidate grid for 3 and the 3D view for 4.
+  [1, 2, 3, 4, 5].forEach((n) => document.getElementById(`screen-${n}`).classList.toggle("hidden", step !== n));
+  // The stage shows the photo for screens 1-2, the candidate grid for 3 and the 3D view for 4-5.
   canvas.classList.toggle("hidden", step >= 3);
   document.getElementById("candidate-grid").classList.toggle("hidden", step !== 3);
-  document.getElementById("viewer").classList.toggle("hidden", step !== 4);
+  document.getElementById("viewer").classList.toggle("hidden", step < 4);
 }
 
 async function getJSON(url) {
@@ -248,6 +248,41 @@ async function showModel() {
   state.winner.parameters.forEach((p) => sliders.appendChild(slider(p)));
   await rebuild();
 }
+
+// ---------- screen 5 ----------
+async function downloadFile(format) {
+  const status = document.getElementById("download-status");
+  status.textContent = `Preparing ${format.toUpperCase()}…`;
+  const response = await fetch(`/api/runs/${state.run}/download?format=${format}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parameters: currentValues() }),
+  });
+  if (!response.ok) {
+    status.textContent = `Not built: ${(await response.json()).detail}`;
+    return;
+  }
+  const name = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition"))?.[1] ?? `part.${format}`;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await response.blob());
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  status.textContent = `Saved ${name}.`;
+}
+
+function showDownload() {
+  showStep(5);
+  document.getElementById("download-values").innerHTML = Object.entries(currentValues())
+    .map(([name, value]) => `<tr><td>${name}</td><td class="number">${value}</td></tr>`)
+    .join("");
+  document.getElementById("download-status").textContent = "";
+}
+
+document.querySelectorAll("#screen-5 button[data-format]").forEach((button) =>
+  button.addEventListener("click", () => downloadFile(button.dataset.format)));
+document.getElementById("to-download").addEventListener("click", showDownload);
+document.getElementById("back-to-4").addEventListener("click", () => showStep(4));
 
 document.getElementById("to-model").addEventListener("click", showModel);
 document.getElementById("back-to-3").addEventListener("click", () => showStep(3));

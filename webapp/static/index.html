@@ -75,7 +75,20 @@
       <div class="sliders" id="sliders"></div>
       <p class="hint" id="model-status"></p>
       <button id="reset-parameters">Reset values</button>
+      <button id="to-download">Download</button>
       <button id="back-to-3">Back</button>
+    </aside>
+
+    <!-- Screen 5: download the part with the current slider values -->
+    <aside class="panel hidden" id="screen-5">
+      <h2>5. Download</h2>
+      <p class="hint">Files use the current slider values.</p>
+      <table class="measurements" id="download-values"></table>
+      <button data-format="stl">STL (mesh, for printing)</button>
+      <button data-format="step">STEP (solid, for CAD)</button>
+      <button data-format="py">CadQuery program (.py, parametric)</button>
+      <p class="hint" id="download-status"></p>
+      <button id="back-to-4">Back</button>
     </aside>
   </main>
 

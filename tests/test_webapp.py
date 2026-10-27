@@ -5,6 +5,9 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from candidates import check_code
+from design_intent import parameters
+from run_candidate import run_candidate
 from webapp import replay, server
 from webapp.server import app
 
@@ -79,6 +82,28 @@ def test_result_model_builds_and_follows_a_slider():
     longer = client.post("/api/runs/A_light/model", json={"parameters": {length: names[length] + 10}})
     assert _stl_x_extent(longer.content) - _stl_x_extent(default.content) == pytest.approx(10, abs=0.5)
     assert client.post("/api/runs/A_light/model", json={"parameters": {"__import__": 1}}).status_code == 400
+
+
+@needs_saved_run
+def test_downloads(tmp_path):
+    names = {p["name"]: p["default"] for p in client.get("/api/runs/A_light/winner").json()["parameters"]}
+    length = max(names, key=names.get)
+    values = {"parameters": {length: names[length] + 10}}
+
+    step = client.post("/api/runs/A_light/download?format=step", json=values)
+    assert step.status_code == 200 and step.content.startswith(b"ISO-10303-21")
+    assert 'filename="reversecad_A_light.step"' in step.headers["content-disposition"]
+
+    program = client.post("/api/runs/A_light/download?format=py", json=values).text
+    assert check_code(program) == []
+    assert dict(parameters(program))[length] == round(names[length] + 10, 4)  # slider value is the new default
+    path = tmp_path / "downloaded.py"
+    path.write_text(program, encoding="utf-8")
+    mask, error = run_candidate(path, 0.1)  # the downloaded program builds the longer part by itself
+    assert error is None
+    assert (mask.any(axis=0).sum() * 0.1) == pytest.approx(names[length] + 10, abs=0.5)
+
+    assert client.post("/api/runs/A_light/download?format=dwg", json=values).status_code == 400
 
 
 @needs_saved_run

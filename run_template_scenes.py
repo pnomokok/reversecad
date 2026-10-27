@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 
+from candidates import DEFAULT_REASONING_EFFORT
 from e2e_pipeline import run_scene
 from parts.template_parts import make_part, part_truth
 from synthetic_scene import DARK_PART, LIGHT_METAL, make_scene
@@ -47,10 +48,14 @@ def table_row(name, result):
 
 
 def main(arguments):
-    # --effort=low|medium|... sets Muse Spark Open's reasoning effort; candidates go to their own folder.
-    effort = next((a.split("=", 1)[1] for a in arguments if a.startswith("--effort=")), None)
+    # --effort=low|medium|... sets Muse Spark Open's reasoning effort (default medium); candidates go to
+    # their own folder. --effort=model-default sends no setting (saved as candidates_arcs/).
+    effort = next((a.split("=", 1)[1] for a in arguments if a.startswith("--effort=")), DEFAULT_REASONING_EFFORT)
     names = [a for a in arguments if not a.startswith("--")]
-    folder = f"candidates_arcs_effort_{effort}" if effort else "candidates_arcs"
+    if effort == "model-default":
+        effort, folder = None, "candidates_arcs"
+    else:
+        folder = f"candidates_arcs_effort_{effort}"
     rows = []
     for name in names or SCENES:
         config = SCENES[name]

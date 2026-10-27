@@ -17,6 +17,9 @@ import partkit
 from baseten_client import MODEL, image_data_url, make_client
 
 MAX_TOKENS = 16000  # reasoning tokens count toward this limit; 8000 ran out before any code
+# Medium kept the topology and design intent of the model's default (xhigh) on A-D at 3-6x fewer
+# tokens; low started to lose design intent. None sends no setting (the model's own default).
+DEFAULT_REASONING_EFFORT = "medium"
 TEMPERATURE = 0.8  # some variety between candidates
 MAX_PARALLEL_REQUESTS = 5
 FUNCTION_NAME = "build_part"
@@ -156,7 +159,7 @@ def _request_one(client, prompt, image_url, reasoning_effort=None):
     return result
 
 
-def generate_candidates(view, mask_image_path, count, reasoning_effort=None):
+def generate_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT):
     """Return (prompt, `count` results: each the raw response dict, or {"error": message}).
 
     view is the model's view of the measurement table (model_view.py); reasoning_effort None

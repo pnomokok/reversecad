@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 from baseline_cad import baseline_code
-from candidates import extract_python_block, generate_candidates
+from candidates import DEFAULT_REASONING_EFFORT, extract_python_block, generate_candidates
 from design_intent import evaluate as evaluate_design_intent
 from design_intent import parameters
 from deviation_check import check_deviation
@@ -281,7 +281,7 @@ def measure(out, image, card, part, crop_mask, truth=None, true_masks=None):
 
 
 # ---------- step 4 ----------
-def make_candidates(out, folder_name, table, count, reasoning_effort=None):
+def make_candidates(out, folder_name, table, count, reasoning_effort=DEFAULT_REASONING_EFFORT):
     folder = out / folder_name
     folder.mkdir(exist_ok=True)
     cached = sorted(folder.glob("cand_*_response.json"), key=lambda p: int(p.stem.split("_")[1]))
@@ -431,7 +431,8 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
 
 
 def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, candidate_count,
-              candidates_folder="candidates_arcs", click=True, reasoning_effort=None):
+              candidates_folder="candidates_arcs_effort_medium", click=True,
+              reasoning_effort=DEFAULT_REASONING_EFFORT):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     print(f"\n######## scene {name} ########")
@@ -450,7 +451,7 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     return result
 
 
-def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_arcs",
+def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_arcs_effort_medium",
               suggest=True):
     """The same pipeline on a real photo: no ground truth, the part is picked by `click` (x, y in pixels).
 
