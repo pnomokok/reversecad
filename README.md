@@ -13,6 +13,13 @@ Built for the Meta Global AI Developer Hackathon with Meta's SAM 3.1 and Muse Sp
 5. **Checks**: each program is screened (only `cadquery`, `math` and the helper library `partkit` may be imported), built in a separate process, rendered from above and compared with the photo's mask (IoU), and checked against the measurements (holes within 0.5 mm, outline within max(1 mm, 2%)).
 6. **Result**: the best program wins. If none passes, a baseline built straight from the measurements is returned, clearly marked as `fallback: measured shape, no design intent`.
 
+## Meta models
+
+| Model | What it does here | Files |
+|---|---|---|
+| **SAM 3.1** (Meta Model API) | Finds the card by name and the part by the user's click (point prompt); a second, zoomed-in request on the part | `sam_client.py`, `e2e_pipeline.py` (`find_masks`, `segment_crop`) |
+| **Muse Spark Open** (Baseten, `meta-models/muse-spark-open-1026`, reasoning effort `medium`) | Writes the candidate CadQuery programs from the measurement table and the part's silhouette; suggests SAM names for the part if the click finds nothing | `candidates.py`, `prompt_suggestions.py`, `baseten_client.py` |
+
 ## Quick start
 
 Tested with **Python 3.13 on Windows 11**. The web page loads three.js from a CDN, so the browser needs internet access.
@@ -88,6 +95,7 @@ The tests never call an API. A few need runs saved under `outputs/` and are skip
 |---|---|
 | Scale: a second ID-1 card measured with the first as reference | mean error 0.48% (max 1.44%) |
 | Holes on synthetic scenes (color method) | diameter within 0.15 mm, centers within 0.7 mm |
+| Real photo: brass key next to a card (ruler: 57 × 22.5 mm, elliptical hole 12 × 6 mm) | outline 56.6 × 23.2 mm (−0.7% / +2.9%), hole measured as an ellipse 11.8 × 6.2 mm (−1.9% / +3.0%) |
 | Candidates on synthetic parts A-D (plate, asymmetric plate, L plate, tabbed part), 10 each | 100% compiled with correct topology, IoU 0.98-0.99 |
 | Design intent of the winner vs the baseline | 5-8 named parameters instead of 15-23; shared hole diameter, symmetry and edge margins kept when a dimension changes |
 | Reasoning effort | `medium` (the default here) keeps the default level's quality at 3-6× fewer tokens |
@@ -116,3 +124,7 @@ Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the
 | `parts/`, `synthetic_scene.py` | Template test parts with ground truth and their synthetic photos |
 | `samples/` | A compact saved run for replay without API keys |
 | `tests/` | pytest suite |
+
+## License
+
+MIT, see [LICENSE](LICENSE).
