@@ -19,7 +19,7 @@ needs_saved_run = pytest.mark.skipif("A_light" not in replay.list_runs(),
 def test_page_and_styles_are_served():
     assert "ReverseCAD" in client.get("/").text
     tokens = client.get("/static/tokens.css").text
-    assert "--color-accent" in tokens
+    assert "--color-selected" in tokens
     # Layout must not hard-code colors: every color lives in tokens.css.
     layout = client.get("/static/app.css").text
     assert "#" not in layout.replace("#steps", "")

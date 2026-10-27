@@ -1,11 +1,15 @@
 <!doctype html>
-<!-- ReverseCAD web app: the page skeleton. Screens are shown and hidden by app.js;
-     styles live in tokens.css (variables) and app.css (layout). -->
+<!-- ReverseCAD web app. Three screens (Capture, Search, Edit) are switched by app.js; styles live in
+     tokens.css (variables) and app.css (layout). Open with ?run=<name>&step=capture|measure|search|edit
+     to jump straight to a screen of a saved run (used for screenshots and recordings). -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ReverseCAD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600&display=swap">
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <!-- three.js from a CDN, pinned to one version -->
@@ -15,86 +19,94 @@
   </script>
 </head>
 <body>
-  <header>
-    <h1>ReverseCAD</h1>
-    <ol class="steps" id="steps">
-      <li data-step="1">1 Photo</li>
-      <li data-step="2">2 Measurements</li>
-      <li data-step="3">3 Candidates</li>
-      <li data-step="4">4 Model</li>
-      <li data-step="5">5 Download</li>
-    </ol>
+  <header class="topbar">
+    <div class="brand">REVERSECAD</div>
+    <nav class="steps" id="steps">
+      <button data-screen="capture">1 Capture</button>
+      <button data-screen="search" disabled>2 Search</button>
+      <button data-screen="edit" disabled>3 Edit</button>
+    </nav>
+    <div class="topbar-status" id="topbar-status"></div>
   </header>
 
-  <main>
-    <section class="stage">
-      <canvas id="photo-canvas"></canvas>
-      <div class="candidate-grid hidden" id="candidate-grid"></div>
-      <div class="viewer hidden" id="viewer"></div>
-    </section>
+  <div class="workspace">
+    <main class="stage">
+      <div class="stage-bar" id="stage-bar"></div>
+      <div class="stage-body">
+        <p class="stage-empty" id="stage-empty">Upload a photo of the part next to a card, or try an example.</p>
+        <canvas id="photo-canvas" class="hidden"></canvas>
+        <div class="candidate-grid hidden" id="candidate-grid"></div>
+        <div class="viewer hidden" id="viewer"></div>
+      </div>
+    </main>
 
-    <!-- Screen 1: pick the photo, click the part, enter the thickness -->
-    <aside class="panel" id="screen-1">
-      <h2>1. Photo</h2>
-      <label>Saved run (replay, no API calls)
-        <select id="run-select"></select>
-      </label>
-      <label>Or upload a photo (live: calls the models)
-        <input type="file" id="photo-upload" accept="image/*">
-      </label>
-      <p class="hint">Live mode sends the photo to Meta's SAM to find the card and the part. Candidate requests
-        send only the part's black-and-white outline. Put the card right next to the part.</p>
-      <p class="hint">Click the part in the photo (not a hole). The red cross marks the click.</p>
-      <label>Thickness (mm)
-        <input type="number" id="thickness" value="3.0" min="0.1" step="0.1">
-      </label>
-      <button id="analyze" disabled>Measure</button>
-    </aside>
+    <aside class="inspector">
+      <!-- Capture: photo, click, thickness, then the measurements -->
+      <section class="panel" id="panel-capture">
+        <h2>Capture</h2>
+        <label class="dropzone">
+          <input type="file" id="photo-upload" accept="image/*">
+          <span class="dropzone-title">Upload a photo</span>
+          <span class="hint">Part next to a bank or transit card, shot from straight above.</span>
+        </label>
+        <div class="examples">
+          <span class="label">Try an example</span>
+          <div class="example-list" id="example-list"></div>
+        </div>
+        <ol class="procedure">
+          <li id="step-card"><span class="tick"></span>Card next to the part</li>
+          <li id="step-click"><span class="tick"></span>Click the part in the photo</li>
+          <li id="step-thickness"><span class="tick"></span>Part thickness</li>
+        </ol>
+        <div class="stepper">
+          <button id="thickness-down" aria-label="thinner">−</button>
+          <input type="text" id="thickness" value="3.0" inputmode="decimal" aria-label="thickness in mm">
+          <span class="unit">mm</span>
+          <button id="thickness-up" aria-label="thicker">+</button>
+        </div>
+        <button class="primary" id="analyze" disabled>Measure</button>
+        <p class="hint" id="capture-status"></p>
+        <label class="live-only hidden field">
+          <span class="label">Candidates to ask for</span>
+          <input type="number" id="candidate-count" value="5" min="1" max="10">
+        </label>
+        <button class="primary hidden" id="to-candidates">Reconstruct →</button>
+        <div class="results hidden" id="measure-results">
+          <span class="label">Measured</span>
+          <table class="values" id="measure-table"></table>
+        </div>
+      </section>
 
-    <!-- Screen 2: card, part and holes over the photo, plus the measurement table -->
-    <aside class="panel hidden" id="screen-2">
-      <h2>2. Measurements</h2>
-      <p class="hint" id="measure-summary"></p>
-      <table class="measurements" id="measure-table"></table>
-      <label class="live-only hidden">Candidates to ask for (live)
-        <input type="number" id="candidate-count" value="5" min="1" max="10">
-      </label>
-      <button id="to-candidates">Generate candidates</button>
-      <button id="back-to-1">Back</button>
-    </aside>
+      <!-- Search: candidates arriving, with scores and reasons -->
+      <section class="panel hidden" id="panel-search">
+        <h2>Search</h2>
+        <div class="big-number"><span id="search-count">0</span> candidates</div>
+        <p class="sub" id="search-split"></p>
+        <div class="results">
+          <span class="label">Best match</span>
+          <table class="values" id="search-best"></table>
+        </div>
+        <p class="hint" id="search-progress"></p>
+        <button class="primary" id="to-model" disabled>Open in editor →</button>
+      </section>
 
-    <!-- Screen 3: candidates arrive one by one (server-sent events) with score and reasons -->
-    <aside class="panel hidden" id="screen-3">
-      <h2>3. Candidates</h2>
-      <p class="hint" id="candidate-progress">Waiting for candidates…</p>
-      <p class="hint" id="candidate-result"></p>
-      <button id="to-model" disabled>Show the result in 3D</button>
-      <button id="back-to-2">Back</button>
+      <!-- Edit: 3D result, named parameters, downloads -->
+      <section class="panel hidden" id="panel-edit">
+        <h2>Design parameters</h2>
+        <p class="hint" id="model-source"></p>
+        <div class="sliders" id="sliders"></div>
+        <p class="hint" id="model-status"></p>
+        <button id="reset-parameters">Reset values</button>
+        <span class="label">Export</span>
+        <div class="exports">
+          <button data-format="step"><strong>STEP</strong><span>solid for CAD</span></button>
+          <button data-format="stl"><strong>STL</strong><span>mesh for printing</span></button>
+          <button data-format="py"><strong>.py</strong><span>CadQuery program</span></button>
+        </div>
+        <p class="hint" id="download-status"></p>
+      </section>
     </aside>
-
-    <!-- Screen 4: the result in 3D; a slider per named parameter rebuilds the part when released -->
-    <aside class="panel hidden" id="screen-4">
-      <h2>4. Model</h2>
-      <p class="hint" id="model-source"></p>
-      <div class="sliders" id="sliders"></div>
-      <p class="hint" id="model-status"></p>
-      <button id="reset-parameters">Reset values</button>
-      <button id="to-download">Download</button>
-      <button id="back-to-3">Back</button>
-    </aside>
-
-    <!-- Screen 5: download the part with the current slider values -->
-    <aside class="panel hidden" id="screen-5">
-      <h2>5. Download</h2>
-      <p class="hint">Files use the current slider values.</p>
-      <table class="measurements" id="download-values"></table>
-      <button data-format="stl">STL (mesh, for printing)</button>
-      <button data-format="step">STEP (solid, for CAD)</button>
-      <button data-format="py">CadQuery program (.py, parametric)</button>
-      <p class="hint" id="download-status"></p>
-      <button id="back-to-4">Back</button>
-    </aside>
-  </main>
+  </div>
 
   <script type="module" src="/static/app.js"></script>
 </body>

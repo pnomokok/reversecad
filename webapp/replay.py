@@ -224,8 +224,8 @@ def analysis(name):
         shape, info = classify_hole(to_mm(points, pixel_to_mm).astype(np.float32))
         size = (f"Ø{2 * np.sqrt(info['area'] / np.pi):.2f}" if shape == "circle"
                 else f"{info['length']:.2f} × {info['width']:.2f}")
-        holes.append({"shape": shape, "label": f"{shape} {size} mm", "contour_px": _pixels(points),
-                      "center_px": _pixels([points.mean(axis=0)])[0]})
+        holes.append({"shape": shape, "size": f"{size} mm", "label": f"{shape} {size} mm",
+                      "contour_px": _pixels(points), "center_px": _pixels([points.mean(axis=0)])[0]})
 
     table = measurements["table"]
     return {
@@ -236,6 +236,7 @@ def analysis(name):
         "card_corners_px": _pixels(card_corners(largest_contour(card_mask))),
         "card_edge_differences_pct": [round(float(d) * 100, 2) for d in differences],
         "scale_used": scale_used,
+        "card_mm_per_pixel": round(float(scales["simple"][0, 0]), 5),  # mean card scale
         "hole_method": method,
         "outline_px": _pixels(contours[outer].reshape(-1, 2)),
         "outline_mm": {"length": table["outline"]["length_mm"], "width": table["outline"]["width_mm"],

@@ -1,54 +1,66 @@
-/* Design tokens: every color, size and font the app uses. The visual design is applied later
-   by changing only this file; app.css refers to these variables and holds no raw values of its own. */
+/* Design tokens: every color, size and font the app uses (visual reference: design/DESIGN.md and the
+   Stitch screens in design/). app.css refers only to these variables. Sizes are set for screen
+   recordings: body text 16px, numbers 20-28px. */
 :root {
-  /* colors */
-  --color-bg: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-text: #1d2433;
-  --color-text-muted: #5b6475;
-  --color-border: #d9dde5;
-  --color-accent: #2f6fde;
-  --color-accent-text: #ffffff;
-  --color-ok: #1f8a4c;
-  --color-bad: #c43c3c;
-  --color-overlay-card: #2f6fde;
-  --color-overlay-part: #e8590c;
-  --color-overlay-hole: #f2c200;
-  --color-overlay-click: #c43c3c;
-  --color-overlay-label-bg: rgba(0, 0, 0, 0.65);
-  --color-overlay-label-text: #ffffff;
+  /* surfaces (darkest to lightest) */
+  --color-bg: #121212;
+  --color-stage: #141414;
+  --color-surface: #1c1c1c;
+  --color-surface-raised: #262626;
+  --color-border: #333333;
+  --color-border-strong: #4a4a4a;
+
+  /* text */
+  --color-text: #ededed;
+  --color-text-muted: #9a9a9a;
+  --color-text-on-light: #121212;
+
+  /* accents: orange only for what is selected or being changed; cyan for references */
+  --color-selected: #ff6a2b;
+  --color-reference: #00e5ff;
+  --color-dimension: #ffffff;
+  --color-ok: #4cd08a;
+  --color-bad: #ff5b4f;
+
+  /* overlays on the photo */
+  --color-overlay-card: #ffffff;
+  --color-overlay-part: #ff6a2b;
+  --color-overlay-hole: #ffffff;
+  --color-overlay-click: #ff6a2b;
+  --color-callout-bg: #121212;
+  --color-silhouette-bg: #0b0b0b;
+  --color-silhouette: #e6e6e6;
+
+  /* 3D viewer */
+  --color-viewer-bg: #141414;
+  --color-model: #d9d9d9;
 
   /* type */
-  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --font-size-small: 0.85rem;
-  --font-size-body: 1rem;
-  --font-size-title: 1.4rem;
+  --font-heading: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --font-size-label: 13px;
+  --font-size-body: 16px;
+  --font-size-value: 22px;
+  --font-size-value-large: 28px;
+  --font-size-title: 22px;
+  --font-size-brand: 24px;
+  --callout-font-px: 20; /* dimension boxes on the photo, in screen pixels */
 
   /* spacing and shape */
   --space-1: 4px;
   --space-2: 8px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --radius: 8px;
-  --overlay-line-width: 2;
-  --panel-width: 360px;
-  --card-min-width: 160px;
-  --card-image-height: 110px;
-  --winner-outline-width: 3px;
-  --color-silhouette-bg: #000000;
-  --color-viewer-bg: #e9ecf1;
-  --color-model: #9aa7b8;
-  --viewer-height: 560px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius: 0;
+  --border-width: 1px;
+  --callout-border-px: 2;
+  --overlay-line-width: 3;
+  --header-height: 64px;
+  --panel-width: 380px;
+  --card-min-width: 200px;
+  --card-image-height: 130px;
+  --viewer-height: calc(100vh - var(--header-height) - 72px);
   --slider-range: 0.5; /* sliders run from default × (1 - range) to default × (1 + range) */
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #12151b;
-    --color-surface: #1b2029;
-    --color-text: #e6e9ef;
-    --color-text-muted: #9aa3b5;
-    --color-border: #2d3443;
-  }
 }

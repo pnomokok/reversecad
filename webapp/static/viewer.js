@@ -25,7 +25,7 @@ export function createViewer(container) {
 
   function resize() {
     const width = container.clientWidth;
-    const height = Number(css("--viewer-height").replace("px", ""));
+    const height = container.clientHeight || 560;  // the box's height comes from app.css (--viewer-height)
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();

@@ -1,24 +1,20 @@
-// ReverseCAD front end in replay mode (saved runs, no API calls).
-// Screen 1: choose a saved run, click the part, enter the thickness.
-// Screen 2: card, part outline and holes drawn over the photo, measurement table beside it.
-// Screen 3: candidates arrive one by one (server-sent events) into a grid with score and reasons.
-// Screen 4: the result in 3D (three.js); a slider per named parameter rebuilds the part on release.
+// ReverseCAD front end. Three screens:
+//   Capture: upload a photo or try an example, click the part, set the thickness, measure.
+//   Search:  candidates arrive one by one (server-sent events) with silhouette, score and reasons.
+//   Edit:    the result in 3D with a slider per named parameter, and downloads.
+// Every number shown comes from the back end; nothing is made up for display.
+// ?run=<name>&step=capture|measure|search|edit opens a saved run on that screen (screenshots, videos);
+// with step=edit, &set=<parameter>:<value>,... also moves sliders.
 import { createViewer } from "./viewer.js";
 
-const state = { run: null, live: false, image: null, click: null, analysis: null, stream: null, viewer: null,
-                winner: null };
-const canvas = document.getElementById("photo-canvas");
-const context = canvas.getContext("2d");
+const state = {
+  screen: "capture", run: null, live: false, image: null, click: null, analysis: null,
+  stream: null, viewer: null, winner: null, done: null,
+};
+const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-
-function showStep(step) {
-  document.querySelectorAll("#steps li").forEach((li) => li.classList.toggle("active", li.dataset.step === String(step)));
-  [1, 2, 3, 4, 5].forEach((n) => document.getElementById(`screen-${n}`).classList.toggle("hidden", step !== n));
-  // The stage shows the photo for screens 1-2, the candidate grid for 3 and the 3D view for 4-5.
-  canvas.classList.toggle("hidden", step >= 3);
-  document.getElementById("candidate-grid").classList.toggle("hidden", step !== 3);
-  document.getElementById("viewer").classList.toggle("hidden", step < 4);
-}
+const canvas = $("photo-canvas");
+const context = canvas.getContext("2d");
 
 async function getJSON(url) {
   const response = await fetch(url);
@@ -35,32 +31,140 @@ function loadImage(url) {
   });
 }
 
-// ---------- drawing ----------
-function drawPolygon(points, color, closed = true) {
+// ---------- screens ----------
+function setScreen(screen) {
+  state.screen = screen;
+  document.querySelectorAll("#steps button").forEach((b) => b.classList.toggle("active", b.dataset.screen === screen));
+  ["capture", "search", "edit"].forEach((name) => $(`panel-${name}`).classList.toggle("hidden", name !== screen));
+  $("stage-empty").classList.toggle("hidden", !(screen === "capture" && !state.image));
+  canvas.classList.toggle("hidden", !(screen === "capture" && state.image));
+  $("candidate-grid").classList.toggle("hidden", screen !== "search");
+  $("viewer").classList.toggle("hidden", screen !== "edit");
+  updateStageBar();
+}
+
+function enableSteps() {
+  document.querySelector('#steps [data-screen="search"]').disabled = !state.analysis;
+  document.querySelector('#steps [data-screen="edit"]').disabled = !(state.done && state.done.result_source
+    && !state.done.result_source.startsWith("none"));
+}
+
+document.querySelectorAll("#steps button").forEach((button) =>
+  button.addEventListener("click", () => {
+    if (button.dataset.screen === "edit" && !state.winner) showModel();
+    else setScreen(button.dataset.screen);
+  }));
+
+function stageBar(items) {
+  // items: [label, value] pairs; values are always computed by the back end
+  $("stage-bar").innerHTML = items.map(([label, value]) => `<span>${label} <strong>${value}</strong></span>`).join("");
+}
+
+function updateStageBar() {
+  const a = state.analysis;
+  if (state.screen === "capture" && a) {
+    stageBar([["Scale", a.scale_used], ["Card", `${a.card_mm_per_pixel} mm/px`],
+              ["Card edges", `${a.card_edge_differences_pct.join(" / ")} %`], ["Part found by", a.part_found_by],
+              ["Holes by", a.hole_method]]);
+  } else if (state.screen === "search" && state.done) {
+    stageBar([["Round", state.done.round], ["Compiled", `${state.done.compiled} / ${state.done.candidate_count}`],
+              ["Result", state.done.winner ? `candidate ${state.done.winner}` : state.done.result_source]]);
+  } else if (state.screen === "edit" && state.winner) {
+    stageBar([["Program", state.winner.program], ["Source", state.winner.source],
+              ["Parameters", state.winner.parameters.length]]);
+  } else {
+    stageBar([]);
+  }
+  $("topbar-status").textContent = state.run ? `${state.live ? "Live" : "Example"} · ${state.run}` : "";
+}
+
+// ---------- capture: photo and overlay ----------
+function scale() {
+  return canvas.width / (canvas.clientWidth || canvas.width);
+}
+
+function polygon(points, color, width, closed = true) {
   context.beginPath();
   points.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
   if (closed) context.closePath();
   context.strokeStyle = color;
-  context.lineWidth = Number(css("--overlay-line-width")) * (canvas.width / canvas.clientWidth);
+  context.lineWidth = width * scale();
   context.stroke();
 }
 
-function drawLabel(text, x, y) {
-  const scale = canvas.width / canvas.clientWidth;
-  context.font = `${14 * scale}px ${css("--font-mono")}`;
-  const width = context.measureText(text).width;
-  context.fillStyle = css("--color-overlay-label-bg");
-  context.fillRect(x - 4 * scale, y - 16 * scale, width + 8 * scale, 22 * scale);
-  context.fillStyle = css("--color-overlay-label-text");
-  context.fillText(text, x, y);
+function callout(text, x, y) {
+  // A dimension box: dark fill, white border, white monospace text, centered on (x, y).
+  const s = scale();
+  context.font = `700 ${Number(css("--callout-font-px")) * s}px ${css("--font-mono")}`;
+  const width = context.measureText(text).width + 16 * s;
+  const height = Number(css("--callout-font-px")) * 1.6 * s;
+  context.fillStyle = css("--color-callout-bg");
+  context.fillRect(x - width / 2, y - height / 2, width, height);
+  context.strokeStyle = css("--color-dimension");
+  context.lineWidth = Number(css("--callout-border-px")) * s;
+  context.strokeRect(x - width / 2, y - height / 2, width, height);
+  context.fillStyle = css("--color-dimension");
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, x, y + 1 * s);
+}
+
+function dimensionLine(x1, y1, x2, y2) {
+  const s = scale();
+  const tick = 10 * s;
+  const vertical = Math.abs(x2 - x1) < Math.abs(y2 - y1);
+  context.strokeStyle = css("--color-dimension");
+  context.lineWidth = 2 * s;
+  context.beginPath();
+  context.moveTo(x1, y1);
+  context.lineTo(x2, y2);
+  for (const [x, y] of [[x1, y1], [x2, y2]]) {  // end ticks across the line
+    if (vertical) { context.moveTo(x - tick, y); context.lineTo(x + tick, y); }
+    else { context.moveTo(x, y - tick); context.lineTo(x, y + tick); }
+  }
+  context.stroke();
+}
+
+function drawMeasurements(a) {
+  const s = scale();
+  polygon(a.card_corners_px, css("--color-overlay-card"), 2);
+  polygon(a.outline_px, css("--color-overlay-part"), Number(css("--overlay-line-width")));
+  a.holes.forEach((hole) => polygon(hole.contour_px, css("--color-overlay-hole"), 2));
+
+  const xs = a.outline_px.map((p) => p[0]);
+  const ys = a.outline_px.map((p) => p[1]);
+  const [left, right, top, bottom] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const center = [(left + right) / 2, (top + bottom) / 2];
+
+  // Holes: a box moved from each hole toward the part's center, so it stays clear of the outer dimensions.
+  a.holes.forEach((hole) => {
+    const [hx, hy] = hole.center_px;
+    const [dx, dy] = [center[0] - hx, center[1] - hy];
+    const length = Math.hypot(dx, dy) || 1;
+    const shift = Math.min(70 * s, length * 0.6);
+    callout(hole.size, hx + (dx / length) * shift, hy + (dy / length) * shift);
+  });
+
+  // Outline last, so its boxes stay on top: length along the longer side of the part's box.
+  const horizontalIsLength = right - left >= bottom - top;
+  const [horizontal, vertical] = horizontalIsLength
+    ? [a.outline_mm.length, a.outline_mm.width] : [a.outline_mm.width, a.outline_mm.length];
+  const gap = 56 * s;
+  const room = 130 * s;  // space a dimension box needs outside the part
+  const y = top - gap > room / 2 ? top - gap : bottom + gap;  // above the part, or below if no room
+  const x = canvas.width - (right + gap) > room ? right + gap : left - gap;  // right of it, or left
+  dimensionLine(left, y, right, y);
+  callout(`${horizontal.toFixed(2)} mm`, center[0], y);
+  dimensionLine(x, top, x, bottom);
+  callout(`${vertical.toFixed(2)} mm`, x, center[1]);
 }
 
 function drawClick() {
   if (!state.click) return;
   const [x, y] = state.click;
-  const size = 14 * (canvas.width / canvas.clientWidth);
-  drawPolygon([[x - size, y], [x + size, y]], css("--color-overlay-click"), false);
-  drawPolygon([[x, y - size], [x, y + size]], css("--color-overlay-click"), false);
+  const size = 16 * scale();
+  polygon([[x - size, y], [x + size, y]], css("--color-overlay-click"), 3, false);
+  polygon([[x, y - size], [x, y + size]], css("--color-overlay-click"), 3, false);
 }
 
 function render() {
@@ -68,22 +172,33 @@ function render() {
   canvas.width = state.image.naturalWidth;
   canvas.height = state.image.naturalHeight;
   context.drawImage(state.image, 0, 0);
-  const a = state.analysis;
-  if (a) {
-    drawPolygon(a.card_corners_px, css("--color-overlay-card"));
-    drawPolygon(a.outline_px, css("--color-overlay-part"));
-    a.holes.forEach((hole) => {
-      drawPolygon(hole.contour_px, css("--color-overlay-hole"));
-      drawLabel(hole.label, hole.center_px[0] + 12, hole.center_px[1] - 12);
-    });
-    const xs = a.outline_px.map((p) => p[0]);
-    const ys = a.outline_px.map((p) => p[1]);
-    drawLabel(`${a.outline_mm.length} × ${a.outline_mm.width} mm`, Math.min(...xs), Math.min(...ys) - 12);
-  }
+  if (state.analysis) drawMeasurements(state.analysis);
   drawClick();
 }
+window.addEventListener("resize", render);
 
-// ---------- screen 1 ----------
+function thickness() {
+  const value = Number(String($("thickness").value).replace(",", "."));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function updateProcedure() {
+  // Ticked when true: the card counts as found once the measurement has used it.
+  const done = { card: !!state.analysis, click: !!state.click, thickness: thickness() !== null };
+  for (const key of ["card", "click", "thickness"]) $(`step-${key}`).classList.toggle("done", done[key]);
+}
+
+function resetResults() {
+  state.analysis = null;
+  state.done = null;
+  state.winner = null;
+  $("measure-results").classList.add("hidden");
+  $("to-candidates").classList.add("hidden");
+  $("capture-status").textContent = "";
+  enableSteps();
+  updateProcedure();
+}
+
 function setLive(live) {
   state.live = live;
   document.querySelectorAll(".live-only").forEach((element) => element.classList.toggle("hidden", !live));
@@ -92,111 +207,101 @@ function setLive(live) {
 async function chooseRun(name) {
   setLive(false);
   state.run = name;
-  state.analysis = null;
+  resetResults();
+  document.querySelectorAll("#example-list button").forEach((b) => b.classList.toggle("active", b.dataset.run === name));
   state.image = await loadImage(`/api/runs/${name}/photo`);
-  // The saved run's click is shown until the user clicks somewhere else.
-  const saved = await getJSON(`/api/runs/${name}/info`);
-  state.click = saved.click_px;
+  state.click = (await getJSON(`/api/runs/${name}/info`)).click_px;  // the example's own click
+  setScreen("capture");
   render();
-  document.getElementById("analyze").disabled = false;
+  updateProcedure();
+  $("analyze").disabled = false;
 }
 
-canvas.addEventListener("click", (event) => {
-  if (!state.image) return;
-  const box = canvas.getBoundingClientRect();
-  state.click = [
-    Math.round((event.clientX - box.left) * (canvas.width / box.width)),
-    Math.round((event.clientY - box.top) * (canvas.height / box.height)),
-  ];
-  render();
-  document.getElementById("analyze").disabled = false;
-});
-
-document.getElementById("run-select").addEventListener("change", (event) => chooseRun(event.target.value));
-
-document.getElementById("photo-upload").addEventListener("change", async (event) => {
+$("photo-upload").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   const form = new FormData();
   form.append("photo", file);
   const response = await fetch("/api/live/upload", { method: "POST", body: form });
   if (!response.ok) {
-    alert(`Upload failed: ${(await response.json()).detail}`);
+    $("capture-status").textContent = `Upload failed: ${(await response.json()).detail}`;
     return;
   }
   const { name } = await response.json();
   setLive(true);
   state.run = name;
-  state.analysis = null;
-  state.click = null;  // live: the user must click the part
+  resetResults();
+  document.querySelectorAll("#example-list button").forEach((b) => b.classList.remove("active"));
+  state.click = null;  // live: the user clicks the part
   state.image = await loadImage(`/api/runs/${name}/photo`);
+  setScreen("capture");
   render();
-  document.getElementById("analyze").disabled = true;
+  updateProcedure();
+  $("analyze").disabled = true;
+  $("capture-status").textContent = "Click the part in the photo (not a hole).";
 });
 
-// ---------- screen 2 ----------
-function fillTable(a) {
-  const rows = [
-    ["Outline", `${a.table.outline.length_mm} × ${a.table.outline.width_mm} mm`],
-    ["Corners", a.table.outline.vertex_count],
-    ["Holes", a.table.hole_count],
-    ...a.table.holes.map((h, i) => {
-      const size = h.shape === "circle" ? `Ø ${h.diameter_mm}` : `${h.length_mm} × ${h.width_mm}`;
-      const [u, v] = h.center_from_part_center_mm;
-      return [`Hole ${i + 1} (${h.shape})`, `${size} mm at [${u}, ${v}]`];
-    }),
-    ["Thickness (entered)", `${document.getElementById("thickness").value} mm`],
-  ];
-  document.getElementById("measure-table").innerHTML = rows
-    .map(([name, value]) => `<tr><td>${name}</td><td class="number">${value}</td></tr>`)
-    .join("");
-  document.getElementById("measure-summary").textContent =
-    `Part found by ${a.part_found_by}; ${a.scale_used} scale (card edges ${a.card_edge_differences_pct.join(" / ")} %); ` +
-    `holes by ${a.hole_method}.`;
-}
-
-function showAnalysis(analysis) {
-  state.analysis = analysis;
-  fillTable(analysis);
+canvas.addEventListener("click", (event) => {
+  if (!state.image) return;
+  const box = canvas.getBoundingClientRect();
+  state.click = [Math.round((event.clientX - box.left) * (canvas.width / box.width)),
+                 Math.round((event.clientY - box.top) * (canvas.height / box.height))];
   render();
+  updateProcedure();
+  $("analyze").disabled = false;
+});
+
+function stepThickness(delta) {
+  $("thickness").value = Math.max(0.5, (thickness() ?? 3) + delta).toFixed(1);
+  updateProcedure();
+}
+$("thickness-down").addEventListener("click", () => stepThickness(-0.5));
+$("thickness-up").addEventListener("click", () => stepThickness(0.5));
+$("thickness").addEventListener("input", updateProcedure);
+
+function showAnalysis(a) {
+  state.analysis = a;
+  const holes = a.holes.map((h, i) => [`Hole ${i + 1}`, `${h.shape} ${h.size}`]);
+  const rows = [["Outline", `${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} mm`],
+                ["Corners", a.outline_mm.corners], ["Holes", a.holes.length], ...holes];
+  $("measure-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td class="number">${v}</td></tr>`).join("");
+  $("measure-results").classList.remove("hidden");
+  $("to-candidates").classList.remove("hidden");
+  render();
+  updateProcedure();
+  enableSteps();
+  updateStageBar();
 }
 
 function measureLive() {
-  // Progress messages while SAM runs (decoding its masks takes seconds), then the overlay.
-  const summary = document.getElementById("measure-summary");
-  document.getElementById("measure-table").innerHTML = "";
-  document.getElementById("to-candidates").disabled = true;
-  const [x, y] = state.click;
-  const stream = new EventSource(`/api/live/${state.run}/measure/stream?x=${x}&y=${y}`);
-  stream.addEventListener("progress", (message) => (summary.textContent = JSON.parse(message.data).message));
-  stream.addEventListener("analysis", (message) => {
-    stream.close();
-    showAnalysis(JSON.parse(message.data));
-    document.getElementById("to-candidates").disabled = false;
-  });
-  stream.addEventListener("error", (message) => {
-    stream.close();
-    summary.textContent = message.data ? `Failed: ${JSON.parse(message.data).message}` : "The connection was lost.";
+  return new Promise((resolve) => {
+    const status = $("capture-status");
+    const [x, y] = state.click;
+    const stream = new EventSource(`/api/live/${state.run}/measure/stream?x=${x}&y=${y}`);
+    stream.addEventListener("progress", (m) => (status.textContent = JSON.parse(m.data).message));
+    stream.addEventListener("analysis", (m) => {
+      stream.close();
+      status.textContent = "";
+      showAnalysis(JSON.parse(m.data));
+      resolve();
+    });
+    stream.addEventListener("error", (m) => {
+      stream.close();
+      status.textContent = m.data ? `Failed: ${JSON.parse(m.data).message}` : "The connection was lost.";
+      resolve();
+    });
   });
 }
 
-document.getElementById("analyze").addEventListener("click", async () => {
-  showStep(2);
-  if (state.live) {
-    measureLive();
-  } else {
-    showAnalysis(await getJSON(`/api/runs/${state.run}/analysis`));
-    document.getElementById("to-candidates").disabled = false;
-  }
-});
+async function measure() {
+  $("analyze").disabled = true;
+  if (state.live) await measureLive();
+  else showAnalysis(await getJSON(`/api/runs/${state.run}/analysis`));
+  $("analyze").disabled = false;
+}
+$("analyze").addEventListener("click", measure);
 
-document.getElementById("back-to-1").addEventListener("click", () => {
-  state.analysis = null;
-  render();
-  showStep(1);
-});
-
-// ---------- screen 3 ----------
+// ---------- search ----------
 function candidateCard(event) {
   const card = document.createElement("div");
   card.className = `candidate-card ${event.status}`;
@@ -204,62 +309,68 @@ function candidateCard(event) {
   const picture = event.silhouette
     ? `<img src="${event.silhouette}" alt="candidate ${event.candidate} silhouette">`
     : `<div class="placeholder">no shape</div>`;
-  const score = event.iou == null ? "" : `IoU ${event.iou.toFixed(4)} · ${event.parameters} parameters`;
+  const score = event.iou == null ? "" : `IoU ${event.iou.toFixed(4)} · ${event.parameters} params`;
   const reasons = event.reasons.length ? `<ul>${event.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>` : "";
-  card.innerHTML = `${picture}<strong>Candidate ${event.candidate}: ${event.status}</strong><span>${score}</span>${reasons}`;
+  card.innerHTML = `<header><span>#${String(event.candidate).padStart(2, "0")}</span>`
+    + `<span class="status">${event.status.toUpperCase()}</span></header>${picture}<span class="score">${score}</span>${reasons}`;
   return card;
 }
 
 function streamCandidates() {
-  if (state.stream) state.stream.close();
-  const grid = document.getElementById("candidate-grid");
-  const progress = document.getElementById("candidate-progress");
-  const result = document.getElementById("candidate-result");
-  grid.innerHTML = "";
-  result.textContent = "";
-  document.getElementById("to-model").disabled = true;
-  let received = 0;
-  const thickness = document.getElementById("thickness").value;
-  const count = document.getElementById("candidate-count").value;
-  state.stream = new EventSource(state.live
-    ? `/api/live/${state.run}/candidates/stream?count=${count}&thickness=${thickness}`
-    : `/api/runs/${state.run}/candidates/stream`);
-  state.stream.addEventListener("progress", (message) => (progress.textContent = JSON.parse(message.data).message));
-  state.stream.addEventListener("candidate", (message) => {
-    grid.appendChild(candidateCard(JSON.parse(message.data)));
-    progress.textContent = `${++received} candidates received…`;
-  });
-  state.stream.addEventListener("done", (message) => {
-    state.stream.close();
-    const done = JSON.parse(message.data);
-    progress.textContent = `${done.compiled} of ${done.candidate_count} candidates compiled (round ${done.round}).`;
-    if (done.winner) {
-      document.getElementById(`candidate-${done.winner}`)?.classList.add("winner");
-      result.textContent = `Winner: candidate ${done.winner}.`;
-    } else {
-      result.textContent = `No candidate passed: ${done.result_source}.`;
-    }
-    document.getElementById("to-model").disabled = !done.result_source || done.result_source.startsWith("none");
-  });
-  state.stream.addEventListener("error", (message) => {
-    // A server 'error' event carries a message; a lost connection does not.
-    progress.textContent = message.data ? `Failed: ${JSON.parse(message.data).message}`
-      : "The candidate stream stopped unexpectedly.";
-    state.stream.close();
+  return new Promise((resolve) => {
+    if (state.stream) state.stream.close();
+    setScreen("search");
+    const grid = $("candidate-grid");
+    grid.innerHTML = "";
+    state.done = null;
+    state.winner = null;
+    enableSteps();
+    $("to-model").disabled = true;
+    $("search-best").innerHTML = "";
+    const seen = [];
+    const update = () => {
+      const passed = seen.filter((e) => e.status === "passed");
+      $("search-count").textContent = seen.length;
+      $("search-split").textContent = `${passed.length} passed · ${seen.length - passed.length} rejected or failed`;
+      const best = passed.reduce((a, b) => (a && a.iou >= b.iou ? a : b), null);
+      $("search-best").innerHTML = best
+        ? `<tr><td>Candidate</td><td class="number">#${best.candidate}</td></tr>`
+          + `<tr><td>IoU</td><td class="number">${best.iou.toFixed(4)}</td></tr>`
+          + `<tr><td>Parameters</td><td class="number">${best.parameters}</td></tr>` : "";
+    };
+    const count = $("candidate-count").value;
+    state.stream = new EventSource(state.live
+      ? `/api/live/${state.run}/candidates/stream?count=${count}&thickness=${thickness() ?? 3}`
+      : `/api/runs/${state.run}/candidates/stream`);
+    state.stream.addEventListener("progress", (m) => ($("search-progress").textContent = JSON.parse(m.data).message));
+    state.stream.addEventListener("candidate", (m) => {
+      const event = JSON.parse(m.data);
+      seen.push(event);
+      grid.appendChild(candidateCard(event));
+      update();
+    });
+    state.stream.addEventListener("done", (m) => {
+      state.stream.close();
+      state.done = JSON.parse(m.data);
+      if (state.done.winner) $(`candidate-${state.done.winner}`)?.classList.add("winner");
+      $("search-progress").textContent = state.done.winner
+        ? `Selected: candidate ${state.done.winner}.` : `No candidate passed: ${state.done.result_source}.`;
+      $("to-model").disabled = !state.done.result_source || state.done.result_source.startsWith("none");
+      enableSteps();
+      updateStageBar();
+      resolve();
+    });
+    state.stream.addEventListener("error", (m) => {
+      state.stream.close();
+      $("search-progress").textContent = m.data ? `Failed: ${JSON.parse(m.data).message}`
+        : "The candidate stream stopped unexpectedly.";
+      resolve();
+    });
   });
 }
+$("to-candidates").addEventListener("click", streamCandidates);
 
-document.getElementById("to-candidates").addEventListener("click", () => {
-  showStep(3);
-  streamCandidates();
-});
-
-document.getElementById("back-to-2").addEventListener("click", () => {
-  if (state.stream) state.stream.close();
-  showStep(2);
-});
-
-// ---------- screen 4 ----------
+// ---------- edit ----------
 function currentValues() {
   const values = {};
   document.querySelectorAll("#sliders input").forEach((input) => (values[input.name] = Number(input.value)));
@@ -267,12 +378,11 @@ function currentValues() {
 }
 
 async function rebuild() {
-  const status = document.getElementById("model-status");
+  const status = $("model-status");
   status.textContent = "Building…";
   const started = performance.now();
   const response = await fetch(`/api/runs/${state.run}/model`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ parameters: currentValues() }),
   });
   if (!response.ok) {
@@ -284,41 +394,55 @@ async function rebuild() {
 }
 
 function slider(parameter) {
-  const range = Number(css("--slider-range"));
   const value = parameter.default;
-  const span = Math.max(Math.abs(value) * range, 1);  // at least ±1 for zero or tiny defaults
+  const span = Math.max(Math.abs(value) * Number(css("--slider-range")), 1);
   const row = document.createElement("label");
   row.className = "slider";
-  row.innerHTML = `<span>${parameter.name}</span><output>${value}</output>
-    <input type="range" name="${parameter.name}" min="${value - span}" max="${value + span}" step="0.1" value="${value}">`;
+  const min = (value - span).toFixed(1);
+  const max = (value + span).toFixed(1);
+  row.innerHTML = `<span class="name">${parameter.name}</span><output>${value}</output>
+    <input type="range" name="${parameter.name}" min="${min}" max="${max}" step="0.1" value="${value}">
+    <span class="range"><span>${min}</span><span>default ${value}</span><span>${max}</span></span>`;
   const input = row.querySelector("input");
   input.dataset.default = value;
-  input.addEventListener("input", () => (row.querySelector("output").textContent = input.value));
-  input.addEventListener("change", rebuild);  // on release, not while dragging
+  input.addEventListener("input", () => {
+    row.querySelector("output").textContent = input.value;
+    row.classList.toggle("changed", Number(input.value) !== Number(input.dataset.default));
+  });
+  input.addEventListener("change", rebuild);
   return row;
 }
 
 async function showModel() {
-  showStep(4);
-  if (!state.viewer) state.viewer = createViewer(document.getElementById("viewer"));
+  setScreen("edit");
+  if (!state.viewer) state.viewer = createViewer($("viewer"));
   state.viewer.resize();
   state.viewer.reset();
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
-  document.getElementById("model-source").textContent =
-    `${state.winner.program} (${state.winner.source}), ${state.winner.parameters.length} parameters.`;
-  const sliders = document.getElementById("sliders");
+  $("model-source").textContent = `${state.winner.program} · ${state.winner.source}`;
+  const sliders = $("sliders");
   sliders.innerHTML = "";
   state.winner.parameters.forEach((p) => sliders.appendChild(slider(p)));
+  updateStageBar();
   await rebuild();
 }
+$("to-model").addEventListener("click", showModel);
 
-// ---------- screen 5 ----------
+$("reset-parameters").addEventListener("click", () => {
+  document.querySelectorAll("#sliders .slider").forEach((row) => {
+    const input = row.querySelector("input");
+    input.value = input.dataset.default;
+    row.querySelector("output").textContent = input.value;
+    row.classList.remove("changed");
+  });
+  rebuild();
+});
+
 async function downloadFile(format) {
-  const status = document.getElementById("download-status");
+  const status = $("download-status");
   status.textContent = `Preparing ${format.toUpperCase()}…`;
   const response = await fetch(`/api/runs/${state.run}/download?format=${format}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ parameters: currentValues() }),
   });
   if (!response.ok) {
@@ -333,39 +457,36 @@ async function downloadFile(format) {
   URL.revokeObjectURL(link.href);
   status.textContent = `Saved ${name}.`;
 }
-
-function showDownload() {
-  showStep(5);
-  document.getElementById("download-values").innerHTML = Object.entries(currentValues())
-    .map(([name, value]) => `<tr><td>${name}</td><td class="number">${value}</td></tr>`)
-    .join("");
-  document.getElementById("download-status").textContent = "";
-}
-
-document.querySelectorAll("#screen-5 button[data-format]").forEach((button) =>
-  button.addEventListener("click", () => downloadFile(button.dataset.format)));
-document.getElementById("to-download").addEventListener("click", showDownload);
-document.getElementById("back-to-4").addEventListener("click", () => showStep(4));
-
-document.getElementById("to-model").addEventListener("click", showModel);
-document.getElementById("back-to-3").addEventListener("click", () => showStep(3));
-document.getElementById("reset-parameters").addEventListener("click", () => {
-  document.querySelectorAll("#sliders input").forEach((input) => {
-    input.value = input.dataset.default;
-    input.closest(".slider").querySelector("output").textContent = input.value;
-  });
-  rebuild();
-});
+document.querySelectorAll(".exports button").forEach((b) => b.addEventListener("click", () => downloadFile(b.dataset.format)));
 
 // ---------- start ----------
 (async () => {
-  showStep(1);
+  setScreen("capture");
+  updateProcedure();
   const { runs } = await getJSON("/api/runs");
-  const select = document.getElementById("run-select");
-  select.innerHTML = runs.map((name) => `<option value="${name}">${name}</option>`).join("");
-  const initial = runs.includes("A_light") ? "A_light" : runs[0];
-  if (initial) {
-    select.value = initial;
-    await chooseRun(initial);
+  const examples = runs.filter((name) => !name.startsWith("live-"));
+  $("example-list").innerHTML = examples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
+  document.querySelectorAll("#example-list button").forEach((b) => b.addEventListener("click", () => chooseRun(b.dataset.run)));
+
+  // Deep link for screenshots and recordings: ?run=A_light&step=search
+  const params = new URLSearchParams(location.search);
+  const run = params.get("run");
+  if (!run || !runs.includes(run)) return;
+  const step = params.get("step") || "capture";
+  await chooseRun(run);
+  if (step === "capture") return;
+  await measure();
+  if (step === "measure") return;
+  await streamCandidates();
+  if (step !== "edit") return;
+  await showModel();
+  // &set=length:95,hole_diameter:7 moves sliders as a user would (to show a changed state).
+  const changes = (params.get("set") || "").split(",").filter(Boolean).map((pair) => pair.split(":"));
+  for (const [name, value] of changes) {
+    const input = document.querySelector(`#sliders input[name="${name}"]`);
+    if (!input) continue;
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
   }
+  if (changes.length) await rebuild();
 })();
