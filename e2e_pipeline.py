@@ -7,7 +7,7 @@ Steps and their outputs (in the scene's output folder):
      Open suggests SAM prompts, fixed fallbacks after that); the part is cropped (with a
      margin) and segmented again to see small holes in more detail
   3  measurement tables from three hole methods (full SAM mask, cropped SAM mask, color),
-     each compared with the truth; the cropped mask is used unless its holes look wrong
+     each compared with the truth; color is used unless its holes look wrong, then the cropped mask
   4  candidate programs from Muse Spark Open, plus a baseline program without a language model
   5  compile, render, IoU, topology check, variety; the winner (correct topology first, then
      IoU, then fewer parameters) and the baseline get the design-intent test
@@ -183,7 +183,14 @@ def measure(out, image, card, part, crop_mask, truth, true_masks):
     tables = {name: measure_part(mask, homography) for name, mask in masks.items()}
     comparisons = {name: compare_to_truth(table, truth) for name, table in tables.items()}
 
-    chosen = "sam_crop" if "sam_crop" in tables and holes_look_right(tables["sam_crop"]) else "color"
+    # Color first: it was the most accurate in every synthetic scene. The cropped SAM mask is the
+    # fallback; its holes came out about 3% too large there.
+    if holes_look_right(tables["color"]):
+        chosen = "color"
+    elif "sam_crop" in tables and holes_look_right(tables["sam_crop"]):
+        chosen = "sam_crop"
+    else:
+        chosen = "color"
     table = tables[chosen]
     save_json(out / "3_measurements.json", {
         "chosen_method": chosen, "table": table, "card_edge_differences": edge_differences(corners),
