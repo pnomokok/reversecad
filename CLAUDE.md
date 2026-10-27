@@ -69,14 +69,16 @@ Summary of Meta's docs. Source: Meta Model API docs, "Segment Anything Model" pa
 **Response**
 - Comes as text, with a special syntax. Example: `<0f>0<|box;x1=353;y1=382;x2=453;y2=427;w=537;h=561;c=0.96|><|mask;x=0;y=0;c=0.96;data=46,101,!...|>`
 - The box (`box`) is in the source photo's pixels; `x2`, `y2` are inclusive. `w`, `h` are the photo's size.
-- The mask (`mask`) is not full photo size but a smaller raster: `data=<height>,<width>,...`. Based on the example numbers (box 101×46, mask 101×46), the mask most likely covers **the inside of the box**; to place it on the full photo it must be shifted by the box's top-left corner (`x1`, `y1`). This is an inference, not stated explicitly in the docs: **verify it on the first real call by drawing the mask over the photo.**
+- The mask (`mask`) is not full photo size but a smaller raster: `data=<height>,<width>,...`. It covers **the inside of the box** and is placed on the full photo at the box's top-left corner (`x1`, `y1`). **Verified** on the first real call: raster size equals box size and the placed mask's extent matches the box exactly. The parser exposes this as the mask record's `bounds`.
 - If there is no match, the response is empty; this is not an error but a normal result, handle it separately in code.
 - When the same request is repeated, box and mask edges may vary slightly. Account for this in measurement tests.
 
 **Parsing: don't write it by hand, use the library**
 - `pip install meta-sam-parser` (Python ≥ 3.10, no dependencies; import name `meta_sam_parser`). Since we'll use the confidence score, the version must be at least 0.0.6.
 - Mask decoding: `decode_mask_to_raster` (0/1 values, row-major, length height × width), `decode_mask_to_rle` (COCO RLE), `decode_mask_to_svg_path`.
-- The names of the stream-parsing functions reflect the TypeScript version (in TypeScript, `parseImageStream`, `recordsOfKind`). Check the exact Python names from the package itself; don't guess.
+- The names of the stream-parsing functions reflect the TypeScript version (in TypeScript, `parseImageStream`, `recordsOfKind`). Check the exact Python names from the package itself; don't guess. In Python (checked, v0.1.0): `parser = image_segmentation_format().create_parser()`, `parser.push(text)`, `parser.finish(CompletedOutcome()).result.records` (`SegmentationBoxRecord` with half-open `left/top/right/bottom`, `SegmentationMaskRecord` with `mask`, `bounds`, `confidence`). The async `parse_responses_stream` also exists; we collect the stream text synchronously instead (`sam_client.py`).
+- Prompt wording matters: `credit card` returned nothing for the sample's transit card (Bursakart, same ID-1 size); `card` works.
+- Repeatability: three identical requests returned identical boxes, masks and confidences. Identical input bytes give identical output; variation should be measured with separate photos of the same scene.
 
 **Phone photo trap: EXIF orientation**
 Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coordinates according to the orientation the photo **appears on screen**. Before sending a photo, apply `ImageOps.exif_transpose` with Pillow, and use the corrected version both for SAM and in your own measurement code; otherwise the mask and the photo end up 90 degrees off.
@@ -106,5 +108,5 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
 - [x] Hand-written simple CadQuery part + orthographic silhouette render (`parts/holed_plate.py`, `render_silhouette.py`, tests: `.venv\Scripts\python.exe -m pytest`). A holed plate was chosen over an L-bracket: from above, an L-bracket's silhouette is just a rectangle and the "L" is lost (that belongs to alignment and multi-view validation), while a holed plate shows both the outer edge and the holes.
 - [x] IoU function (centering + alignment) and its tests (`iou.py`). Scale is normalized from known mm/px, never fitted (a 10% larger plate scores 0.83). Tries 0/180 degrees x mirrored and reports the winner. **Known weakness:** small holes barely move IoU (plate without holes 0.963, wrong orientation of an asymmetric plate about 0.90), so IoU alone cannot validate holes; hole count/diameter/position must be checked separately against the measurement table.
 - [x] First call to Baseten (`try_baseten.py`): text → CadQuery code and image → shape description both work; outputs in `outputs/baseten/`.
-- [ ] Calling SAM 3.1 from code
+- [x] Calling SAM 3.1 from code (`sam_client.py`, `measure.py`, `overlay.py`, `try_sam.py`). Sample photo: card mm/px long 0.09583 vs short 0.09429 (1.62%, under the 2% oblique threshold); key 55.60 mm vs ruler 55-56 mm (+0.18% vs 55.5); 3 identical runs gave 0.00 mm spread.
 - [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU
