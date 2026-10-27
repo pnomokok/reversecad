@@ -24,6 +24,7 @@ from candidates import extract_python_block, generate_candidates
 from design_intent import evaluate as evaluate_design_intent
 from design_intent import parameters
 from deviation_check import check_deviation
+from model_view import model_view
 from homography import card_corners, card_homography, edge_differences, is_tilted, largest_contour, rectify_image
 from iou import aligned_iou
 from measure import CARD_LONG_MM, CARD_SHORT_MM, card_scale
@@ -285,10 +286,16 @@ def make_candidates(out, folder_name, table, count):
         responses = [json.loads(p.read_text(encoding="utf-8")) for p in cached[:count]]
         print(f"[4] using {count} cached candidates from {folder_name}/")
     else:
-        prompt, responses = generate_candidates(table, out / "3_part_mask_topdown.png", count)
+        prompt, responses = generate_candidates(model_view(table), out / "3_part_mask_topdown.png", count)
         (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
         for i, response in enumerate(responses, 1):
             save_json(folder / f"cand_{i}_response.json", response)
+    tokens = [(r.get("usage") or {}).get("completion_tokens") for r in responses if "error" not in r]
+    seconds = [r["elapsed_s"] for r in responses if "elapsed_s" in r]
+    if tokens:
+        print(f"[4] output tokens: mean {np.mean(tokens):.0f}, max {max(tokens)}"
+              + (f"; request time: mean {np.mean(seconds):.0f} s, batch {responses[0]['batch_elapsed_s']:.0f} s"
+                 if seconds else ""))
     entries = []
     for i, response in enumerate(responses, 1):
         path = folder / f"cand_{i}.py"
@@ -321,7 +328,8 @@ def check_program(path, reference, truth=None, measured_table=None):
     alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)
     table = measure_part(mask, SCALE)
     ok, issues = check_topology(table, truth) if truth else (None, [])
-    deviation_ok, deviation_rows = check_deviation(measured_table, table) if measured_table else (True, [])
+    deviation_ok, deviation_rows = check_deviation(model_view(measured_table), table) if measured_table \
+        else (True, [])
     return {"file": str(path), "iou": round(alignment.iou, 4), "topology_ok": ok, "topology_issues": issues,
             "deviation_ok": deviation_ok, "deviation": deviation_rows,
             "outline_mm": [table["outline"]["length_mm"], table["outline"]["width_mm"]],
@@ -410,7 +418,7 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
 
 
 def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, candidate_count,
-              candidates_folder="candidates_intent", click=True):
+              candidates_folder="candidates_kit", click=True):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     print(f"\n######## scene {name} ########")
@@ -429,7 +437,7 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     return result
 
 
-def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_intent",
+def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_kit",
               suggest=True):
     """The same pipeline on a real photo: no ground truth, the part is picked by `click` (x, y in pixels).
 

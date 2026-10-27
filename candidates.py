@@ -7,17 +7,20 @@ than cadquery/math and calls such as open/exec/eval: the code comes from a
 language model and runs on this machine.
 """
 import ast
+import inspect
 import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
+import partkit
 from baseten_client import MODEL, image_data_url, make_client
 
 MAX_TOKENS = 16000  # reasoning tokens count toward this limit; 8000 ran out before any code
 TEMPERATURE = 0.8  # some variety between candidates
 MAX_PARALLEL_REQUESTS = 5
 FUNCTION_NAME = "build_part"
-ALLOWED_IMPORTS = {"cadquery", "math"}
+ALLOWED_IMPORTS = {"cadquery", "math", "partkit"}
 BLOCKED_NAMES = {
     "open", "exec", "eval", "compile", "__import__", "input", "globals", "locals", "vars",
     "getattr", "setattr", "delattr", "breakpoint", "exit", "quit", "show_object",
@@ -51,16 +54,18 @@ Requirements:
   * features such as tabs, arms or notches get their own dimensions (e.g. tab_length, tab_width, arm_width)
     instead of a list of raw corner coordinates.
   Values that differ by less than about 0.5 mm are measurement noise of the same design value.
-- Irregular measured edges (torn or hand-cut, e.g. many close corners along what should be one edge, or
-  slightly wobbly hole outlines) may be replaced by the clean shape a designer would have meant: a straight
-  edge, a rectangle, an arc. But every default dimension must stay within max(1 mm, 2% of that dimension)
-  of the table (hole positions: 2% of the part's length); a part that strays further is rejected.
+- Irregular measured edges (torn or hand-cut, slightly wobbly hole outlines) may be replaced by the clean
+  shape a designer would have meant: a straight edge, a rectangle, an arc. Limits with the default arguments,
+  or the part is rejected: outline length and width within max(1 mm, 2%) of the table; every outline corner
+  within that distance of your outline (0.5 mm for corners of features with an edge under 20 mm, such as tabs
+  and notches); holes within 0.5 mm in size and position.
 - Placement: X = u, Y = v, bottom face at Z = 0, top face at Z = thickness.
-- Place holes at their absolute [u, v] coordinates, e.g. with `.pushPoints([...])`. Avoid `.center()` for this:
-  it moves the workplane origin cumulatively, so a second `.center()` is relative to the first.
-- Draw a polygon outline with `.polyline(points).close()` using the full list of corners. Do not combine
-  `.moveTo(first)` with `.polyline(rest)`: polyline drops the current point by default, losing a corner.
-- Only `import cadquery as cq` (and `import math` if needed). Do not use show_object, file I/O or print.
+- Build the part with the helper library `partkit` (`import partkit as pk`); it takes absolute coordinates
+  and is tested. Plain CadQuery is allowed for anything it does not cover. You decide the structure and the
+  parameters; the helpers only do the geometry:
+{partkit}
+- Only `import cadquery as cq`, `import partkit as pk` and `import math`. Do not use show_object, file I/O
+  or print.
 - Reply with a single ```python code block and nothing else."""
 
 
@@ -73,10 +78,23 @@ HOLE_FIELDS = {  # what the model needs per hole shape; quality scores are left 
 }
 
 
-def build_prompt(table):
-    shown = {key: value for key, value in table.items() if key != "center_on_table_mm"}  # irrelevant to the model
-    shown["holes"] = [{field: hole[field] for field in HOLE_FIELDS[hole["shape"]]} for hole in table["holes"]]
-    return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME)
+def partkit_reference():
+    """One line per partkit function: signature and docstring, generated so it never drifts from the code."""
+    lines = []
+    for name in partkit.__all__:
+        function = getattr(partkit, name)
+        doc = " ".join(inspect.getdoc(function).split())
+        lines.append(f"    pk.{name}{inspect.signature(function)}: {doc}")
+    return "\n".join(lines)
+
+
+def build_prompt(view):
+    """Prompt text for a model view of the table (see model_view.py)."""
+    shown = {"outline": {key: view["outline"][key] for key in ("length_mm", "width_mm", "vertex_count", "polygon_mm")},
+             "hole_count": view["hole_count"],
+             "holes": [{field: hole[field] for field in HOLE_FIELDS[hole["shape"]]} for hole in view["holes"]]}
+    return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME,
+                                  partkit=partkit_reference())
 
 
 def extract_python_block(text):
@@ -112,6 +130,7 @@ def check_code(code):
 
 
 def _request_one(client, prompt, image_url):
+    started = time.perf_counter()
     response = client.chat.completions.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
@@ -124,14 +143,20 @@ def _request_one(client, prompt, image_url):
             ],
         }],
     )
-    return response.model_dump()
+    result = response.model_dump()
+    result["elapsed_s"] = round(time.perf_counter() - started, 1)  # wall time of this request
+    return result
 
 
-def generate_candidates(table, mask_image_path, count):
-    """Return (prompt, `count` results: each the raw response dict, or {"error": message})."""
+def generate_candidates(view, mask_image_path, count):
+    """Return (prompt, `count` results: each the raw response dict, or {"error": message}).
+
+    view is the model's view of the measurement table (model_view.py).
+    """
     client = make_client()
-    prompt = build_prompt(table)
+    prompt = build_prompt(view)
     image_url = image_data_url(mask_image_path)
+    started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS)) as pool:
         futures = [pool.submit(_request_one, client, prompt, image_url) for _ in range(count)]
         results = []
@@ -140,4 +165,7 @@ def generate_candidates(table, mask_image_path, count):
                 results.append(future.result())
             except Exception as error:  # keep the other candidates if one request fails
                 results.append({"error": f"{type(error).__name__}: {error}"})
+    batch_seconds = round(time.perf_counter() - started, 1)
+    for result in results:
+        result["batch_elapsed_s"] = batch_seconds  # all requests, MAX_PARALLEL_REQUESTS at a time
     return prompt, results

@@ -16,9 +16,9 @@ from e2e_pipeline import run_photo
 PHOTO_DIR = Path("data") / "private"
 OUT = Path("outputs") / "real"
 PHOTOS = {
-    # candidates_intent/ holds the first run (no code: stuck on the torn edge); this prompt allows clean shapes.
+    # Earlier rounds: candidates_intent/ (no code, stuck on the torn edge), candidates_clean/ (clean shapes allowed).
     "carton": {"file": "carton_with_card.jpeg", "click": (550, 980), "candidates": 10,
-               "candidates_folder": "candidates_clean",
+               "candidates_folder": "candidates_kit",
                "ruler_outline": (188, 91), "ruler_holes": [(20, 8), (13, 7)]},
     "key": {"file": "key_with_card.jpeg", "click": (480, 1103), "candidates": 0,  # outline out of scope
             "ruler_outline": (57, 22.5), "ruler_holes": [(12, 6)]},

@@ -70,6 +70,98 @@ def outline_polygon(contour_mm):
     return np.array(corners)
 
 
+def simplify_tolerance(width_mm):
+    """How far the simplified outline may stray: the outline's deviation limit, max(1 mm, 2% of the width)."""
+    return max(1.0, 0.02 * width_mm)
+
+
+def _distance_to_fitted_line(points):
+    """Largest distance of the points from their least-squares line."""
+    vx, vy, x0, y0 = cv2.fitLine(points.astype(np.float32), cv2.DIST_L2, 0, 0.01, 0.01).ravel()
+    return float(np.max(np.abs((points[:, 0] - x0) * vy - (points[:, 1] - y0) * vx)))
+
+
+def _is_smooth_arc(points, max_radius_mm):
+    """Do the points lie on a circle (a designed round notch or corner) rather than a ragged edge?"""
+    x, y = points[:, 0], points[:, 1]
+    # Algebraic (Kasa) circle fit: x^2 + y^2 + D x + E y + F = 0
+    matrix = np.column_stack([x, y, np.ones_like(x)])
+    d, e, f = np.linalg.lstsq(matrix, -(x**2 + y**2), rcond=None)[0]
+    cx, cy = -d / 2, -e / 2
+    radius = math.sqrt(max(cx**2 + cy**2 - f, 0))
+    if not 0 < radius <= max_radius_mm:
+        return False
+    residual = np.sqrt(np.mean((np.hypot(x - cx, y - cy) - radius) ** 2))
+    angles = np.unwrap(np.arctan2(y - cy, x - cx))
+    span = math.degrees(abs(angles[-1] - angles[0]))
+    return residual <= 0.2 and span >= 60
+
+
+def least_squares_outline(contour_mm, epsilon_mm, max_flatten_mm, merge_angle_deg=40):
+    """Clean outline for the model: few corners, each edge the least-squares line through its points.
+
+    approxPolyDP finds the corners within epsilon_mm. A torn edge still zigzags with shallow turns,
+    while designed features (tabs, L corners, notches) turn sharply, so corners turning less than
+    merge_angle_deg are removed (gentlest first), as long as the merged edge's points stay within
+    max_flatten_mm of its least-squares line and do not form a smooth arc (a round notch is a feature,
+    not a tear; its radius is at most max_flatten_mm). Each edge is then the least-squares line through its
+    points, not its outermost points, and corners are where neighboring lines meet.
+    """
+    contour_mm = np.asarray(contour_mm, dtype=np.float64)
+    approx = cv2.approxPolyDP(contour_mm.reshape(-1, 1, 2).astype(np.float32), epsilon_mm, True).reshape(-1, 2)
+    indices = sorted(int(np.argmin(np.linalg.norm(contour_mm - p, axis=1))) for p in approx)
+
+    def edge_points(start, end):
+        return contour_mm[start:end + 1] if end > start else np.vstack([contour_mm[start:], contour_mm[:end + 1]])
+
+    def direction(start, end):
+        d = contour_mm[end] - contour_mm[start]
+        return math.degrees(math.atan2(d[1], d[0]))
+
+    # A round notch shows up as a smooth-arc edge between short edges; protect its corners and the far
+    # corners of its short neighbors, so the notch is not flattened together with a torn edge.
+    protected = set()
+    count = len(indices)
+    for i in range(count):
+        start, end = indices[i], indices[(i + 1) % count]
+        if _is_smooth_arc(edge_points(start, end), max_flatten_mm * 2):
+            protected.update({start, end})
+            for j, far in [((i - 1) % count, indices[(i - 1) % count]), ((i + 1) % count, indices[(i + 2) % count])]:
+                a, b = indices[j], indices[(j + 1) % count]
+                if np.linalg.norm(contour_mm[b] - contour_mm[a]) < 20:
+                    protected.add(far)
+
+    while len(indices) > 3:
+        candidates = []
+        for i in range(len(indices)):
+            previous, current, following = indices[i - 1], indices[i], indices[(i + 1) % len(indices)]
+            turn = abs((direction(current, following) - direction(previous, current) + 180) % 360 - 180)
+            if (turn < merge_angle_deg and current not in protected
+                    and _distance_to_fitted_line(edge_points(previous, following)) <= max_flatten_mm):
+                candidates.append((turn, i))
+        if not candidates:
+            break
+        indices.pop(min(candidates)[1])
+    count = len(indices)
+    if count < 3:
+        return contour_mm[indices]
+    lines = []
+    for i in range(count):
+        points = edge_points(indices[i], indices[(i + 1) % count])
+        trim = int(len(points) * 0.1)
+        middle = points[trim:len(points) - trim] if len(points) - 2 * trim >= 5 else points
+        vx, vy, x0, y0 = cv2.fitLine(middle.astype(np.float32), cv2.DIST_L2, 0, 0.01, 0.01).ravel()
+        lines.append((np.array([x0, y0]), np.array([vx, vy])))
+    corners = []
+    for i in range(count):
+        corner = _intersect(lines[i - 1], lines[i])
+        fallback = contour_mm[indices[i]]
+        if corner is None or np.linalg.norm(corner - fallback) > 3 * epsilon_mm:
+            corner = fallback
+        corners.append(corner)
+    return np.array(corners)
+
+
 # ---------- hole shapes ----------
 def _rectangle(center, length, width, angle):
     along, across = np.array([math.cos(angle), math.sin(angle)]), np.array([-math.sin(angle), math.cos(angle)])
@@ -192,12 +284,21 @@ def measure_part(part_mask, homography):
     holes.sort(key=lambda hole: tuple(hole["center_from_part_center_mm"]))
 
     corners = [to_part_frame(x, y) for x, y in outline_polygon(outer_mm)]
+    contour_part = np.array([to_part_frame(x, y) for x, y in outer_mm])
+    tolerance_mm = simplify_tolerance(width)
+    simplified = least_squares_outline(contour_part, tolerance_mm, max_flatten_mm=0.1 * width)
+    # The outline itself at 0.1 mm detail, for checking how close a candidate's outline comes to it.
+    detailed = cv2.approxPolyDP(contour_part.reshape(-1, 1, 2).astype(np.float32), 0.1, True).reshape(-1, 2)
     return {
         "outline": {
             "length_mm": round(float(length), 2),
             "width_mm": round(float(width), 2),
             "vertex_count": len(corners),
             "polygon_mm": corners,
+            # for the model: few corners, least-squares edges (see least_squares_outline)
+            "simplified_polygon_mm": [[round(float(u), 2), round(float(v), 2)] for u, v in simplified],
+            "simplify_tolerance_mm": round(tolerance_mm, 2),
+            "contour_mm": [[round(float(u), 2), round(float(v), 2)] for u, v in detailed],
             # 1.0 = a perfect rectangle (area of the outline / area of its bounding rectangle)
             "rectangle_fill_ratio": round(float(cv2.contourArea(outer_mm.astype(np.float32)) / (length * width)), 3),
         },
