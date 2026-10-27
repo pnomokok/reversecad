@@ -43,6 +43,16 @@ Only flat-faced, prismatic parts with holes: brackets, plates, covers, simple ta
 
 Environment variables: `BASETEN_API_KEY`, `MODEL_API_KEY` (Meta Model API key; Meta's docs use this name). Both in `.env`.
 
+## How to call Muse Spark Open
+
+From Baseten's docs plus our first calls (`baseten_client.py`, `try_baseten.py`).
+
+- OpenAI-compatible Chat Completions API: `base_url="https://inference.baseten.co/v1"`, `api_key=BASETEN_API_KEY`, `model="meta-models/muse-spark-open-1026"` (the hackathon key only works with this name).
+- Accepts text, image, audio and video; returns text. Images go in as base64 data URLs (`image_url` content part).
+- The model always reasons. The reasoning arrives in `choices[0].message.reasoning_content`, the answer in `choices[0].message.content`. Reasoning tokens count toward `max_tokens` (first calls: 65-85% of output tokens were reasoning), so keep `max_tokens` generous and check `finish_reason == "stop"`.
+- An image of about 840 × 440 px cost about 475 prompt tokens; `usage.prompt_tokens_details.image_tokens` comes back empty.
+- Code prompts must say: fixed function name, no `show_object(...)` (CQ-editor only; raises `NameError` in our code), a single ```python block. In image prompts, say "white = part, black = background" (the model read the render's black margin as a "thick border").
+
 ## How to call SAM 3.1
 
 Summary of Meta's docs. Source: Meta Model API docs, "Segment Anything Model" pages.
@@ -95,6 +105,6 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
 - [x] Python environment, git, `.gitignore`, `.env` (`.venv` + `requirements.txt`, check: `.venv\Scripts\python.exe check_env.py`)
 - [x] Hand-written simple CadQuery part + orthographic silhouette render (`parts/holed_plate.py`, `render_silhouette.py`, tests: `.venv\Scripts\python.exe -m pytest`). A holed plate was chosen over an L-bracket: from above, an L-bracket's silhouette is just a rectangle and the "L" is lost (that belongs to alignment and multi-view validation), while a holed plate shows both the outer edge and the holes.
 - [x] IoU function (centering + alignment) and its tests (`iou.py`). Scale is normalized from known mm/px, never fitted (a 10% larger plate scores 0.83). Tries 0/180 degrees x mirrored and reports the winner. **Known weakness:** small holes barely move IoU (plate without holes 0.963, wrong orientation of an asymmetric plate about 0.90), so IoU alone cannot validate holes; hole count/diameter/position must be checked separately against the measurement table.
-- [ ] First call to Baseten
+- [x] First call to Baseten (`try_baseten.py`): text → CadQuery code and image → shape description both work; outputs in `outputs/baseten/`.
 - [ ] Calling SAM 3.1 from code
 - [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU
