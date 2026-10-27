@@ -115,7 +115,8 @@ def segment_crop(sam, image, part_mask, prompt, click=None):
 
 
 # ---------- step 2 ----------
-def find_masks(out, image, sam, click, photo_path):
+def find_masks(out, image, sam, click, photo_path, suggest=True):
+    """Card and part masks. suggest=False never sends the photo to Muse Spark Open for prompt names."""
     attempts, card = [], None
     for prompt in CARD_PROMPTS:
         detections = sam.segment(image, prompt)
@@ -141,7 +142,7 @@ def find_masks(out, image, sam, click, photo_path):
 
     options = try_prompts([(point_prompt(image.size, *click), "point")], "click") if click else []
     suggestions = None
-    if not options:  # fall back to finding the part by name
+    if not options and suggest:  # fall back to finding the part by name
         suggestions_path = out / "2_prompt_suggestions.json"
         if suggestions_path.exists():
             suggestions = json.loads(suggestions_path.read_text(encoding="utf-8"))
@@ -383,14 +384,18 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     return result
 
 
-def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_intent"):
-    """The same pipeline on a real photo: no ground truth, the part is picked by `click` (x, y in pixels)."""
+def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_intent",
+              suggest=True):
+    """The same pipeline on a real photo: no ground truth, the part is picked by `click` (x, y in pixels).
+
+    suggest=False keeps the photo away from Muse Spark Open (only SAM sees it).
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     print(f"\n######## photo {name} ########")
     image = load_photo(photo_path)
     sam = SamCache(out / "sam")
-    card, part, crop_mask, source = find_masks(out, image, sam, click, photo_path)
+    card, part, crop_mask, source = find_masks(out, image, sam, click, photo_path, suggest)
     table, reference, _, hole_method = measure(out, image, card, part, crop_mask)
     result = {"photo": name, "part_found_by": source, "hole_method": hole_method, "table": table}
     if candidate_count:

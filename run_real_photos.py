@@ -20,6 +20,12 @@ PHOTOS = {
                "ruler_outline": (188, 91), "ruler_holes": [(20, 8), (13, 7)]},
     "key": {"file": "key_with_card.jpeg", "click": (480, 1103), "candidates": 0,  # outline out of scope
             "ruler_outline": (57, 22.5), "ruler_holes": [(12, 6)]},
+    # Stress test: the pockets are blind cavities under clear plastic domes, not through-holes.
+    # The user asked that this photo never leaves data/private (only SAM may see it): outputs stay there
+    # and no prompt suggestions are requested.
+    "blister": {"file": "drug_with_card.jpeg", "click": (720, 1080), "candidates": 0,
+                "ruler_outline": (70.5, 52), "ruler_holes": [(23, 23)] * 4,
+                "out": PHOTO_DIR / "blister_run", "suggest": False},
 }
 
 
@@ -46,7 +52,8 @@ def compare_with_ruler(name, config, table):
 def main(names):
     for name in names or PHOTOS:
         config = PHOTOS[name]
-        result = run_photo(name, PHOTO_DIR / config["file"], config["click"], OUT / name, config["candidates"])
+        result = run_photo(name, PHOTO_DIR / config["file"], config["click"], config.get("out", OUT / name),
+                           config["candidates"], suggest=config.get("suggest", True))
         compare_with_ruler(name, config, result["table"])
 
 
