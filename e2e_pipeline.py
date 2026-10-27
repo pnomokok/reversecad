@@ -41,6 +41,7 @@ SCALE = np.diag([MM_PER_PIXEL, MM_PER_PIXEL, 1.0])  # render pixels -> mm
 CARD_PROMPTS = ["credit card", "card", "bank card"]
 FALLBACK_PART_PROMPTS = ["metal plate", "plate", "flat metal part"]
 CROP_MARGIN = 0.15  # crop margin as a share of the part's larger side
+FALLBACK_LABEL = "fallback: measured shape, no design intent"
 MIN_HOLE_SOLIDITY = 0.9  # area / convex hull area; fragments and bites score lower
 MIN_HOLE_DIAMETER_MM = 1.5
 
@@ -278,7 +279,7 @@ def measure(out, image, card, part, crop_mask, truth=None, true_masks=None):
 
 
 # ---------- step 4 ----------
-def make_candidates(out, folder_name, table, count):
+def make_candidates(out, folder_name, table, count, reasoning_effort=None):
     folder = out / folder_name
     folder.mkdir(exist_ok=True)
     cached = sorted(folder.glob("cand_*_response.json"), key=lambda p: int(p.stem.split("_")[1]))
@@ -286,7 +287,8 @@ def make_candidates(out, folder_name, table, count):
         responses = [json.loads(p.read_text(encoding="utf-8")) for p in cached[:count]]
         print(f"[4] using {count} cached candidates from {folder_name}/")
     else:
-        prompt, responses = generate_candidates(model_view(table), out / "3_part_mask_topdown.png", count)
+        prompt, responses = generate_candidates(model_view(table), out / "3_part_mask_topdown.png", count,
+                                                reasoning_effort)
         (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
         for i, response in enumerate(responses, 1):
             save_json(folder / f"cand_{i}_response.json", response)
@@ -409,16 +411,25 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
     def clean(row):
         return {k: v for k, v in row.items() if not k.startswith("_")} if row else None
 
+    # Safety net: if no candidate passed, the result is the baseline, clearly marked as such.
+    if best is not None:
+        result, result_source = clean(best), "candidate"
+    elif "iou" in baseline:
+        result, result_source = clean(baseline), FALLBACK_LABEL
+        print(f"    no candidate passed -> result is the baseline ({FALLBACK_LABEL})")
+    else:
+        result, result_source = None, "none: no candidate and no baseline compiled"
     summary = {"iou_ceiling": round(ceiling, 4), "compiled": len(compiled), "within_deviation": len(eligible),
                "correct_topology": len(correct),
                "candidate_count": len(rows), "distinct_shapes": len(shapes), "winner": clean(best),
+               "result": result, "result_source": result_source,
                "baseline": clean(baseline), "candidates": [clean(r) for r in rows]}
     save_json(out / f"5_summary_{folder_name}.json", summary)
     return summary
 
 
 def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, candidate_count,
-              candidates_folder="candidates_arcs", click=True):
+              candidates_folder="candidates_arcs", click=True, reasoning_effort=None):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     print(f"\n######## scene {name} ########")
@@ -431,7 +442,7 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     table, reference, comparisons, hole_method = measure(out, image, card, part, crop_mask, truth, true_masks)
     result = {"scene": name, "part_found_by": source, "hole_method": hole_method, "hole_methods": comparisons}
     if candidate_count:
-        entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count)
+        entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count, reasoning_effort)
         result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference, truth,
                                         truth_workplane, table)
     return result

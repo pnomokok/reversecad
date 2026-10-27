@@ -8,6 +8,7 @@ and a comparison table of all scenes to outputs/e2e/design_intent_table.json.
 
 Run all:   .venv\\Scripts\\python.exe run_template_scenes.py
 Run some:  .venv\\Scripts\\python.exe run_template_scenes.py B C
+Reasoning effort:  .venv\\Scripts\\python.exe run_template_scenes.py A_light B C D --effort=low
 """
 import json
 import sys
@@ -45,14 +46,18 @@ def table_row(name, result):
     return row
 
 
-def main(names):
+def main(arguments):
+    # --effort=low|medium|... sets Muse Spark Open's reasoning effort; candidates go to their own folder.
+    effort = next((a.split("=", 1)[1] for a in arguments if a.startswith("--effort=")), None)
+    names = [a for a in arguments if not a.startswith("--")]
+    folder = f"candidates_arcs_effort_{effort}" if effort else "candidates_arcs"
     rows = []
     for name in names or SCENES:
         config = SCENES[name]
         workplane = make_part(config["part"])
         photo, masks = make_scene(workplane, config["color"])
         result = run_scene(name, photo, masks, part_truth(config["part"]), workplane, OUT / name,
-                           config["candidates"])
+                           config["candidates"], candidates_folder=folder, reasoning_effort=effort)
         if config["candidates"]:
             rows.append(table_row(name, result))
     if rows:

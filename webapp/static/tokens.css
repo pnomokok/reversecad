@@ -1,0 +1,46 @@
+/* Design tokens: every color, size and font the app uses. The visual design is applied later
+   by changing only this file; app.css refers to these variables and holds no raw values of its own. */
+:root {
+  /* colors */
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-text: #1d2433;
+  --color-text-muted: #5b6475;
+  --color-border: #d9dde5;
+  --color-accent: #2f6fde;
+  --color-accent-text: #ffffff;
+  --color-ok: #1f8a4c;
+  --color-bad: #c43c3c;
+  --color-overlay-card: #2f6fde;
+  --color-overlay-part: #e8590c;
+  --color-overlay-hole: #f2c200;
+  --color-overlay-click: #c43c3c;
+  --color-overlay-label-bg: rgba(0, 0, 0, 0.65);
+  --color-overlay-label-text: #ffffff;
+
+  /* type */
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-size-small: 0.85rem;
+  --font-size-body: 1rem;
+  --font-size-title: 1.4rem;
+
+  /* spacing and shape */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --radius: 8px;
+  --overlay-line-width: 2;
+  --panel-width: 360px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #12151b;
+    --color-surface: #1b2029;
+    --color-text: #e6e9ef;
+    --color-text-muted: #9aa3b5;
+    --color-border: #2d3443;
+  }
+}

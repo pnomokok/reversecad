@@ -9,3 +9,6 @@ requests==2.34.2            # HTTP calls (Baseten)
 openai==3.39.0              # client for the OpenAI-compatible Meta Model API (SAM 3.1)
 meta-sam-parser==0.1.0      # parses SAM 3.1 responses (boxes, masks, confidence)
 pytest==9.1.1               # tests
+fastapi==0.162.0            # web app back end (webapp/)
+uvicorn==0.54.0             # runs the web app
+python-multipart==0.0.32    # photo uploads in the web app

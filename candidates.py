@@ -134,9 +134,12 @@ def check_code(code):
     return problems
 
 
-def _request_one(client, prompt, image_url):
+def _request_one(client, prompt, image_url, reasoning_effort=None):
     started = time.perf_counter()
+    # Baseten accepts reasoning_effort for Muse Spark Open: minimal, low, medium, high, xhigh, max, none.
+    extra = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
     response = client.chat.completions.create(
+        **extra,
         model=MODEL,
         max_tokens=MAX_TOKENS,
         temperature=TEMPERATURE,
@@ -153,17 +156,18 @@ def _request_one(client, prompt, image_url):
     return result
 
 
-def generate_candidates(view, mask_image_path, count):
+def generate_candidates(view, mask_image_path, count, reasoning_effort=None):
     """Return (prompt, `count` results: each the raw response dict, or {"error": message}).
 
-    view is the model's view of the measurement table (model_view.py).
+    view is the model's view of the measurement table (model_view.py); reasoning_effort None
+    leaves the model's default.
     """
     client = make_client()
     prompt = build_prompt(view)
     image_url = image_data_url(mask_image_path)
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS)) as pool:
-        futures = [pool.submit(_request_one, client, prompt, image_url) for _ in range(count)]
+        futures = [pool.submit(_request_one, client, prompt, image_url, reasoning_effort) for _ in range(count)]
         results = []
         for future in futures:
             try:

@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- ReverseCAD web app: the page skeleton. Screens are shown and hidden by app.js;
+     styles live in tokens.css (variables) and app.css (layout). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReverseCAD</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header>
+    <h1>ReverseCAD</h1>
+    <ol class="steps" id="steps">
+      <li data-step="1">1 Photo</li>
+      <li data-step="2">2 Measurements</li>
+      <li data-step="3">3 Candidates</li>
+      <li data-step="4">4 Model</li>
+      <li data-step="5">5 Download</li>
+    </ol>
+  </header>
+
+  <main>
+    <section class="stage">
+      <canvas id="photo-canvas"></canvas>
+    </section>
+
+    <!-- Screen 1: pick the photo, click the part, enter the thickness -->
+    <aside class="panel" id="screen-1">
+      <h2>1. Photo</h2>
+      <label>Saved run (replay, no API calls)
+        <select id="run-select"></select>
+      </label>
+      <label>Or upload a photo
+        <input type="file" id="photo-upload" accept="image/*" disabled>
+      </label>
+      <p class="hint">Upload works once the live pipeline is connected (a later step).</p>
+      <p class="hint">Click the part in the photo (not a hole). The red cross marks the click.</p>
+      <label>Thickness (mm)
+        <input type="number" id="thickness" value="3.0" min="0.1" step="0.1">
+      </label>
+      <button id="analyze" disabled>Measure</button>
+    </aside>
+
+    <!-- Screen 2: card, part and holes over the photo, plus the measurement table -->
+    <aside class="panel hidden" id="screen-2">
+      <h2>2. Measurements</h2>
+      <p class="hint" id="measure-summary"></p>
+      <table class="measurements" id="measure-table"></table>
+      <button id="back-to-1">Back</button>
+    </aside>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
