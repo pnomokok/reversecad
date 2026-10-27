@@ -51,7 +51,10 @@ Requirements:
   * features such as tabs, arms or notches get their own dimensions (e.g. tab_length, tab_width, arm_width)
     instead of a list of raw corner coordinates.
   Values that differ by less than about 0.5 mm are measurement noise of the same design value.
-  With the default arguments the part must still match the table within about 0.5 mm.
+- Irregular measured edges (torn or hand-cut, e.g. many close corners along what should be one edge, or
+  slightly wobbly hole outlines) may be replaced by the clean shape a designer would have meant: a straight
+  edge, a rectangle, an arc. But every default dimension must stay within max(1 mm, 2% of that dimension)
+  of the table (hole positions: 2% of the part's length); a part that strays further is rejected.
 - Placement: X = u, Y = v, bottom face at Z = 0, top face at Z = thickness.
 - Place holes at their absolute [u, v] coordinates, e.g. with `.pushPoints([...])`. Avoid `.center()` for this:
   it moves the workplane origin cumulatively, so a second `.center()` is relative to the first.

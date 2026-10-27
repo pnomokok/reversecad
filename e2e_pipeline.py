@@ -23,9 +23,10 @@ from baseline_cad import baseline_code
 from candidates import extract_python_block, generate_candidates
 from design_intent import evaluate as evaluate_design_intent
 from design_intent import parameters
-from homography import card_corners, card_homography, edge_differences, largest_contour, rectify_image
+from deviation_check import check_deviation
+from homography import card_corners, card_homography, edge_differences, is_tilted, largest_contour, rectify_image
 from iou import aligned_iou
-from measure import CARD_LONG_MM, CARD_SHORT_MM
+from measure import CARD_LONG_MM, CARD_SHORT_MM, card_scale
 from overlay import draw_overlay
 from part_measurements import check_topology, compare_to_truth, measure_part
 from prompt_suggestions import suggest_part_prompts
@@ -187,17 +188,39 @@ def describe_hole(hole):
     return f"{hole['shape']:9s} {size} mm at [{u:.1f}, {v:.1f}] (match {hole['shape_match']}, solidity {hole['solidity']})"
 
 
+def pixel_to_mm_scales(card_mask):
+    """Both pixel-to-mm mappings and which one the tilt rule picks.
+
+    Temporary rule: homography only when the card's opposite edges differ by more than 2% (tilted
+    camera); otherwise the simple mean card scale. On real photos with a small card and the part 1-2
+    card lengths away, the homography extrapolated corner errors (+4-10%); both results are kept.
+    """
+    corners = card_corners(largest_contour(card_mask))
+    differences = edge_differences(corners)
+    homography, _ = card_homography(corners)
+    mm_per_pixel = card_scale(card_mask).mm_per_pixel
+    simple = np.diag([mm_per_pixel, mm_per_pixel, 1.0])
+    chosen = "homography" if is_tilted(differences) else "simple"
+    return {"homography": homography, "simple": simple}, chosen, differences
+
+
 def measure(out, image, card, part, crop_mask, truth=None, true_masks=None):
     """Measurement tables from each hole method; truth and true masks are optional (real photos)."""
-    corners = card_corners(largest_contour(card.mask))
-    homography, _ = card_homography(corners)
+    scales, scale_used, differences = pixel_to_mm_scales(card.mask)
+    homography = scales[scale_used]
     masks = {"sam_full": part.mask}
     if crop_mask is not None:
         masks["sam_crop"] = crop_mask
     masks["color"], _ = refine_holes(image, part.mask)
     tables = {name: measure_part(mask, homography) for name, mask in masks.items()}
+    other_scale = "simple" if scale_used == "homography" else "homography"
+    other_tables = {name: measure_part(mask, scales[other_scale]) for name, mask in masks.items()}
+    print(f"[3] card edges L-R/T-B {[round(float(d) * 100, 2) for d in differences]} % -> using {scale_used} scale")
+    for name in masks:
+        print(f"    {name:9s} outline {scale_used}: {tables[name]['outline']['length_mm']} x "
+              f"{tables[name]['outline']['width_mm']} mm, {other_scale}: {other_tables[name]['outline']['length_mm']}"
+              f" x {other_tables[name]['outline']['width_mm']} mm")
     if truth is None:
-        print(f"[3] card edges L-R/T-B {[round(float(d) * 100, 2) for d in edge_differences(corners)]} %")
         for name, table in tables.items():
             print(f"    {name:9s} outline {table['outline']['length_mm']} x {table['outline']['width_mm']} mm, "
                   f"{table['outline']['vertex_count']} corners, {table['hole_count']} holes"
@@ -218,8 +241,10 @@ def measure(out, image, card, part, crop_mask, truth=None, true_masks=None):
         chosen = "color"
     table = tables[chosen]
     save_json(out / "3_measurements.json", {
-        "chosen_method": chosen, "table": table, "card_edge_differences": edge_differences(corners),
-        "tables": tables, "errors_vs_truth": comparisons,
+        "chosen_method": chosen, "scale_used": scale_used, "table": table, "card_edge_differences": differences,
+        "tables": tables, f"tables_with_{other_scale}_scale": other_tables, "errors_vs_truth": comparisons,
+        f"errors_vs_truth_with_{other_scale}_scale": {name: compare_to_truth(t, truth) for name, t in
+                                                     other_tables.items()} if truth else {},
         "mask_iou_vs_truth": {name: round(mask_iou(mask, true_masks["part"]), 4) for name, mask in masks.items()}
         if true_masks else None,
     })
@@ -284,10 +309,11 @@ def make_candidates(out, folder_name, table, count):
 
 
 # ---------- step 5 ----------
-def check_program(path, reference, truth=None):
+def check_program(path, reference, truth=None, measured_table=None):
     """Compile and score one program; returns a result row (without 'candidate').
 
-    Without a truth (real photos) topology_ok is None.
+    Without a truth (real photos) topology_ok is None. With the measured table, the deviation check
+    says whether the program's dimensions stay within the allowed distance of the measurements.
     """
     mask, error = run_candidate(path, MM_PER_PIXEL)
     if error:
@@ -295,7 +321,9 @@ def check_program(path, reference, truth=None):
     alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)
     table = measure_part(mask, SCALE)
     ok, issues = check_topology(table, truth) if truth else (None, [])
+    deviation_ok, deviation_rows = check_deviation(measured_table, table) if measured_table else (True, [])
     return {"file": str(path), "iou": round(alignment.iou, 4), "topology_ok": ok, "topology_issues": issues,
+            "deviation_ok": deviation_ok, "deviation": deviation_rows,
             "outline_mm": [table["outline"]["length_mm"], table["outline"]["width_mm"]],
             "corners": table["outline"]["vertex_count"], "hole_count": table["hole_count"],
             "hole_diameters_mm": sorted(h["diameter_mm"] for h in table["holes"]),
@@ -307,13 +335,18 @@ def check_program(path, reference, truth=None):
             "_alignment": alignment}
 
 
-def validate(out, folder_name, entries, baseline_path, reference, truth=None, truth_workplane=None):
-    """Score all candidates and the baseline. Truth and the true part are optional (real photos)."""
+def validate(out, folder_name, entries, baseline_path, reference, truth=None, truth_workplane=None,
+             measured_table=None):
+    """Score all candidates and the baseline. Truth and the true part are optional (real photos).
+
+    Candidates whose dimensions stray too far from measured_table are rejected (deviation_check.py).
+    """
     ceiling = aligned_iou(reference, MM_PER_PIXEL, render_top_silhouette(truth_workplane, MM_PER_PIXEL) > 0,
                           MM_PER_PIXEL).iou if truth_workplane is not None else float("nan")
     rows = []
     for i, (path, error) in enumerate(entries, 1):
-        row = {"file": str(path), "error": error} if error else check_program(path, reference, truth)
+        row = {"file": str(path), "error": error} if error else check_program(path, reference, truth,
+                                                                               measured_table)
         rows.append({"candidate": i, **row})
 
     compiled = [r for r in rows if "iou" in r]
@@ -328,13 +361,24 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
             print(f"    cand {r['candidate']:2d}  FAILED  {r['error'].strip().splitlines()[-1]}")
         else:
             status = {True: "ok", None: ""}.get(r["topology_ok"], "WRONG: " + "; ".join(r["topology_issues"]))
+            if not r["deviation_ok"]:
+                worst = [d["dimension"] for d in r["deviation"] if not d["ok"]]
+                status += f"  REJECTED, too far from the measurements: {', '.join(worst)}"
             print(f"    cand {r['candidate']:2d}  IoU {r['iou']:.4f}  params {r['parameter_count']:2d}  "
                   f"corners {r['corners']}  holes {r['hole_diameters_mm']}  {status}")
 
-    # Winner: correct topology first (when known), then IoU, then fewer parameters.
-    best = max(compiled, key=lambda r: (r["topology_ok"] is not False, round(r["iou"], 3), -r["parameter_count"])) \
-        if compiled else None
-    baseline = check_program(baseline_path, reference, truth)
+    # Winner among candidates within the deviation limits: correct topology first (when known),
+    # then IoU, then fewer parameters.
+    eligible = [r for r in compiled if r["deviation_ok"]]
+    best = max(eligible, key=lambda r: (r["topology_ok"] is not False, round(r["iou"], 3), -r["parameter_count"])) \
+        if eligible else None
+    print(f"    {len(eligible)}/{len(compiled)} compiled candidates within the deviation limits")
+    baseline = check_program(baseline_path, reference, truth, measured_table)
+    if best and best["deviation"]:
+        print(f"    winner {Path(best['file']).name}: measured vs chosen")
+        for d in best["deviation"]:
+            print(f"      {d['dimension']:18s} measured {str(d['measured_mm']):>16s}  chosen {str(d['candidate_mm']):>16s}"
+                  f"  deviation {str(d['deviation_mm']):>6s}  limit {d['limit_mm']:>5}  {'ok' if d['ok'] else 'OVER'}")
     if best:
         a = best["_alignment"]
         xor = np.zeros((*a.reference.shape, 3), dtype=np.uint8)
@@ -357,7 +401,8 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
     def clean(row):
         return {k: v for k, v in row.items() if not k.startswith("_")} if row else None
 
-    summary = {"iou_ceiling": round(ceiling, 4), "compiled": len(compiled), "correct_topology": len(correct),
+    summary = {"iou_ceiling": round(ceiling, 4), "compiled": len(compiled), "within_deviation": len(eligible),
+               "correct_topology": len(correct),
                "candidate_count": len(rows), "distinct_shapes": len(shapes), "winner": clean(best),
                "baseline": clean(baseline), "candidates": [clean(r) for r in rows]}
     save_json(out / f"5_summary_{folder_name}.json", summary)
@@ -380,7 +425,7 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     if candidate_count:
         entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count)
         result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference, truth,
-                                        truth_workplane)
+                                        truth_workplane, table)
     return result
 
 
@@ -400,5 +445,6 @@ def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_fold
     result = {"photo": name, "part_found_by": source, "hole_method": hole_method, "table": table}
     if candidate_count:
         entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count)
-        result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference)
+        result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference,
+                                        measured_table=table)
     return result
