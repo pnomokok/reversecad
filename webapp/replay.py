@@ -18,26 +18,36 @@ from homography import card_corners, largest_contour, to_mm
 from part_measurements import classify_hole
 from sam_client import load_photo, parse_detections
 
-RUNS_DIR = Path("outputs") / "e2e"
+RUNS_DIR = Path("outputs") / "e2e"  # runs made on this machine (git-ignored), live runs too
+SAMPLES_DIR = Path("samples")  # small sample runs kept in the repository (make_sample.py)
+SOURCES = [RUNS_DIR, SAMPLES_DIR]  # a run name is looked up in this order
+
+
+def _photo(folder):
+    """The run's photo: 1_scene.png (pipeline runs) or 1_scene.jpg (compact sample runs)."""
+    return next((folder / f"1_scene{ext}" for ext in (".png", ".jpg") if (folder / f"1_scene{ext}").exists()), None)
 
 
 def list_runs():
     """Saved runs that reached the measurement step."""
-    return sorted(p.name for p in RUNS_DIR.iterdir() if (p / "3_measurements.json").exists()) \
-        if RUNS_DIR.exists() else []
+    names = {p.name for source in SOURCES if source.exists()
+             for p in source.iterdir() if (p / "3_measurements.json").exists()}
+    return sorted(names)
 
 
 def run_dir(name, measured=True):
     """A run's folder; measured=False also accepts a live upload that has not been measured yet."""
-    path = (RUNS_DIR / name).resolve()
-    required = "3_measurements.json" if measured else "1_scene.png"
-    if path.parent != RUNS_DIR.resolve() or not (path / required).exists():
-        raise FileNotFoundError(f"no saved run named {name!r}")
-    return path
+    for source in SOURCES:
+        path = (source / name).resolve()
+        if path.parent != source.resolve():
+            continue  # the name tried to leave the folder
+        if (path / "3_measurements.json").exists() if measured else _photo(path):
+            return path
+    raise FileNotFoundError(f"no saved run named {name!r}")
 
 
 def photo_path(name):
-    return run_dir(name, measured=False) / "1_scene.png"
+    return _photo(run_dir(name, measured=False))
 
 
 def _cached_card_mask(folder, image):
@@ -117,11 +127,12 @@ def silhouette_png(name, candidate):
     Found by file, not by summary, so live runs can show it before their round is finished.
     """
     folder = run_dir(name)
-    paths = [folder / round_name / f"cand_{int(candidate)}.default.mask.npy" for round_name in CANDIDATE_ROUNDS]
+    paths = [folder / round_name / f"cand_{int(candidate)}.default.mask{ext}"
+             for round_name in CANDIDATE_ROUNDS for ext in (".npy", ".png")]  # .png in compact samples
     path = next((p for p in paths if p.exists()), None)
     if path is None:
         raise FileNotFoundError(f"no saved silhouette for candidate {candidate}")
-    mask = np.load(path)
+    mask = np.load(path) if path.suffix == ".npy" else cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) > 0
     ys, xs = np.nonzero(mask)
     crop = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     ok, data = cv2.imencode(".png", np.pad(crop, 20).astype(np.uint8) * 255)
@@ -130,11 +141,13 @@ def silhouette_png(name, candidate):
 
 def result_program(name):
     """(program path, source label) of the run's result: the winner, or the baseline fallback."""
-    summary = json.loads((run_dir(name) / f"5_summary_{candidate_round(name)}.json").read_text(encoding="utf-8"))
+    round_name = candidate_round(name)
+    summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
     result = summary.get("result") or summary.get("winner")
     if not result:
         raise FileNotFoundError("this run has no result program")
-    path = Path(result["file"].replace("\\", "/"))
+    # By file name inside the run's own round folder, so a run still works after it is moved (samples).
+    path = run_dir(name) / round_name / Path(result["file"].replace("\\", "/")).name
     source = summary.get("result_source", "candidate")
     return path, source
 
@@ -183,7 +196,7 @@ def info(name):
     """Light data for screen 1: the saved click and the photo size (no mask decoding)."""
     folder = run_dir(name)
     attempts = json.loads((folder / "2_sam_attempts.json").read_text(encoding="utf-8"))
-    height, width = cv2.imread(str(folder / "1_scene.png"), cv2.IMREAD_GRAYSCALE).shape
+    height, width = cv2.imread(str(_photo(folder)), cv2.IMREAD_GRAYSCALE).shape
     return {"name": name, "click_px": attempts.get("click"), "image_size": [width, height]}
 
 
@@ -193,7 +206,7 @@ def analysis(name):
     folder = run_dir(name)
     measurements = json.loads((folder / "3_measurements.json").read_text(encoding="utf-8"))
     attempts = json.loads((folder / "2_sam_attempts.json").read_text(encoding="utf-8"))
-    image = load_photo(folder / "1_scene.png")
+    image = load_photo(_photo(folder))
     card_mask = _cached_card_mask(folder, image)
     scales, scale_used, differences = pixel_to_mm_scales(card_mask)
     pixel_to_mm = scales[scale_used]

@@ -106,6 +106,25 @@ def test_downloads(tmp_path):
     assert client.post("/api/runs/A_light/download?format=dwg", json=values).status_code == 400
 
 
+@pytest.mark.skipif(not (replay.SAMPLES_DIR / "A_light").exists(), reason="needs samples/A_light")
+def test_sample_run_replays_like_a_fresh_clone(monkeypatch):
+    """Only samples/ visible (outputs/ is git-ignored, so a fresh clone has nothing else)."""
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
+    monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
+    replay.analysis.cache_clear()
+    try:
+        assert client.get("/api/runs").json()["runs"] == ["A_light"]
+        assert client.get("/api/runs/A_light/photo").headers["content-type"] == "image/jpeg"
+        assert client.get("/api/runs/A_light/analysis").json()["table"]["hole_count"] == 4
+        events = _events(client.get("/api/runs/A_light/candidates/stream").text)
+        assert events[-1][0] == "done" and events[-1][1]["winner"]
+        assert client.get(events[0][1]["silhouette"]).content[:4] == b"\x89PNG"
+        assert client.post("/api/runs/A_light/model", json={"parameters": {}}).status_code == 200
+        assert client.post("/api/runs/A_light/download?format=step", json={"parameters": {}}).status_code == 200
+    finally:
+        replay.analysis.cache_clear()
+
+
 @needs_saved_run
 def test_saved_run_analysis():
     assert "A_light" in client.get("/api/runs").json()["runs"]
