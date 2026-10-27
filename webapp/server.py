@@ -37,6 +37,15 @@ def run_photo(name: str):
         raise HTTPException(404, str(error))
 
 
+@app.get("/api/runs/{name}/info")
+def run_info(name: str):
+    """Screen 1: the saved click and photo size, without the slow mask decoding."""
+    try:
+        return replay.info(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+
+
 @app.get("/api/runs/{name}/analysis")
 def run_analysis(name: str):
     """Screens 1-2: click, card, part outline, holes and the measurement table."""

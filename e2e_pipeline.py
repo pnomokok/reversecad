@@ -252,6 +252,8 @@ def measure(out, image, card, part, crop_mask, truth=None, true_masks=None):
     })
     for name, mask in masks.items():  # each method's part mask, for visual checks
         cv2.imwrite(str(out / f"3_mask_{name}.png"), mask.astype(np.uint8) * 255)
+    # The card mask too: decoding SAM's mask text again is slow (the web app reads this file).
+    cv2.imwrite(str(out / "3_mask_card.png"), card.mask.astype(np.uint8) * 255)
 
     if truth is None:
         print(f"    used: {chosen}")

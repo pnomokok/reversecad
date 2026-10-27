@@ -13,12 +13,15 @@ from pathlib import Path
 import numpy as np
 
 ROUND_LABELS = {"candidates_intent": "intent", "candidates_clean": "clean", "candidates_kit": "partkit",
-                "candidates_arcs": "arcs"}
+                "candidates_arcs": "arcs", "candidates_arcs_effort_medium": "arcs/med",
+                "candidates_arcs_effort_low": "arcs/low"}
+SYNTHETIC_ROUNDS = ["candidates_intent", "candidates_kit", "candidates_arcs", "candidates_arcs_effort_medium",
+                    "candidates_arcs_effort_low"]
 ROUNDS = [  # (part, scene folder, rounds in order)
-    ("A", Path("outputs/e2e/A_light"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
-    ("B", Path("outputs/e2e/B"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
-    ("C", Path("outputs/e2e/C"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
-    ("D", Path("outputs/e2e/D"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
+    ("A", Path("outputs/e2e/A_light"), SYNTHETIC_ROUNDS),
+    ("B", Path("outputs/e2e/B"), SYNTHETIC_ROUNDS),
+    ("C", Path("outputs/e2e/C"), SYNTHETIC_ROUNDS),
+    ("D", Path("outputs/e2e/D"), SYNTHETIC_ROUNDS),
     ("carton", Path("outputs/real/carton"), ["candidates_clean", "candidates_kit", "candidates_arcs"]),
 ]
 

@@ -85,7 +85,7 @@ async function chooseRun(name) {
   state.analysis = null;
   state.image = await loadImage(`/api/runs/${name}/photo`);
   // The saved run's click is shown until the user clicks somewhere else.
-  const saved = await getJSON(`/api/runs/${name}/analysis`);
+  const saved = await getJSON(`/api/runs/${name}/info`);
   state.click = saved.click_px;
   render();
   document.getElementById("analyze").disabled = false;

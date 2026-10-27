@@ -4,6 +4,7 @@ Replay mode: everything comes from files a run already wrote, plus SAM's cached
 answers; no API is called (a missing cache file is an error, not a new request).
 The measurement functions are only reused, never changed.
 """
+import functools
 import json
 from pathlib import Path
 
@@ -36,14 +37,23 @@ def photo_path(name):
 
 
 def _cached_card_mask(folder, image):
-    """The card mask the run used: the first card prompt whose cached answer has a card-shaped mask."""
+    """The card mask the run used: the first card prompt whose cached answer has a card-shaped mask.
+
+    Decoding SAM's mask text is slow (pure Python, about 15 s for a card), so the decoded mask is
+    saved once as 3_mask_card.png (newer pipeline runs write it themselves) and read from there.
+    """
+    saved = folder / "3_mask_card.png"
+    if saved.exists():
+        return cv2.imread(str(saved), cv2.IMREAD_GRAYSCALE) > 0
     for prompt in CARD_PROMPTS:
         cache = folder / "sam" / f"{prompt.replace(' ', '_')}.txt"
         if not cache.exists():
             continue
         found = [d for d in parse_detections(cache.read_text(encoding="utf-8"), image.size) if card_aspect_ok(d.mask)]
         if found:
-            return max(found, key=lambda d: d.confidence or 0).mask
+            mask = max(found, key=lambda d: d.confidence or 0).mask
+            cv2.imwrite(str(saved), mask.astype(np.uint8) * 255)
+            return mask
     raise FileNotFoundError("no cached card mask for this run (replay never calls SAM)")
 
 
@@ -112,6 +122,15 @@ def _pixels(points):
     return [[round(float(x), 1), round(float(y), 1)] for x, y in points]
 
 
+def info(name):
+    """Light data for screen 1: the saved click and the photo size (no mask decoding)."""
+    folder = run_dir(name)
+    attempts = json.loads((folder / "2_sam_attempts.json").read_text(encoding="utf-8"))
+    height, width = cv2.imread(str(folder / "1_scene.png"), cv2.IMREAD_GRAYSCALE).shape
+    return {"name": name, "click_px": attempts.get("click"), "image_size": [width, height]}
+
+
+@functools.lru_cache(maxsize=16)
 def analysis(name):
     """Data for screens 1-2: photo size, click, card corners, part outline and holes (pixels), table (mm)."""
     folder = run_dir(name)
