@@ -39,7 +39,39 @@ Yalnızca düz yüzeyli, prizmatik, delikli parçalar: braket, plaka, kapak, bas
 | Muse Wonder | Meta Model API | Zor adaylarda geometrik akıl yürütme (sonraki aşama) |
 | Muse Voice Transcribe | Meta Model API | Sesli düzenleme (olsa iyi olur) |
 
-Ortam değişkenleri: `BASETEN_API_KEY`, `META_API_KEY` (`.env` içinde).
+Ortam değişkenleri: `BASETEN_API_KEY`, `MODEL_API_KEY` (Meta Model API anahtarı; Meta dokümanları bu adı kullanıyor). İkisi de `.env` içinde.
+
+## SAM 3.1 nasıl çağrılır
+
+Meta dokümanlarından özet. Kaynak: Meta Model API dokümanı, "Segment Anything Model" sayfaları.
+
+**İstek**
+- OpenAI uyumlu Responses API: `base_url="https://api.meta.ai/v1"`, `api_key=os.environ["MODEL_API_KEY"]`, `model="sam-3.1"`. Python'da `openai` paketi kullanılır.
+- Tek bir user mesajı: bir `input_text` (nesnenin adı) + bir `input_image`.
+- Yerel fotoğraf `image_url` alanına **base64 data URL** olarak verilir: `data:image/jpeg;base64,...`
+- Komut kısa bir İngilizce isim öbeği olmalı: `credit card`, `key`, `metal bracket`. Emir veya soru yazma ("segment the card" çoğu zaman boş döner).
+- **Her istekte tek nesne.** Kart ve parça için iki ayrı istek at. Virgüllü liste ("card, key") sıfır sonuç döner.
+- Önerilen ayarlar: `stream=True`, `metadata={"mask_encoding": "one_bit", "include_confidence": "true"}`. Metadata değerleri string'dir (`"true"`, JSON boolean değil).
+- Fiyat: görüntü başına 0,0025 $.
+
+**Cevap**
+- Metin olarak, özel bir söz dizimiyle gelir. Örnek: `<0f>0<|box;x1=353;y1=382;x2=453;y2=427;w=537;h=561;c=0.96|><|mask;x=0;y=0;c=0.96;data=46,101,!...|>`
+- Kutu (`box`) kaynak fotoğrafın pikselleriyle; `x2`, `y2` dahil. `w`, `h` fotoğrafın boyutu.
+- Maske (`mask`) tüm fotoğraf boyutunda değil, daha küçük bir raster: `data=<yükseklik>,<genişlik>,...`. Örnek sayılara göre (kutu 101×46, maske 101×46) maske büyük ihtimalle **kutunun içini** kaplıyor; tam fotoğrafa yerleştirmek için kutunun sol üst köşesi (`x1`, `y1`) kadar kaydırmak gerekiyor. Bu bir çıkarım, dokümanda açıkça yazmıyor: **ilk gerçek çağrıda maskeyi fotoğrafın üstüne çizerek doğrula.**
+- Hiç eşleşme yoksa cevap boş gelir; bu hata değil, normal bir sonuç, kodda ayrıca ele al.
+- Aynı istek tekrarlandığında kutu ve maske kenarları biraz değişebilir. Ölçüm testlerinde bunu hesaba kat.
+
+**Ayrıştırma: elle yazma, kütüphaneyi kullan**
+- `pip install meta-sam-parser` (Python ≥ 3.10, bağımlılığı yok; içe aktarma adı `meta_sam_parser`). Güven skoru kullanacağımız için sürüm en az 0.0.6 olmalı.
+- Maske çözme: `decode_mask_to_raster` (0/1 değerli, satır sıralı, uzunluğu yükseklik × genişlik), `decode_mask_to_rle` (COCO RLE), `decode_mask_to_svg_path`.
+- Akışı ayrıştıran fonksiyonların adları TypeScript sürümünü yansıtıyor (TypeScript'te `parseImageStream`, `recordsOfKind`). Python'daki tam adları paketin kendisinden kontrol et, tahmin etme.
+
+**Telefon fotoğrafı tuzağı: EXIF yönü**
+Telefon fotoğrafları genellikle yan kaydedilip EXIF etiketiyle döndürülür. SAM koordinatları fotoğrafın **ekranda göründüğü** yöne göre veriyor. Fotoğrafı göndermeden önce Pillow ile `ImageOps.exif_transpose` uygula, düzeltilmiş halini hem SAM'e gönder hem kendi ölçü kodunda kullan; yoksa maske ile fotoğraf 90 derece kayar.
+
+**İleride işe yarayabilir**
+- Kutu ve nokta komutları: bir nesnenin yerini biliyorsak isim yerine kutu/nokta vererek maskelettirebiliriz (`build_object_prompt`). Bir istekte isim ve kutu birlikte kullanılamaz.
+- Video destekli: MP4/MOV, nesneler kareler boyunca aynı kimlikle izlenir. Şimdilik tek fotoğrafla çalışıyoruz.
 
 ## Başarı ölçütleri
 

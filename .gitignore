@@ -1,21 +1,21 @@
-# Git'in takip etmeyecegi dosyalar.
-# .env API anahtarlarini tutar; asla repoya girmemeli.
+# Files git should never track.
+# .env holds API keys and must never be committed.
 
-# Gizli anahtarlar
+# Secrets
 .env
 
-# Python sanal ortami ve onbellek dosyalari
+# Python virtual environment and caches
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
 
-# Uretilen ciktilar (render, STL/STEP)
+# Generated outputs (renders, STL/STEP)
 outputs/
 *.stl
 *.step
 
-# Editor / isletim sistemi dosyalari
+# Editor / OS files
 .vscode/
 Thumbs.db
 .DS_Store
