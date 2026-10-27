@@ -83,6 +83,28 @@ table.measurements td, table.measurements th {
 }
 table.measurements td.number { font-family: var(--font-mono); text-align: right; }
 
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+  gap: var(--space-3);
+}
+.candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  font-size: var(--font-size-small);
+}
+.candidate-card img { width: 100%; height: var(--card-image-height); object-fit: contain; background: var(--color-silhouette-bg); }
+.candidate-card .placeholder { height: var(--card-image-height); display: grid; place-items: center; color: var(--color-text-muted); }
+.candidate-card.passed { border-color: var(--color-ok); }
+.candidate-card.rejected, .candidate-card.failed { border-color: var(--color-bad); }
+.candidate-card.winner { outline: var(--winner-outline-width) solid var(--color-accent); }
+.candidate-card ul { margin: 0; padding-left: var(--space-3); color: var(--color-bad); }
+
 .status-ok { color: var(--color-ok); }
 .status-bad { color: var(--color-bad); }
 .hidden { display: none !important; }

@@ -1,16 +1,19 @@
-// ReverseCAD front end: screens 1-2 in replay mode (saved runs, no API calls).
+// ReverseCAD front end in replay mode (saved runs, no API calls).
 // Screen 1: choose a saved run, click the part, enter the thickness.
 // Screen 2: card, part outline and holes drawn over the photo, measurement table beside it.
+// Screen 3: candidates arrive one by one (server-sent events) into a grid with score and reasons.
 
-const state = { run: null, image: null, click: null, analysis: null };
+const state = { run: null, image: null, click: null, analysis: null, stream: null };
 const canvas = document.getElementById("photo-canvas");
 const context = canvas.getContext("2d");
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 function showStep(step) {
   document.querySelectorAll("#steps li").forEach((li) => li.classList.toggle("active", li.dataset.step === String(step)));
-  document.getElementById("screen-1").classList.toggle("hidden", step !== 1);
-  document.getElementById("screen-2").classList.toggle("hidden", step !== 2);
+  [1, 2, 3].forEach((n) => document.getElementById(`screen-${n}`).classList.toggle("hidden", step !== n));
+  // The stage shows the photo for screens 1-2 and the candidate grid for screen 3.
+  canvas.classList.toggle("hidden", step === 3);
+  document.getElementById("candidate-grid").classList.toggle("hidden", step !== 3);
 }
 
 async function getJSON(url) {
@@ -132,6 +135,60 @@ document.getElementById("back-to-1").addEventListener("click", () => {
   state.analysis = null;
   render();
   showStep(1);
+});
+
+// ---------- screen 3 ----------
+function candidateCard(event) {
+  const card = document.createElement("div");
+  card.className = `candidate-card ${event.status}`;
+  card.id = `candidate-${event.candidate}`;
+  const picture = event.silhouette
+    ? `<img src="${event.silhouette}" alt="candidate ${event.candidate} silhouette">`
+    : `<div class="placeholder">no shape</div>`;
+  const score = event.iou == null ? "" : `IoU ${event.iou.toFixed(4)} · ${event.parameters} parameters`;
+  const reasons = event.reasons.length ? `<ul>${event.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>` : "";
+  card.innerHTML = `${picture}<strong>Candidate ${event.candidate}: ${event.status}</strong><span>${score}</span>${reasons}`;
+  return card;
+}
+
+function streamCandidates() {
+  if (state.stream) state.stream.close();
+  const grid = document.getElementById("candidate-grid");
+  const progress = document.getElementById("candidate-progress");
+  const result = document.getElementById("candidate-result");
+  grid.innerHTML = "";
+  result.textContent = "";
+  let received = 0;
+  state.stream = new EventSource(`/api/runs/${state.run}/candidates/stream`);
+  state.stream.addEventListener("candidate", (message) => {
+    grid.appendChild(candidateCard(JSON.parse(message.data)));
+    progress.textContent = `${++received} candidates received…`;
+  });
+  state.stream.addEventListener("done", (message) => {
+    state.stream.close();
+    const done = JSON.parse(message.data);
+    progress.textContent = `${done.compiled} of ${done.candidate_count} candidates compiled (round ${done.round}).`;
+    if (done.winner) {
+      document.getElementById(`candidate-${done.winner}`)?.classList.add("winner");
+      result.textContent = `Winner: candidate ${done.winner}.`;
+    } else {
+      result.textContent = `No candidate passed: ${done.result_source}.`;
+    }
+  });
+  state.stream.onerror = () => {
+    progress.textContent = "The candidate stream stopped unexpectedly.";
+    state.stream.close();
+  };
+}
+
+document.getElementById("to-candidates").addEventListener("click", () => {
+  showStep(3);
+  streamCandidates();
+});
+
+document.getElementById("back-to-2").addEventListener("click", () => {
+  if (state.stream) state.stream.close();
+  showStep(2);
 });
 
 // ---------- start ----------

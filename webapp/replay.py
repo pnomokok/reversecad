@@ -47,6 +47,67 @@ def _cached_card_mask(folder, image):
     raise FileNotFoundError("no cached card mask for this run (replay never calls SAM)")
 
 
+CANDIDATE_ROUNDS = ["candidates_arcs", "candidates_kit", "candidates_intent"]  # newest first
+
+
+def candidate_round(name):
+    """The newest saved candidate round of a run (its folder name)."""
+    folder = run_dir(name)
+    for round_name in CANDIDATE_ROUNDS:
+        if (folder / f"5_summary_{round_name}.json").exists():
+            return round_name
+    raise FileNotFoundError(f"no saved candidate round for {name!r}")
+
+
+def _status(row):
+    """(status, reasons) for one candidate row of a saved summary."""
+    if "error" in row:
+        return "failed", [row["error"].strip().splitlines()[-1]]
+    reasons = []
+    if row.get("topology_ok") is False:
+        reasons += row.get("topology_issues", [])
+    if not row.get("deviation_ok", True):
+        reasons += [f"{d['dimension']}: off by {d['deviation_mm']} mm (limit {d['limit_mm']})"
+                    for d in row.get("deviation", []) if not d["ok"]]
+    return ("rejected" if reasons else "passed"), reasons
+
+
+def candidate_events(name):
+    """The saved candidate round as a list of events, in the order they would arrive live."""
+    round_name = candidate_round(name)
+    summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
+    events = []
+    for row in summary["candidates"]:
+        status, reasons = _status(row)
+        events.append({"type": "candidate", "candidate": row["candidate"], "status": status, "reasons": reasons,
+                       "iou": row.get("iou"), "parameters": row.get("parameter_count"),
+                       "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png"
+                       if status != "failed" else None})
+    result = summary.get("result") or summary.get("winner")
+    winner = None
+    if result and "candidate" in result:
+        winner = result["candidate"]
+    elif summary.get("winner"):
+        winner = next((r["candidate"] for r in summary["candidates"] if r.get("file") == summary["winner"]["file"]),
+                      None)
+    events.append({"type": "done", "round": round_name, "winner": winner,
+                   "result_source": summary.get("result_source", "candidate" if winner else None),
+                   "compiled": summary["compiled"], "candidate_count": summary["candidate_count"]})
+    return events
+
+
+def silhouette_png(name, candidate):
+    """A candidate's saved top-view silhouette (from its render), cropped, as PNG bytes."""
+    path = run_dir(name) / candidate_round(name) / f"cand_{int(candidate)}.default.mask.npy"
+    if not path.exists():
+        raise FileNotFoundError(f"no saved silhouette for candidate {candidate}")
+    mask = np.load(path)
+    ys, xs = np.nonzero(mask)
+    crop = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    ok, data = cv2.imencode(".png", np.pad(crop, 20).astype(np.uint8) * 255)
+    return data.tobytes()
+
+
 def _pixels(points):
     return [[round(float(x), 1), round(float(y), 1)] for x, y in points]
 

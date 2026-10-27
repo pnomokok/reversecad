@@ -24,6 +24,7 @@
   <main>
     <section class="stage">
       <canvas id="photo-canvas"></canvas>
+      <div class="candidate-grid hidden" id="candidate-grid"></div>
     </section>
 
     <!-- Screen 1: pick the photo, click the part, enter the thickness -->
@@ -48,7 +49,16 @@
       <h2>2. Measurements</h2>
       <p class="hint" id="measure-summary"></p>
       <table class="measurements" id="measure-table"></table>
+      <button id="to-candidates">Generate candidates</button>
       <button id="back-to-1">Back</button>
+    </aside>
+
+    <!-- Screen 3: candidates arrive one by one (server-sent events) with score and reasons -->
+    <aside class="panel hidden" id="screen-3">
+      <h2>3. Candidates</h2>
+      <p class="hint" id="candidate-progress">Waiting for candidates…</p>
+      <p class="hint" id="candidate-result"></p>
+      <button id="back-to-2">Back</button>
     </aside>
   </main>
 

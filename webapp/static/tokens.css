@@ -33,6 +33,10 @@
   --radius: 8px;
   --overlay-line-width: 2;
   --panel-width: 360px;
+  --card-min-width: 160px;
+  --card-image-height: 110px;
+  --winner-outline-width: 3px;
+  --color-silhouette-bg: #000000;
 }
 
 @media (prefers-color-scheme: dark) {
