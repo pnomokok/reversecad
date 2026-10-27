@@ -117,5 +117,15 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   | blurred | 55.23 mm | -0.48% |
   | positions swapped, key rotated, camera farther | 57.98 mm | **+4.47%** |
 
-  Blur and distance are handled. The swapped shot fails because of **camera tilt**: the card's left edge is 1.29% longer than its right edge, and the key sits far to the left of the card, where the scale is larger. The 2% two-ratio check cannot see this. Fix: homography from the card's four corners (pipeline step 3) and/or keep the part close to the card. Not yet measured: pure repeat shots with nothing moved.
+  Blur and camera distance are handled. The swapped shot's error is **not** camera tilt (an earlier rough corner estimate said 1.29% left-right; line-fitted corners give 0.19%). Not yet measured: pure repeat shots with nothing moved.
+- [ ] Homography from the card's corners (`homography.py`, offline comparison `try_homography.py`). Corners come from lines fitted to the straight middle of each card side (rounded corners). Tilt check is now opposite card edges (left vs right, top vs bottom) > 2%, replacing the long-vs-short ratio check. Synthetic tilted scene: recovers the key within 0.5% where the simple scale is off by more than 2%, even below the 2% warning. On the four real photos it does **not** help:
+
+  | Photo | Key distance from card (card lengths) | Before | After |
+  |---|---|---|---|
+  | original | 0.94 | +0.18% | +2.53% |
+  | closer | 0.83 | -0.87% | +0.44% |
+  | swapped | 1.53 | +4.47% | +4.31% |
+  | blurred | 0.82 | -0.48% | +0.82% |
+
+  The largest error is at the largest distance (only one far point, so not conclusive); suspected cause: lens distortion with the key and card at opposite edges of the frame, which a homography cannot fix. All corrected card outlines measure 0.1-0.5 mm larger than 85.60 × 53.98. Open: measure the Bursakart with a ruler (is it exactly ID-1?), and a lens-distortion test (key next to the card at the frame center vs both at opposite edges, same zoom). Homography is not the default until then.
 - [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU

@@ -1,8 +1,9 @@
 """Deterministic measurements from masks: card scale and part length in millimeters.
 
-The card's minimum-area rectangle gives one mm/px ratio from its long edge
-(85.60 mm) and one from its short edge (53.98 mm). If they disagree by more
-than 2%, the photo was probably taken at an angle.
+Simple scale without perspective correction: the card's minimum-area
+rectangle gives one mm/px ratio from its long edge (85.60 mm) and one from its
+short edge (53.98 mm), and their mean is used. This assumes a straight-down
+shot; homography.py corrects tilted shots and checks for tilt.
 """
 from dataclasses import dataclass
 
@@ -11,7 +12,6 @@ import numpy as np
 
 CARD_LONG_MM = 85.60
 CARD_SHORT_MM = 53.98
-MAX_RATIO_DIFFERENCE = 0.02
 
 
 @dataclass
@@ -23,15 +23,6 @@ class CardScale:
     @property
     def mm_per_pixel(self):
         return (self.mm_per_pixel_long + self.mm_per_pixel_short) / 2
-
-    @property
-    def relative_difference(self):
-        """How much the two ratios disagree, relative to their mean."""
-        return abs(self.mm_per_pixel_long - self.mm_per_pixel_short) / self.mm_per_pixel
-
-    @property
-    def is_oblique(self):
-        return self.relative_difference > MAX_RATIO_DIFFERENCE
 
 
 def min_area_rect(mask):

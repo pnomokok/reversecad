@@ -68,7 +68,10 @@ def _stream_text(stream):
 
 
 def segment(client, image, prompt):
-    """Return (detections, raw_text) for one noun-phrase prompt; empty list if nothing matched."""
+    """Return (detections, raw_text) for one noun-phrase prompt; empty list if nothing matched.
+
+    image is a PIL image (see load_photo).
+    """
     stream = client.responses.create(
         model=MODEL,
         input=[
@@ -84,7 +87,11 @@ def segment(client, image, prompt):
         metadata={"mask_encoding": "one_bit", "include_confidence": "true"},
     )
     raw_text = _stream_text(stream)
+    return parse_detections(raw_text, image.size), raw_text
 
+
+def parse_detections(raw_text, image_size):
+    """Turn raw SAM output text into Detections; also works on saved raw files."""
     parser = image_segmentation_format().create_parser()
     parser.push(raw_text)
     result = parser.finish(CompletedOutcome()).result
@@ -102,11 +109,11 @@ def segment(client, image, prompt):
                 object_id=record.object_id,
                 confidence=confidence,
                 box=box_edges,
-                mask=_place_mask(record, image.size),
+                mask=_place_mask(record, image_size),
                 mask_size=(record.mask.width, record.mask.height),
             )
         )
-    return detections, raw_text
+    return detections
 
 
 def _place_mask(record, image_size):

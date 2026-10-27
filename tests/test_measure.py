@@ -19,13 +19,6 @@ def rotated_rectangle_mask(width_mm, height_mm, angle_deg, mm_per_pixel=MM_PER_P
 def test_card_scale_recovers_mm_per_pixel():
     scale = card_scale(rotated_rectangle_mask(85.60, 53.98, 17))
     assert scale.mm_per_pixel == pytest.approx(MM_PER_PIXEL, rel=0.01)
-    assert not scale.is_oblique
-
-
-def test_stretched_card_is_flagged_oblique():
-    # Short edge foreshortened by 5%, as in a tilted shot.
-    scale = card_scale(rotated_rectangle_mask(85.60, 53.98 * 0.95, 0))
-    assert scale.is_oblique
 
 
 def test_part_length_in_mm():

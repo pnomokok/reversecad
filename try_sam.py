@@ -13,7 +13,8 @@ from pathlib import Path
 
 import cv2
 
-from measure import MAX_RATIO_DIFFERENCE, card_scale, long_side_mm, side_lengths_px
+from homography import MAX_EDGE_DIFFERENCE, card_corners, edge_differences, is_tilted, largest_contour
+from measure import card_scale, long_side_mm, side_lengths_px
 from overlay import draw_overlay
 from sam_client import load_photo, make_client, segment
 
@@ -59,17 +60,18 @@ def main():
         scale = card_scale(card.mask)
         card_long_px, _ = side_lengths_px(scale.rect)
         print(f"  card long side: {card_long_px:.0f} px")
-        print(f"  mm/px long edge {scale.mm_per_pixel_long:.5f}, short edge {scale.mm_per_pixel_short:.5f}, "
-              f"difference {scale.relative_difference:.2%}")
-        if scale.is_oblique:
-            print(f"  WARNING: ratios differ by more than {MAX_RATIO_DIFFERENCE:.0%}; the shot is probably oblique")
+        print(f"  mm/px long edge {scale.mm_per_pixel_long:.5f}, short edge {scale.mm_per_pixel_short:.5f}")
+        differences = edge_differences(card_corners(largest_contour(card.mask)))
+        print(f"  card edges: left vs right {differences[0]:+.2%}, top vs bottom {differences[1]:+.2%}")
+        if is_tilted(differences):
+            print(f"  WARNING: opposite card edges differ by more than {MAX_EDGE_DIFFERENCE:.0%}; the camera is tilted")
 
         length, key_rect = long_side_mm(key.mask, scale.mm_per_pixel)
         error = (length - ruler_mid) / ruler_mid
         in_range = RULER_MM[0] <= length <= RULER_MM[1]
         print(f"  key length: {length:.2f} mm ({error:+.2%} vs {ruler_mid} mm, "
               f"{'inside' if in_range else 'outside'} ruler range {RULER_MM[0]}-{RULER_MM[1]})")
-        rows.append((label, card_long_px, scale.relative_difference, length, error))
+        rows.append((label, card_long_px, max(differences, key=abs), length, error))
 
         overlay = draw_overlay(image, [
             ("card", card.mask, card.box, scale.rect, (255, 140, 0)),
@@ -78,9 +80,9 @@ def main():
         cv2.imwrite(str(OUTPUT_DIR / f"{label}_overlay.jpg"), overlay)
 
     print("\n=== summary ===")
-    print(f"  {'photo':10s} {'card px':>8s} {'ratio diff':>10s} {'key mm':>8s} {'error':>8s}")
-    for label, card_px, ratio_diff, length, error in rows:
-        print(f"  {label:10s} {card_px:8.0f} {ratio_diff:10.2%} {length:8.2f} {error:+8.2%}")
+    print(f"  {'photo':10s} {'card px':>8s} {'edge diff':>10s} {'key mm':>8s} {'error':>8s}")
+    for label, card_px, edge_diff, length, error in rows:
+        print(f"  {label:10s} {card_px:8.0f} {edge_diff:+10.2%} {length:8.2f} {error:+8.2%}")
     lengths = [row[3] for row in rows]
     print(f"  spread (max - min): {max(lengths) - min(lengths):.2f} mm, "
           f"standard deviation: {statistics.stdev(lengths):.3f} mm")
