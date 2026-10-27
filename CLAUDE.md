@@ -94,7 +94,7 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
 - [x] Scale test (manual): key + card photo, SAM masks separated cleanly; computed length 56-57 mm, ruler 55-56 mm, difference about 1-3%. Sample photo: `data/private/ornek_anahtar.jpg` (git-ignored, not in the repo)
 - [x] Python environment, git, `.gitignore`, `.env` (`.venv` + `requirements.txt`, check: `.venv\Scripts\python.exe check_env.py`)
 - [x] Hand-written simple CadQuery part + orthographic silhouette render (`parts/holed_plate.py`, `render_silhouette.py`, tests: `.venv\Scripts\python.exe -m pytest`). A holed plate was chosen over an L-bracket: from above, an L-bracket's silhouette is just a rectangle and the "L" is lost (that belongs to alignment and multi-view validation), while a holed plate shows both the outer edge and the holes.
-- [ ] IoU function (centering + alignment) and its tests
+- [x] IoU function (centering + alignment) and its tests (`iou.py`). Scale is normalized from known mm/px, never fitted (a 10% larger plate scores 0.83). Tries 0/180 degrees x mirrored and reports the winner. **Known weakness:** small holes barely move IoU (plate without holes 0.963, wrong orientation of an asymmetric plate about 0.90), so IoU alone cannot validate holes; hole count/diameter/position must be checked separately against the measurement table.
 - [ ] First call to Baseten
 - [ ] Calling SAM 3.1 from code
 - [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU
