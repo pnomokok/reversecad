@@ -139,4 +139,11 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   | **mean absolute error** | | **0.86%** (max 1.45%) | **0.48%** (max 1.44%) |
 
   **Decision: the homography is the default measurement method.** Lens distortion is small (at most ~1% at opposite frame edges; no lens correction needed). Rotation is handled. Each photo's two directions mirror each other (the reference card's own mask error flips sign), so the error of a single measurement is roughly half of these numbers. The key's +1.6% in the swapped photo fits within this plus the ruler's ±1%.
-- [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU
+- [x] End-to-end skeleton on a **synthetic scene** (`run_synthetic_e2e.py`, outputs in `outputs/e2e/`): photo → SAM → homography measurements → 5 Muse Spark Open candidates → compile in a separate process → silhouette → IoU → best.
+  - Scene (`synthetic_scene.py`): the CadQuery 80 × 40 plate (4 × Ø6, 8 mm in), rotated 8°, next to a card on dark fabric, slight tilt (card top-bottom 1.30%), blur and noise.
+  - SAM: `credit card` found the synthetic card; `plate` found nothing, `metal plate` worked.
+  - **SAM fills or fragments small holes** (6 mm ≈ 55 px): 7 "holes" measured. Fix: `refine_holes.py` keeps SAM's outer outline and finds holes from brightness inside it (Otsu; assumes the part is lighter than the background). Result: 4 holes, Ø 6.08-6.09 mm, centers within 0.23 mm, outline 80.38 × 40.24 mm, mask IoU vs truth 0.974 → 0.990.
+  - Muse Spark Open: with `max_tokens=8000` all 5 candidates spent everything on reasoning (the 7-hole table and an ambiguous "thickness along +Z") and returned no code. With a clean table, "bottom face at Z = 0" and `max_tokens=16000`: 5/5 returned code (2.7-4k output tokens), 5/5 compiled, all IoU 0.9923 (true-part ceiling 0.9916; candidates use the measured numbers, which fit the mask slightly better).
+  - Candidate code is screened before running (`candidates.check_code`: only cadquery/math imports, no open/exec/eval/show_object) and run in a separate process with a timeout (`run_candidate.py`).
+  - All 5 candidates are geometrically identical: for a plate the table fixes everything. Candidate variety will only matter for parts whose topology is ambiguous.
+- [ ] End-to-end on a real photo of a holed part
