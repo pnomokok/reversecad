@@ -55,5 +55,6 @@ def part_truth(name):
         "width": width_y,
         "thickness": THICKNESS,
         "outline_vertices": len(spec["outline"]),
+        "outline_mm": [[x - cx, y - cy] for x, y in spec["outline"]],
         "holes": [{"center_from_part_center_mm": [x - cx, y - cy], "diameter_mm": d} for (x, y), d in spec["holes"]],
     }

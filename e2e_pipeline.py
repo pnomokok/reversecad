@@ -1,14 +1,16 @@
 """End-to-end pipeline for one scene: photo -> SAM masks -> measurements -> candidate
-CadQuery code -> compile -> silhouette -> IoU and topology check -> best candidate.
+CadQuery code -> compile -> silhouette -> IoU, topology and design-intent checks.
 
 Steps and their outputs (in the scene's output folder):
   1  scene image and ground truth
-  2  Muse Spark Open suggests SAM prompts; all are tried, the most confident part mask wins;
-     the part is cropped (with a margin) and segmented again to see small holes in more detail
+  2  the part is selected by a click (SAM point prompt); if that fails, by name (Muse Spark
+     Open suggests SAM prompts, fixed fallbacks after that); the part is cropped (with a
+     margin) and segmented again to see small holes in more detail
   3  measurement tables from three hole methods (full SAM mask, cropped SAM mask, color),
      each compared with the truth; the cropped mask is used unless its holes look wrong
-  4  candidate programs from Muse Spark Open
-  5  compile, render, IoU, topology check, variety between candidates
+  4  candidate programs from Muse Spark Open, plus a baseline program without a language model
+  5  compile, render, IoU, topology check, variety; the winner (correct topology first, then
+     IoU, then fewer parameters) and the baseline get the design-intent test
 SAM and Muse Spark Open answers are cached in the folder; delete them to ask again.
 """
 import json
@@ -17,7 +19,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from baseline_cad import baseline_code
 from candidates import extract_python_block, generate_candidates
+from design_intent import evaluate as evaluate_design_intent
+from design_intent import parameters
 from homography import card_corners, card_homography, edge_differences, largest_contour, rectify_image
 from iou import aligned_iou
 from measure import CARD_LONG_MM, CARD_SHORT_MM
@@ -27,9 +32,10 @@ from prompt_suggestions import suggest_part_prompts
 from refine_holes import refine_holes
 from render_silhouette import render_top_silhouette
 from run_candidate import run_candidate
-from sam_client import load_photo, make_client, parse_detections, segment
+from sam_client import load_photo, make_client, parse_detections, point_prompt, segment
 
 MM_PER_PIXEL = 0.1  # top-down resolution for masks, renders and IoU
+SCALE = np.diag([MM_PER_PIXEL, MM_PER_PIXEL, 1.0])  # render pixels -> mm
 CARD_PROMPTS = ["credit card", "card", "bank card"]
 FALLBACK_PART_PROMPTS = ["metal plate", "plate", "flat metal part"]
 CROP_MARGIN = 0.15  # crop margin as a share of the part's larger side
@@ -57,6 +63,13 @@ def holes_look_right(table):
                and h["diameter_mm"] >= MIN_HOLE_DIAMETER_MM for h in table["holes"])
 
 
+def simulated_click(part_mask):
+    """The pixel deepest inside the part's material: where a user would click to pick it."""
+    distance = cv2.distanceTransform(part_mask.astype(np.uint8), cv2.DIST_L2, 5)
+    y, x = np.unravel_index(np.argmax(distance), distance.shape)
+    return int(x), int(y)
+
+
 class SamCache:
     """SAM calls with their raw answers cached as text files."""
 
@@ -65,8 +78,8 @@ class SamCache:
         self.folder.mkdir(parents=True, exist_ok=True)
         self.client = None
 
-    def segment(self, image, prompt, tag=""):
-        path = self.folder / f"{tag}{prompt.replace(' ', '_')}.txt"
+    def segment(self, image, prompt, tag="", key=None):
+        path = self.folder / f"{tag}{key or prompt.replace(' ', '_')}.txt"
         if path.exists():
             return parse_detections(path.read_text(encoding="utf-8"), image.size)
         self.client = self.client or make_client()
@@ -75,13 +88,21 @@ class SamCache:
         return detections
 
 
-def segment_crop(sam, image, part_mask, prompt):
-    """Segment the part again inside a crop around it; return a full-size mask or None."""
+def segment_crop(sam, image, part_mask, prompt, click=None):
+    """Segment the part again inside a crop around it; return a full-size mask or None.
+
+    With a click, the crop is prompted with the same point (shifted into the crop); else by name.
+    """
     ys, xs = np.nonzero(part_mask)
     margin = int(max(30, CROP_MARGIN * max(xs.max() - xs.min(), ys.max() - ys.min())))
     left, top = max(0, xs.min() - margin), max(0, ys.min() - margin)
     right, bottom = min(image.size[0], xs.max() + margin + 1), min(image.size[1], ys.max() + margin + 1)
-    detections = sam.segment(image.crop((left, top, right, bottom)), prompt, tag="crop_")
+    crop = image.crop((left, top, right, bottom))
+    if click is not None:
+        detections = sam.segment(crop, point_prompt(crop.size, click[0] - left, click[1] - top), tag="crop_",
+                                 key="point")
+    else:
+        detections = sam.segment(crop, prompt, tag="crop_")
     local_reference = part_mask[top:bottom, left:right]
     scored = [(mask_iou(d.mask, local_reference), d) for d in detections]
     if not scored or max(scored, key=lambda s: s[0])[0] < 0.5:
@@ -93,16 +114,7 @@ def segment_crop(sam, image, part_mask, prompt):
 
 
 # ---------- step 2 ----------
-def find_masks(out, image, sam):
-    suggestions_path = out / "2_prompt_suggestions.json"
-    if suggestions_path.exists():
-        suggestions = json.loads(suggestions_path.read_text(encoding="utf-8"))
-    else:
-        prompts, content = suggest_part_prompts(out / "1_scene.png")
-        suggestions = {"prompts": prompts, "answer": content}
-        save_json(suggestions_path, suggestions)
-    part_prompts = suggestions["prompts"] or FALLBACK_PART_PROMPTS
-
+def find_masks(out, image, sam, click):
     attempts, card = [], None
     for prompt in CARD_PROMPTS:
         detections = sam.segment(image, prompt)
@@ -115,37 +127,49 @@ def find_masks(out, image, sam):
     if card is None:
         raise RuntimeError("SAM found no card")
 
-    def try_part_prompts(prompts, source):
+    def try_prompts(prompts, source):
         found = []
-        for prompt in prompts:
-            detections = [d for d in sam.segment(image, prompt) if mask_iou(d.mask, card.mask) < 0.3]
+        for prompt, key in prompts:
+            detections = [d for d in sam.segment(image, prompt, key=key) if mask_iou(d.mask, card.mask) < 0.3]
+            if source == "click":  # the selected object must lie under the click
+                detections = [d for d in detections if d.mask[click[1], click[0]]]
             attempts.append({"object": "part", "prompt": prompt, "source": source,
                              "confidences": [round(d.confidence or 0, 3) for d in detections]})
-            found += [(d.confidence or 0, prompt, d) for d in detections]
+            found += [(d.confidence or 0, prompt, source, d) for d in detections]
         return found
 
-    options = try_part_prompts(part_prompts, "suggested")
+    options = try_prompts([(point_prompt(image.size, *click), "point")], "click") if click else []
+    suggestions = None
+    if not options:  # fall back to finding the part by name
+        suggestions_path = out / "2_prompt_suggestions.json"
+        if suggestions_path.exists():
+            suggestions = json.loads(suggestions_path.read_text(encoding="utf-8"))
+        else:
+            prompts, content = suggest_part_prompts(out / "1_scene.png")
+            suggestions = {"prompts": prompts, "answer": content}
+            save_json(suggestions_path, suggestions)
+        options = try_prompts([(p, None) for p in suggestions["prompts"]], "suggested")
     if not options:  # the suggestions can misread the part (a gray plate was called a "banknote")
-        options = try_part_prompts([p for p in FALLBACK_PART_PROMPTS if p not in part_prompts], "fallback")
+        tried = suggestions["prompts"] if suggestions else []
+        options = try_prompts([(p, None) for p in FALLBACK_PART_PROMPTS if p not in tried], "fallback")
     if not options:
         save_json(out / "2_sam_attempts.json", attempts)
-        raise RuntimeError(f"SAM found no part with prompts {part_prompts}")
-    confidence, part_prompt, part = max(options, key=lambda o: o[0])
+        raise RuntimeError("SAM found no part")
+    confidence, part_prompt, source, part = max(options, key=lambda o: o[0])
 
-    crop_mask = segment_crop(sam, image, part.mask, part_prompt)
-    save_json(out / "2_sam_attempts.json", {"suggested_prompts": suggestions["prompts"], "attempts": attempts,
-                                             "chosen_part_prompt": part_prompt, "crop_found": crop_mask is not None})
+    crop_mask = segment_crop(sam, image, part.mask, part_prompt, click if source == "click" else None)
+    save_json(out / "2_sam_attempts.json", {"click": click, "attempts": attempts, "chosen_source": source,
+                                             "chosen_prompt": part_prompt, "crop_found": crop_mask is not None})
     cv2.imwrite(str(out / "2_sam_overlay.jpg"), draw_overlay(image, [
         ("card", card.mask, card.box, None, (255, 140, 0)),
-        (part_prompt, part.mask, part.box, None, (0, 0, 255)),
+        ("part", part.mask, part.box, None, (0, 0, 255)),
     ]))
-    print(f"[2] suggested prompts: {suggestions['prompts'] or '(none, using fallback)'}")
     for attempt in attempts:
-        print(f"    SAM {attempt['object']:4s} '{attempt['prompt']}'"
-              f"{' (fallback)' if attempt.get('source') == 'fallback' else ''}: {attempt['confidences']}")
-    print(f"    part: '{part_prompt}' (confidence {confidence:.3f}); crop re-segmentation "
+        label = attempt["prompt"] if attempt.get("source") != "click" else f"point {click}"
+        print(f"[2] SAM {attempt['object']:4s} {label!r} ({attempt.get('source', 'name')}): {attempt['confidences']}")
+    print(f"    part chosen by {source} (confidence {confidence:.3f}); crop re-segmentation "
           f"{'found the part' if crop_mask is not None else 'FAILED'}")
-    return card, part, crop_mask
+    return card, part, crop_mask, source
 
 
 # ---------- step 3 ----------
@@ -186,20 +210,20 @@ def measure(out, image, card, part, crop_mask, truth, true_masks):
                             MM_PER_PIXEL)
     reference = view >= 128
     cv2.imwrite(str(out / "3_part_mask_topdown.png"), reference.astype(np.uint8) * 255)
-    return table, reference, comparisons
+    return table, reference, comparisons, chosen
 
 
 # ---------- step 4 ----------
-def make_candidates(out, table, count):
-    folder = out / "candidates"
+def make_candidates(out, folder_name, table, count):
+    folder = out / folder_name
     folder.mkdir(exist_ok=True)
     cached = sorted(folder.glob("cand_*_response.json"), key=lambda p: int(p.stem.split("_")[1]))
     if len(cached) >= count:
         responses = [json.loads(p.read_text(encoding="utf-8")) for p in cached[:count]]
-        print(f"[4] using {count} cached candidates")
+        print(f"[4] using {count} cached candidates from {folder_name}/")
     else:
         prompt, responses = generate_candidates(table, out / "3_part_mask_topdown.png", count)
-        (out / "4_prompt.txt").write_text(prompt, encoding="utf-8")
+        (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
         for i, response in enumerate(responses, 1):
             save_json(folder / f"cand_{i}_response.json", response)
     entries = []
@@ -216,37 +240,39 @@ def make_candidates(out, table, count):
             continue
         path.write_text(code, encoding="utf-8")
         entries.append((path, None))
-    return entries
+    baseline_path = folder / "baseline.py"
+    baseline_path.write_text(baseline_code(table), encoding="utf-8")
+    return entries, baseline_path
 
 
 # ---------- step 5 ----------
-def validate(out, entries, reference, truth, truth_workplane):
+def check_program(path, reference, truth):
+    """Compile and score one program; returns a result row (without 'candidate')."""
+    mask, error = run_candidate(path, MM_PER_PIXEL)
+    if error:
+        return {"file": str(path), "error": error}
+    alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)
+    table = measure_part(mask, SCALE)
+    ok, issues = check_topology(table, truth)
+    return {"file": str(path), "iou": round(alignment.iou, 4), "topology_ok": ok, "topology_issues": issues,
+            "outline_mm": [table["outline"]["length_mm"], table["outline"]["width_mm"]],
+            "corners": table["outline"]["vertex_count"], "hole_count": table["hole_count"],
+            "hole_diameters_mm": sorted(h["diameter_mm"] for h in table["holes"]),
+            # |u|, |v|, diameter rounded to 1 mm: ignores mirroring, separates real layout changes
+            "hole_layout": sorted((round(abs(h["center_from_part_center_mm"][0])),
+                                   round(abs(h["center_from_part_center_mm"][1])),
+                                   round(h["diameter_mm"])) for h in table["holes"]),
+            "parameter_count": len(parameters(Path(path).read_text(encoding="utf-8"))),
+            "_alignment": alignment}
+
+
+def validate(out, folder_name, entries, baseline_path, reference, truth, truth_workplane):
     ceiling = aligned_iou(reference, MM_PER_PIXEL, render_top_silhouette(truth_workplane, MM_PER_PIXEL) > 0,
                           MM_PER_PIXEL).iou
-    scale = np.diag([MM_PER_PIXEL, MM_PER_PIXEL, 1.0])
     rows = []
     for i, (path, error) in enumerate(entries, 1):
-        row = {"candidate": i, "file": str(path)}
-        mask = None
-        if error is None:
-            mask, error = run_candidate(path, MM_PER_PIXEL)
-        if error:
-            row["error"] = error
-            rows.append(row)
-            continue
-        alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)
-        table = measure_part(mask, scale)
-        ok, issues = check_topology(table, truth)
-        row.update({"iou": round(alignment.iou, 4), "topology_ok": ok, "topology_issues": issues,
-                    "outline_mm": [table["outline"]["length_mm"], table["outline"]["width_mm"]],
-                    "corners": table["outline"]["vertex_count"], "hole_count": table["hole_count"],
-                    "hole_diameters_mm": sorted(h["diameter_mm"] for h in table["holes"]),
-                    # |u|, |v|, diameter rounded to 1 mm: ignores mirroring, separates real layout changes
-                    "hole_layout": sorted((round(abs(h["center_from_part_center_mm"][0])),
-                                           round(abs(h["center_from_part_center_mm"][1])),
-                                           round(h["diameter_mm"])) for h in table["holes"])})
-        row["_alignment"] = alignment
-        rows.append(row)
+        row = {"file": str(path), "error": error} if error else check_program(path, reference, truth)
+        rows.append({"candidate": i, **row})
 
     compiled = [r for r in rows if "iou" in r]
     correct = [r for r in compiled if r["topology_ok"]]
@@ -259,27 +285,43 @@ def validate(out, entries, reference, truth, truth_workplane):
             print(f"    cand {r['candidate']:2d}  FAILED  {r['error'].strip().splitlines()[-1]}")
         else:
             status = "ok" if r["topology_ok"] else "WRONG: " + "; ".join(r["topology_issues"])
-            print(f"    cand {r['candidate']:2d}  IoU {r['iou']:.4f}  corners {r['corners']}  holes "
-                  f"{r['hole_diameters_mm']}  {status}")
+            print(f"    cand {r['candidate']:2d}  IoU {r['iou']:.4f}  params {r['parameter_count']:2d}  "
+                  f"corners {r['corners']}  holes {r['hole_diameters_mm']}  {status}")
 
-    best = max(compiled, key=lambda r: r["iou"]) if compiled else None
+    # Winner: correct topology first, then IoU, then fewer parameters.
+    best = max(compiled, key=lambda r: (r["topology_ok"], round(r["iou"], 3), -r["parameter_count"])) \
+        if compiled else None
+    baseline = check_program(baseline_path, reference, truth)
     if best:
         a = best["_alignment"]
         xor = np.zeros((*a.reference.shape, 3), dtype=np.uint8)
         xor[a.reference & a.candidate] = (255, 255, 255)
         xor[a.reference & ~a.candidate] = (0, 0, 255)  # red: in the photo, missing in the model
         xor[~a.reference & a.candidate] = (255, 128, 0)  # blue: in the model, not in the photo
-        cv2.imwrite(str(out / "5_best_xor.png"), xor)
-        print(f"    best: candidate {best['candidate']} (IoU {best['iou']:.4f}, "
-              f"topology {'ok' if best['topology_ok'] else 'wrong'})")
+        cv2.imwrite(str(out / f"5_best_xor_{folder_name}.png"), xor)
+        best["design_intent"] = evaluate_design_intent(best["file"], truth)
+    baseline["design_intent"] = evaluate_design_intent(baseline_path, truth)
+    for label, row in [("winner", best), ("baseline", baseline)]:
+        if row:
+            intent = row["design_intent"]
+            print(f"    {label:8s} {Path(row['file']).name:12s} IoU {row.get('iou', 0):.4f}  "
+                  f"topology {'ok' if row.get('topology_ok') else 'WRONG'}  params {intent['parameter_count']:2d}  "
+                  f"holes linked {intent.get('hole_diameter_linked')}  length param {intent.get('length_parameter')}  "
+                  f"symmetric {intent.get('symmetric_after_length_change')}  "
+                  f"edge margin {intent.get('edge_margin_kept')}")
+
+    def clean(row):
+        return {k: v for k, v in row.items() if not k.startswith("_")} if row else None
+
     summary = {"iou_ceiling": round(ceiling, 4), "compiled": len(compiled), "correct_topology": len(correct),
-               "distinct_shapes": len(shapes), "best_candidate": best["candidate"] if best else None,
-               "candidates": [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]}
-    save_json(out / "5_summary.json", summary)
+               "candidate_count": len(rows), "distinct_shapes": len(shapes), "winner": clean(best),
+               "baseline": clean(baseline), "candidates": [clean(r) for r in rows]}
+    save_json(out / f"5_summary_{folder_name}.json", summary)
     return summary
 
 
-def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, candidate_count):
+def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, candidate_count,
+              candidates_folder="candidates_intent", click=True):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     print(f"\n######## scene {name} ########")
@@ -287,10 +329,12 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     save_json(out / "1_truth.json", truth)
     image = load_photo(out / "1_scene.png")
     sam = SamCache(out / "sam")
-    card, part, crop_mask = find_masks(out, image, sam)
-    table, reference, comparisons = measure(out, image, card, part, crop_mask, truth, true_masks)
-    result = {"scene": name, "hole_methods": comparisons}
+    click_point = simulated_click(true_masks["part"]) if click else None
+    card, part, crop_mask, source = find_masks(out, image, sam, click_point)
+    table, reference, comparisons, hole_method = measure(out, image, card, part, crop_mask, truth, true_masks)
+    result = {"scene": name, "part_found_by": source, "hole_method": hole_method, "hole_methods": comparisons}
     if candidate_count:
-        entries = make_candidates(out, table, candidate_count)
-        result["candidates"] = validate(out, entries, reference, truth, truth_workplane)
+        entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count)
+        result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference, truth,
+                                        truth_workplane)
     return result

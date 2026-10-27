@@ -171,5 +171,20 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
 
     Best IoU 0.993-0.994 for every part; the topology check catches errors that IoU passes.
   - **No geometric variety, only code variety:** all candidate files differ as text and use different CadQuery calls, but every correct one gives the same shape, because the table fixes every number (corners and holes). The wrong ones are CadQuery API pitfalls, not alternative readings of the part. Variety would need ambiguity the table does not resolve (e.g. hidden features, chamfers, multi-view parts).
-  - Next idea: add a hint about `polyline(points).close()` with the full list (or `includeCurrent=True`), like the `pushPoints` hint.
+  - With a `polyline(points).close()` hint (no `moveTo` + `polyline`), D went from 7/10 to 10/10.
+- [x] Click selection, baseline and design intent (`run_template_scenes.py`; table in `outputs/e2e/design_intent_table.json`).
+  - **Part selection by click:** SAM point prompt (`sam_client.point_prompt`, built with `build_object_prompt`) at a simulated click (the pixel deepest inside the part). Found the part in all 5 scenes with confidence 0.988-0.992 (names: 0.72-0.88). Finding by name (suggestions, then fallbacks) is kept as the fallback; it is only asked when the click fails.
+  - **Hole methods with click masks:** the cropped SAM mask failed the hole check in A light (10 "holes") and A dark (7), so color was used there. Where the crop passed (B, C, D) its diameters were 0.2-0.4 mm too large, while color stayed within 0.04-0.12 mm. Color has been the most accurate method in every scene so far.
+  - **Baseline without a language model** (`baseline_cad.py`): extrudes the measured corner polygon and cuts the measured holes; every corner and hole is its own parameter.
+  - **Design-intent test** (`design_intent.py`): changes parameters and rebuilds. Shared hole diameter: one parameter resizes every hole of an equal-size group and nothing else. Length +10 mm: the true part's symmetry is kept (mirror IoU ≥ 0.98) and off-axis holes keep their distance to the nearer end. Symmetry axes come from the truth automatically (A both, B top-bottom, C none, D left-right).
+  - **Results, winner (correct topology first, then IoU, then fewer parameters) vs baseline:**
+
+    | Part | Correct topology | Parameters (winner / baseline) | Shared hole diameter | Symmetric after length change | Edge margin kept | IoU (winner / baseline) |
+    |---|---|---|---|---|---|---|
+    | A | 10/10 | 5 / 21 (−76%) | yes / no | yes / no | yes / no | 0.9890 / 0.9949 |
+    | B | 10/10 | 7 / 15 (−53%) | n/a (different sizes) | yes / no | no / no | 0.9928 / 0.9937 |
+    | C | 8/10 (2 ran out of tokens) | 6 / 19 (−68%) | yes / no | n/a (not symmetric) | yes / no | 0.9836 / 0.9908 |
+    | D | 10/10 | 7 / 23 (−70%) | n/a (different sizes) | yes / no | n/a (holes on the axis) | 0.9791 / 0.9824 |
+
+    The baseline has no length parameter at all, so it fails every intent check. Its IoU is slightly higher because it copies the measurement noise; in A it even beats the true part (0.9905). The design-intent prompt also produced real variety for the first time: one B candidate rounded to the template's design values (60 × 30, hole_spacing 28, offset 2) and three D candidates rounded the holes to 6.0 / 10.0. B's "edge margin kept: no" is debatable: the winner places the holes from the center, which is also a valid intent for an asymmetric plate. The longer prompt costs tokens: 2 of C's 10 candidates used all 16000 tokens on reasoning.
 - [ ] End-to-end on a real photo of a holed part

@@ -1,7 +1,11 @@
 """Tests for placing SAM's box-local mask raster into the full photo (no API calls)."""
 import numpy as np
 
-from sam_client import place_mask
+from sam_client import place_mask, point_prompt
+
+
+def test_point_prompt_selects_a_pixel():
+    assert point_prompt((2048, 1536), 1500.4, 700.6) == "<0f>1<|point;x=1500;y=701;w=2048;h=1536|>"
 
 
 def test_full_size_raster_is_placed_at_box_corner():

@@ -38,9 +38,19 @@ Holes are circular through-holes. Thickness cannot be seen from the top; use 3.0
 Requirements:
 - Define exactly one function `def {function}(...)` that returns a cadquery Workplane.
 - Every dimension is a keyword argument with its default taken from the table, so it can be edited later.
+- Capture the design intent with few, meaningfully named parameters, the way a designer would:
+  * holes of the same size share one parameter (e.g. hole_diameter);
+  * symmetric or repeated layouts are built from that pattern (e.g. edge_margin, hole_spacing), so changing
+    the overall length or width keeps the symmetry and the distances to the edges;
+  * features such as tabs, arms or notches get their own dimensions (e.g. tab_length, tab_width, arm_width)
+    instead of a list of raw corner coordinates.
+  Values that differ by less than about 0.5 mm are measurement noise of the same design value.
+  With the default arguments the part must still match the table within about 0.5 mm.
 - Placement: X = u, Y = v, bottom face at Z = 0, top face at Z = thickness.
 - Place holes at their absolute [u, v] coordinates, e.g. with `.pushPoints([...])`. Avoid `.center()` for this:
   it moves the workplane origin cumulatively, so a second `.center()` is relative to the first.
+- Draw a polygon outline with `.polyline(points).close()` using the full list of corners. Do not combine
+  `.moveTo(first)` with `.polyline(rest)`: polyline drops the current point by default, losing a corner.
 - Only `import cadquery as cq` (and `import math` if needed). Do not use show_object, file I/O or print.
 - Reply with a single ```python code block and nothing else."""
 
