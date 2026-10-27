@@ -22,11 +22,14 @@ from meta_sam_parser import (
     SegmentationBoxRecord,
     SegmentationMaskRecord,
     build_object_prompt,
-    decode_mask_to_raster,
     image_segmentation_format,
 )
 from openai import OpenAI
 from PIL import Image, ImageOps
+
+import sam_decode
+
+sam_decode.use_in_parser()  # the parser's mask check uses the fast decoder too (same results)
 
 BASE_URL = "https://api.meta.ai/v1"
 MODEL = "sam-3.1"
@@ -128,7 +131,7 @@ def parse_detections(raw_text, image_size):
 
 
 def _place_mask(record, image_size):
-    raster = np.frombuffer(decode_mask_to_raster(record.mask), dtype=np.uint8)
+    raster = np.frombuffer(sam_decode.decode_mask_to_raster(record.mask), dtype=np.uint8)
     local = raster.reshape(record.mask.height, record.mask.width).astype(bool)
     bounds = (record.bounds.left, record.bounds.top, record.bounds.right, record.bounds.bottom)
     return place_mask(local, bounds, image_size)
