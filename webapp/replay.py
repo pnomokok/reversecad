@@ -11,6 +11,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from design_intent import parameters
 from e2e_pipeline import CARD_PROMPTS, card_aspect_ok, pixel_to_mm_scales
 from homography import card_corners, largest_contour, to_mm
 from part_measurements import classify_hole
@@ -116,6 +117,25 @@ def silhouette_png(name, candidate):
     crop = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     ok, data = cv2.imencode(".png", np.pad(crop, 20).astype(np.uint8) * 255)
     return data.tobytes()
+
+
+def result_program(name):
+    """(program path, source label) of the run's result: the winner, or the baseline fallback."""
+    summary = json.loads((run_dir(name) / f"5_summary_{candidate_round(name)}.json").read_text(encoding="utf-8"))
+    result = summary.get("result") or summary.get("winner")
+    if not result:
+        raise FileNotFoundError("this run has no result program")
+    path = Path(result["file"].replace("\\", "/"))
+    source = summary.get("result_source", "candidate")
+    return path, source
+
+
+def winner(name):
+    """Screen 4: the result program's named parameters with their defaults (read from the code, not run)."""
+    path, source = result_program(name)
+    params = [{"name": p, "default": v} for p, v in parameters(path.read_text(encoding="utf-8"))
+              if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return {"name": name, "program": path.name, "source": source, "parameters": params}
 
 
 def _pixels(points):

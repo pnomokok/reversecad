@@ -1,6 +1,7 @@
 """Tests for the web app back end in replay mode (saved runs, no API calls)."""
 import json
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -55,6 +56,29 @@ def test_failed_candidate_has_a_reason_and_no_silhouette(monkeypatch):
     if not failed:
         pytest.skip("this saved round has no failed candidate")
     assert failed[0]["reasons"] and failed[0]["silhouette"] is None
+
+
+def _stl_x_extent(data):
+    """Length along X of an STL (ASCII or binary)."""
+    if data[:5] == b"solid" and b"facet" in data[:1000]:
+        xs = [float(line.split()[1]) for line in data.decode().splitlines() if line.strip().startswith("vertex")]
+    else:
+        triangles = np.frombuffer(data[84:], dtype=np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")]))
+        xs = triangles["v"][:, :, 0].ravel()
+    return max(xs) - min(xs)
+
+
+@needs_saved_run
+def test_result_model_builds_and_follows_a_slider():
+    info = client.get("/api/runs/A_light/winner").json()
+    names = {p["name"]: p["default"] for p in info["parameters"]}
+    assert info["source"] == "candidate" and names
+    default = client.post("/api/runs/A_light/model", json={"parameters": {}})
+    assert default.status_code == 200
+    length = max(names, key=names.get)  # the largest default is the plate length (80)
+    longer = client.post("/api/runs/A_light/model", json={"parameters": {length: names[length] + 10}})
+    assert _stl_x_extent(longer.content) - _stl_x_extent(default.content) == pytest.approx(10, abs=0.5)
+    assert client.post("/api/runs/A_light/model", json={"parameters": {"__import__": 1}}).status_code == 400
 
 
 @needs_saved_run

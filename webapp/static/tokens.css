@@ -37,6 +37,10 @@
   --card-image-height: 110px;
   --winner-outline-width: 3px;
   --color-silhouette-bg: #000000;
+  --color-viewer-bg: #e9ecf1;
+  --color-model: #9aa7b8;
+  --viewer-height: 560px;
+  --slider-range: 0.5; /* sliders run from default × (1 - range) to default × (1 + range) */
 }
 
 @media (prefers-color-scheme: dark) {

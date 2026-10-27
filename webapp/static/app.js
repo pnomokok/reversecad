@@ -2,18 +2,21 @@
 // Screen 1: choose a saved run, click the part, enter the thickness.
 // Screen 2: card, part outline and holes drawn over the photo, measurement table beside it.
 // Screen 3: candidates arrive one by one (server-sent events) into a grid with score and reasons.
+// Screen 4: the result in 3D (three.js); a slider per named parameter rebuilds the part on release.
+import { createViewer } from "./viewer.js";
 
-const state = { run: null, image: null, click: null, analysis: null, stream: null };
+const state = { run: null, image: null, click: null, analysis: null, stream: null, viewer: null, winner: null };
 const canvas = document.getElementById("photo-canvas");
 const context = canvas.getContext("2d");
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 function showStep(step) {
   document.querySelectorAll("#steps li").forEach((li) => li.classList.toggle("active", li.dataset.step === String(step)));
-  [1, 2, 3].forEach((n) => document.getElementById(`screen-${n}`).classList.toggle("hidden", step !== n));
-  // The stage shows the photo for screens 1-2 and the candidate grid for screen 3.
-  canvas.classList.toggle("hidden", step === 3);
+  [1, 2, 3, 4].forEach((n) => document.getElementById(`screen-${n}`).classList.toggle("hidden", step !== n));
+  // The stage shows the photo for screens 1-2, the candidate grid for 3 and the 3D view for 4.
+  canvas.classList.toggle("hidden", step >= 3);
   document.getElementById("candidate-grid").classList.toggle("hidden", step !== 3);
+  document.getElementById("viewer").classList.toggle("hidden", step !== 4);
 }
 
 async function getJSON(url) {
@@ -158,6 +161,7 @@ function streamCandidates() {
   const result = document.getElementById("candidate-result");
   grid.innerHTML = "";
   result.textContent = "";
+  document.getElementById("to-model").disabled = true;
   let received = 0;
   state.stream = new EventSource(`/api/runs/${state.run}/candidates/stream`);
   state.stream.addEventListener("candidate", (message) => {
@@ -174,6 +178,7 @@ function streamCandidates() {
     } else {
       result.textContent = `No candidate passed: ${done.result_source}.`;
     }
+    document.getElementById("to-model").disabled = !done.result_source || done.result_source.startsWith("none");
   });
   state.stream.onerror = () => {
     progress.textContent = "The candidate stream stopped unexpectedly.";
@@ -189,6 +194,69 @@ document.getElementById("to-candidates").addEventListener("click", () => {
 document.getElementById("back-to-2").addEventListener("click", () => {
   if (state.stream) state.stream.close();
   showStep(2);
+});
+
+// ---------- screen 4 ----------
+function currentValues() {
+  const values = {};
+  document.querySelectorAll("#sliders input").forEach((input) => (values[input.name] = Number(input.value)));
+  return values;
+}
+
+async function rebuild() {
+  const status = document.getElementById("model-status");
+  status.textContent = "Building…";
+  const started = performance.now();
+  const response = await fetch(`/api/runs/${state.run}/model`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parameters: currentValues() }),
+  });
+  if (!response.ok) {
+    status.textContent = `Not built: ${(await response.json()).detail}`;
+    return;
+  }
+  state.viewer.show(await response.arrayBuffer());
+  status.textContent = `Built in ${((performance.now() - started) / 1000).toFixed(1)} s.`;
+}
+
+function slider(parameter) {
+  const range = Number(css("--slider-range"));
+  const value = parameter.default;
+  const span = Math.max(Math.abs(value) * range, 1);  // at least ±1 for zero or tiny defaults
+  const row = document.createElement("label");
+  row.className = "slider";
+  row.innerHTML = `<span>${parameter.name}</span><output>${value}</output>
+    <input type="range" name="${parameter.name}" min="${value - span}" max="${value + span}" step="0.1" value="${value}">`;
+  const input = row.querySelector("input");
+  input.dataset.default = value;
+  input.addEventListener("input", () => (row.querySelector("output").textContent = input.value));
+  input.addEventListener("change", rebuild);  // on release, not while dragging
+  return row;
+}
+
+async function showModel() {
+  showStep(4);
+  if (!state.viewer) state.viewer = createViewer(document.getElementById("viewer"));
+  state.viewer.resize();
+  state.viewer.reset();
+  state.winner = await getJSON(`/api/runs/${state.run}/winner`);
+  document.getElementById("model-source").textContent =
+    `${state.winner.program} (${state.winner.source}), ${state.winner.parameters.length} parameters.`;
+  const sliders = document.getElementById("sliders");
+  sliders.innerHTML = "";
+  state.winner.parameters.forEach((p) => sliders.appendChild(slider(p)));
+  await rebuild();
+}
+
+document.getElementById("to-model").addEventListener("click", showModel);
+document.getElementById("back-to-3").addEventListener("click", () => showStep(3));
+document.getElementById("reset-parameters").addEventListener("click", () => {
+  document.querySelectorAll("#sliders input").forEach((input) => {
+    input.value = input.dataset.default;
+    input.closest(".slider").querySelector("output").textContent = input.value;
+  });
+  rebuild();
 });
 
 // ---------- start ----------

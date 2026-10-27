@@ -8,6 +8,11 @@
   <title>ReverseCAD</title>
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/app.css">
+  <!-- three.js from a CDN, pinned to one version -->
+  <script type="importmap">
+    {"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                 "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+  </script>
 </head>
 <body>
   <header>
@@ -25,6 +30,7 @@
     <section class="stage">
       <canvas id="photo-canvas"></canvas>
       <div class="candidate-grid hidden" id="candidate-grid"></div>
+      <div class="viewer hidden" id="viewer"></div>
     </section>
 
     <!-- Screen 1: pick the photo, click the part, enter the thickness -->
@@ -58,7 +64,18 @@
       <h2>3. Candidates</h2>
       <p class="hint" id="candidate-progress">Waiting for candidates…</p>
       <p class="hint" id="candidate-result"></p>
+      <button id="to-model" disabled>Show the result in 3D</button>
       <button id="back-to-2">Back</button>
+    </aside>
+
+    <!-- Screen 4: the result in 3D; a slider per named parameter rebuilds the part when released -->
+    <aside class="panel hidden" id="screen-4">
+      <h2>4. Model</h2>
+      <p class="hint" id="model-source"></p>
+      <div class="sliders" id="sliders"></div>
+      <p class="hint" id="model-status"></p>
+      <button id="reset-parameters">Reset values</button>
+      <button id="back-to-3">Back</button>
     </aside>
   </main>
 

@@ -10,17 +10,32 @@ then open http://127.0.0.1:8000
 """
 import asyncio
 import json
+import threading
+import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from webapp import replay
+from webapp.builder import Builder
 
 STATIC = Path(__file__).parent / "static"
+MODEL_DIR = Path("outputs") / "web"  # temporary model files (git-ignored)
 REPLAY_DELAY_S = 0.4  # pause between replayed candidate events
-app = FastAPI(title="ReverseCAD")
+builder = Builder()  # one long-running build process (CadQuery loads once)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    threading.Thread(target=builder.warm_up, daemon=True).start()  # ready before the first slider move
+    yield
+    builder.close()  # stop the build process when the server stops
+
+
+app = FastAPI(title="ReverseCAD", lifespan=lifespan)
 
 
 @app.get("/api/runs")
@@ -77,6 +92,43 @@ def candidate_silhouette(name: str, candidate: int):
         return Response(replay.silhouette_png(name, candidate), media_type="image/png")
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
+
+
+@app.get("/api/runs/{name}/winner")
+def run_winner(name: str):
+    """Screen 4: the result program and its named numeric parameters."""
+    try:
+        return replay.winner(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+
+
+@app.post("/api/runs/{name}/model")
+async def build_model(name: str, request: Request):
+    """Build the result program with the posted parameter values and return it as binary STL.
+
+    Body: {"parameters": {"name": value, ...}}; only the program's own numeric parameters are accepted.
+    """
+    try:
+        info = replay.winner(name)
+        program, _ = replay.result_program(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    allowed = {p["name"] for p in info["parameters"]}
+    body = await request.json()
+    overrides = {}
+    for key, value in (body.get("parameters") or {}).items():
+        if key not in allowed or not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise HTTPException(400, f"unknown or non-numeric parameter: {key}")
+        overrides[key] = float(value)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    output = MODEL_DIR / f"{name}_{uuid.uuid4().hex}.stl"
+    error = await asyncio.to_thread(builder.build, program, output.resolve(), overrides)
+    if error:
+        raise HTTPException(422, f"the program did not build with these values: {error.splitlines()[-1]}")
+    data = output.read_bytes()
+    output.unlink()
+    return Response(data, media_type="model/stl")
 
 
 @app.get("/")

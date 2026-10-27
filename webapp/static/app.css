@@ -105,6 +105,13 @@ table.measurements td.number { font-family: var(--font-mono); text-align: right;
 .candidate-card.winner { outline: var(--winner-outline-width) solid var(--color-accent); }
 .candidate-card ul { margin: 0; padding-left: var(--space-3); color: var(--color-bad); }
 
+.viewer { width: 100%; }
+.viewer canvas { cursor: grab; }
+.sliders { display: flex; flex-direction: column; gap: var(--space-2); }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: var(--space-1); font-size: var(--font-size-small); }
+.slider input { grid-column: 1 / -1; }
+.slider output { font-family: var(--font-mono); }
+
 .status-ok { color: var(--color-ok); }
 .status-bad { color: var(--color-bad); }
 .hidden { display: none !important; }
