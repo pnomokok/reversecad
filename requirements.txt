@@ -1,0 +1,8 @@
+# ReverseCAD icin gerekli Python paketleri (Python 3.13 ile test edildi).
+# Kurulum: python -m pip install -r requirements.txt
+cadquery==2.8.0          # parametrik 3B model kodu, STL/STEP ciktisi
+opencv-python==5.0.0     # maske isleme, homografi, siluet karsilastirma
+numpy==2.5.4             # sayisal hesaplar
+python-dotenv==1.2.4     # .env icindeki API anahtarlarini okur
+requests==2.34.2         # Baseten ve Meta API cagrilari
+pytest==9.1.1            # testler
