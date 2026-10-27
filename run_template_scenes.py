@@ -24,6 +24,7 @@ SCENES = {
     "B": {"part": "B", "color": LIGHT_METAL, "candidates": 10},
     "C": {"part": "C", "color": LIGHT_METAL, "candidates": 10},
     "D": {"part": "D", "color": LIGHT_METAL, "candidates": 10},
+    "E": {"part": "E", "color": LIGHT_METAL, "candidates": 10},
 }
 
 

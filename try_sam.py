@@ -22,9 +22,9 @@ PHOTO_DIR = Path("data") / "private"
 # (label, file name, what is different about the shot)
 PHOTOS = [
     ("original", "ornek_anahtar.jpg", "reference shot"),
-    ("closer", "key_repeat_1.jpg.jpeg", "camera closer"),
-    ("swapped", "key_replace.png.jpeg", "positions swapped, key rotated, camera farther"),
-    ("blurred", "key_repeat_blur.jpg.jpeg", "out of focus"),
+    ("closer", "key_repeat_1.jpg", "camera closer"),
+    ("swapped", "key_replace.jpg", "positions swapped, key rotated, camera farther"),
+    ("blurred", "key_repeat_blur.jpg", "out of focus"),
 ]
 OUTPUT_DIR = Path("outputs") / "sam"
 RULER_MM = (56.5, 57.5)  # key length, physical ruler reading 57 mm +/- 0.5 mm

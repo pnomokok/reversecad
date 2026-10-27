@@ -18,7 +18,7 @@ MM_PER_PIXEL = 0.1
 SCALE = np.diag([MM_PER_PIXEL, MM_PER_PIXEL, 1.0])  # render pixels -> mm
 
 
-@pytest.mark.parametrize("name", ["A", "B", "C", "D"])
+@pytest.mark.parametrize("name", ["A", "B", "C", "D", "E"])
 def test_rendered_template_part_matches_its_truth(name):
     mask = render_top_silhouette(make_part(name).rotate((0, 0, 0), (0, 0, 1), 20), MM_PER_PIXEL) > 0
     table = measure_part(mask, SCALE)
@@ -27,8 +27,29 @@ def test_rendered_template_part_matches_its_truth(name):
     assert abs(errors["length_mm"]) < 0.3 and abs(errors["width_mm"]) < 0.3
     assert errors["vertex_count"] == 0 and errors["hole_count"] == 0
     for hole in errors["holes"]:
+        assert hole["measured_shape"] == hole["true_shape"]
         assert hole["center_error_mm"] < 0.3 and abs(hole["diameter_error_mm"]) < 0.25
+        if "length_error_mm" in hole:
+            assert abs(hole["length_error_mm"]) < 0.3 and abs(hole["width_error_mm"]) < 0.3
     assert check_topology(table, truth) == (True, [])
+
+
+def test_rectangular_hole_and_slot_are_told_apart():
+    mask = render_top_silhouette(make_part("E").rotate((0, 0, 0), (0, 0, 1), 30), MM_PER_PIXEL) > 0
+    holes = measure_part(mask, SCALE)["holes"]
+    by_shape = {hole["shape"]: hole for hole in holes}
+    assert set(by_shape) == {"rectangle", "slot"}
+    rectangle, slot = by_shape["rectangle"], by_shape["slot"]
+    assert (rectangle["length_mm"], rectangle["width_mm"]) == pytest.approx((16, 8), abs=0.3)
+    assert (slot["length_mm"], slot["width_mm"]) == pytest.approx((20, 6), abs=0.3)
+    # Both run along the part's length, whatever the part's angle in the image.
+    assert abs(rectangle["angle_deg"]) < 2 and abs(slot["angle_deg"]) < 2
+    assert all(len(hole["polygon_mm"]) >= 4 for hole in holes)
+
+
+def test_round_holes_stay_circles():
+    holes = measure_part(render_top_silhouette(make_part("B"), MM_PER_PIXEL) > 0, SCALE)["holes"]
+    assert [hole["shape"] for hole in holes] == ["circle", "circle"]
 
 
 def test_l_plate_corners_are_measured_in_mm():

@@ -40,6 +40,16 @@ def test_designer_style_plate_passes_every_check(tmp_path):
     assert report["edge_margin_kept"] is True
 
 
+def test_baseline_cuts_rectangular_holes_and_slots(tmp_path):
+    scale = np.diag([0.1, 0.1, 1.0])
+    table = measure_part(render_top_silhouette(make_part("E"), 0.1) > 0, scale)
+    path = tmp_path / "baseline_e.py"
+    path.write_text(baseline_code(table), encoding="utf-8")
+    mask, error = run_candidate(path, 0.1)
+    assert error is None
+    assert check_topology(measure_part(mask, scale), part_truth("E")) == (True, [])
+
+
 def test_baseline_reproduces_the_shape_but_carries_no_intent(tmp_path):
     table = measure_part(render_top_silhouette(make_part("A"), 0.1) > 0, np.diag([0.1, 0.1, 1.0]))
     path = tmp_path / "baseline.py"

@@ -39,7 +39,7 @@ SCALE = np.diag([MM_PER_PIXEL, MM_PER_PIXEL, 1.0])  # render pixels -> mm
 CARD_PROMPTS = ["credit card", "card", "bank card"]
 FALLBACK_PART_PROMPTS = ["metal plate", "plate", "flat metal part"]
 CROP_MARGIN = 0.15  # crop margin as a share of the part's larger side
-MIN_HOLE_ROUNDNESS = 0.85
+MIN_HOLE_SOLIDITY = 0.9  # area / convex hull area; fragments and bites score lower
 MIN_HOLE_DIAMETER_MM = 1.5
 
 
@@ -59,7 +59,8 @@ def card_aspect_ok(mask):
 
 
 def holes_look_right(table):
-    return all(h["roundness"] is not None and h["roundness"] >= MIN_HOLE_ROUNDNESS
+    """Every hole is a clean circle, rectangle or slot of a sensible size (not a fragment)."""
+    return all(h["shape"] != "polygon" and h["solidity"] >= MIN_HOLE_SOLIDITY
                and h["diameter_mm"] >= MIN_HOLE_DIAMETER_MM for h in table["holes"])
 
 

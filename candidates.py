@@ -33,7 +33,13 @@ Measurement table in millimeters, measured by deterministic code. Take every num
 
 Coordinates are [u, v]: u along the part's length, v along its width, origin at the center of the
 outline's bounding rectangle. "outline.polygon_mm" lists the outer boundary's corners in order.
-Holes are circular through-holes. Thickness cannot be seen from the top; use 3.0 mm.
+Holes are through-holes. Each hole has a "shape":
+- "circle": use diameter_mm;
+- "rectangle" or "slot" (a slot has semicircular ends): use length_mm (overall, end to end), width_mm and
+  angle_deg (rotation of its length from the u axis). CadQuery's `slot2D(length, diameter, angle)` takes the
+  overall end-to-end length;
+- "polygon": use polygon_mm, its corners in order.
+Thickness cannot be seen from the top; use 3.0 mm.
 
 Requirements:
 - Define exactly one function `def {function}(...)` that returns a cadquery Workplane.
@@ -55,8 +61,17 @@ Requirements:
 - Reply with a single ```python code block and nothing else."""
 
 
+HOLE_FIELDS = {  # what the model needs per hole shape; quality scores are left out
+    "circle": ["shape", "center_from_part_center_mm", "diameter_mm"],
+    "rectangle": ["shape", "center_from_part_center_mm", "length_mm", "width_mm", "angle_deg"],
+    "slot": ["shape", "center_from_part_center_mm", "length_mm", "width_mm", "angle_deg"],
+    "polygon": ["shape", "center_from_part_center_mm", "polygon_mm"],
+}
+
+
 def build_prompt(table):
     shown = {key: value for key, value in table.items() if key != "center_on_table_mm"}  # irrelevant to the model
+    shown["holes"] = [{field: hole[field] for field in HOLE_FIELDS[hole["shape"]]} for hole in table["holes"]]
     return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME)
 
 
