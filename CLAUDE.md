@@ -118,7 +118,7 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   | positions swapped, key rotated, camera farther | 57.98 mm | **+4.47%** |
 
   Blur and camera distance are handled. The swapped shot's error is **not** camera tilt (an earlier rough corner estimate said 1.29% left-right; line-fitted corners give 0.19%). Not yet measured: pure repeat shots with nothing moved.
-- [ ] Homography from the card's corners (`homography.py`, offline comparison `try_homography.py`). Corners come from lines fitted to the straight middle of each card side (rounded corners). Tilt check is now opposite card edges (left vs right, top vs bottom) > 2%, replacing the long-vs-short ratio check. Synthetic tilted scene: recovers the key within 0.5% where the simple scale is off by more than 2%, even below the 2% warning. On the four real photos it does **not** help:
+- [x] Homography from the card's corners (`homography.py`, offline comparison `try_homography.py`). Corners come from lines fitted to the straight middle of each card side (rounded corners). Tilt check is now opposite card edges (left vs right, top vs bottom) > 2%, replacing the long-vs-short ratio check. Synthetic tilted scene: recovers the key within 0.5% where the simple scale is off by more than 2%, even below the 2% warning. On the four real photos it does **not** help:
 
   | Photo | Key distance from card (card lengths) | Before | After |
   |---|---|---|---|
@@ -127,5 +127,16 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   | swapped | 1.53 | +4.47% | +4.31% |
   | blurred | 0.82 | -0.48% | +0.82% |
 
-  The largest error is at the largest distance (only one far point, so not conclusive); suspected cause: lens distortion with the key and card at opposite edges of the frame, which a homography cannot fix. All corrected card outlines measure 0.1-0.5 mm larger than 85.60 × 53.98. The Bursakart is ID-1: ruler 85 × 54 mm and it lines up with a bank card. **Key ground truth:** the earlier 55-56 mm came from an on-screen ruler; a physical ruler gives **57 mm** (±0.5 mm reading). Against 57 mm the homography is better on every photo (-0.2%, -2.2%, +1.6%, -1.8%; mean absolute error 1.5% vs 2.7% for the simple scale), but the ruler's own uncertainty is about 1%. Next: a part with an exactly known size (a second ID-1 card, the user's school card, face down for privacy) for the comparison and the lens-distortion test (both cards together at the frame center vs at opposite edges, same zoom). Homography is not the default until then.
+  The largest error is at the largest distance (only one far point, so not conclusive); suspected cause: lens distortion with the key and card at opposite edges of the frame, which a homography cannot fix. All corrected card outlines measure 0.1-0.5 mm larger than 85.60 × 53.98. The Bursakart is ID-1: ruler 85 × 54 mm and it lines up with a bank card. **Key ground truth:** the earlier 55-56 mm came from an on-screen ruler; a physical ruler gives **57 mm** (±0.5 mm reading). Against 57 mm the homography is better on every photo (-0.2%, -2.2%, +1.6%, -1.8%; mean absolute error 1.5% vs 2.7% for the simple scale), but the ruler's own uncertainty is about 1%. 
+
+  **Decisive test with a part of exactly known size** (`try_two_cards.py`): the user's school card (ID-1, personal data painted out) next to the Bursakart, each card measured using the other as the scale, 3 photos × 2 directions × long and short side:
+
+  | Photo | Card distance | Simple scale | Homography |
+  |---|---|---|---|
+  | both at frame center | 1.2 | -1.32 … +1.45% | -1.44 … +0.24% |
+  | opposite frame edges | 1.6 | -0.84 … +0.60% | -0.58 … +1.00% |
+  | rotated 90° | 1.2 | -1.11 … +1.45% | -0.03 … +0.68% |
+  | **mean absolute error** | | **0.86%** (max 1.45%) | **0.48%** (max 1.44%) |
+
+  **Decision: the homography is the default measurement method.** Lens distortion is small (at most ~1% at opposite frame edges; no lens correction needed). Rotation is handled. Each photo's two directions mirror each other (the reference card's own mask error flips sign), so the error of a single measurement is roughly half of these numbers. The key's +1.6% in the swapped photo fits within this plus the ruler's ±1%.
 - [ ] Single-candidate end-to-end skeleton: photo → mask → measurement → code → compile → IoU
