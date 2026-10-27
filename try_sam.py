@@ -27,7 +27,7 @@ PHOTOS = [
     ("blurred", "key_repeat_blur.jpg.jpeg", "out of focus"),
 ]
 OUTPUT_DIR = Path("outputs") / "sam"
-RULER_MM = (55.0, 56.0)  # key length measured with a ruler
+RULER_MM = (56.5, 57.5)  # key length, physical ruler reading 57 mm +/- 0.5 mm
 CARD_PROMPT = "card"  # "credit card" returns nothing for the sample's transit card
 PART_PROMPT = "key"
 
