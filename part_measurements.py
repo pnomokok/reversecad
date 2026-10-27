@@ -7,8 +7,9 @@ that rectangle's center. Outline corners come from lines fitted to each edge
 and intersected (like the card's corners).
 
 Each hole gets a shape: the best match (by overlap) among an equal-area circle,
-a rectangle and a slot (round ends) with the hole's minimum-area-rectangle size
-and angle; if none overlaps at least 0.9, it is a polygon given by its corners.
+a rectangle, a slot (round ends) and an ellipse with the hole's minimum-area-
+rectangle size and angle; if none overlaps at least 0.9, it is a polygon given
+by its corners.
 The language model gets these numbers; it never measures pixels itself.
 """
 import math
@@ -26,6 +27,7 @@ FLIPS = [(1, 1), (-1, 1), (1, -1), (-1, -1)]  # the part's axis has no "front"; 
 SHAPE_MIN_MATCH = 0.9  # overlap needed to call a hole a circle, rectangle or slot
 SHAPE_GRID_MM = 0.05  # raster step for comparing a hole with ideal shapes
 ROUND_ELONGATION = 1.15  # below this length/width ratio a matching hole is a circle
+ELONGATED_SHAPES = ("rectangle", "slot", "ellipse")  # described by length, width and angle
 
 
 def _fit_line(points):
@@ -86,6 +88,12 @@ def _slot(center, length, width, angle, steps=24):
     return np.array(points)
 
 
+def _ellipse(center, length, width, angle, steps=64):
+    along, across = np.array([math.cos(angle), math.sin(angle)]), np.array([-math.sin(angle), math.cos(angle)])
+    a = np.linspace(0, 2 * math.pi, steps, endpoint=False)
+    return center + np.outer(np.cos(a) * length / 2, along) + np.outer(np.sin(a) * width / 2, across)
+
+
 def _circle(center, diameter, steps=48):
     a = np.linspace(0, 2 * math.pi, steps, endpoint=False)
     return center + diameter / 2 * np.column_stack([np.cos(a), np.sin(a)])
@@ -119,6 +127,7 @@ def classify_hole(hole_mm):
         "circle": _overlap(hole_mm, _circle(centroid, 2 * math.sqrt(area / math.pi))),
         "rectangle": _overlap(hole_mm, _rectangle(center, length, width, axis)),
         "slot": _overlap(hole_mm, _slot(center, length, width, axis)),
+        "ellipse": _overlap(hole_mm, _ellipse(center, length, width, axis)),
     }
     if length / width < ROUND_ELONGATION and scores["circle"] >= SHAPE_MIN_MATCH:
         shape = "circle"
@@ -171,7 +180,7 @@ def measure_part(part_mask, homography):
             "solidity": round(float(area / cv2.contourArea(cv2.convexHull(hole_mm))), 3),
             "shape_match": round(float(info["match"]), 3),
         }
-        if shape in ("rectangle", "slot"):
+        if shape in ELONGATED_SHAPES or shape == "polygon":  # a polygon's are its bounding-rectangle size
             relative = math.degrees(info["axis"] - axis) % 180
             relative = relative - 180 if relative > 90 else relative
             hole.update({"center_from_part_center_mm": to_part_frame(*info["rect_center"]),

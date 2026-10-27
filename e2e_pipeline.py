@@ -115,7 +115,7 @@ def segment_crop(sam, image, part_mask, prompt, click=None):
 
 
 # ---------- step 2 ----------
-def find_masks(out, image, sam, click):
+def find_masks(out, image, sam, click, photo_path):
     attempts, card = [], None
     for prompt in CARD_PROMPTS:
         detections = sam.segment(image, prompt)
@@ -146,7 +146,7 @@ def find_masks(out, image, sam, click):
         if suggestions_path.exists():
             suggestions = json.loads(suggestions_path.read_text(encoding="utf-8"))
         else:
-            prompts, content = suggest_part_prompts(out / "1_scene.png")
+            prompts, content = suggest_part_prompts(photo_path)
             suggestions = {"prompts": prompts, "answer": content}
             save_json(suggestions_path, suggestions)
         options = try_prompts([(p, None) for p in suggestions["prompts"]], "suggested")
@@ -174,7 +174,20 @@ def find_masks(out, image, sam, click):
 
 
 # ---------- step 3 ----------
-def measure(out, image, card, part, crop_mask, truth, true_masks):
+def describe_hole(hole):
+    u, v = hole["center_from_part_center_mm"]
+    if hole["shape"] == "circle":
+        size = f"diameter {hole['diameter_mm']:.2f}"
+    elif hole["shape"] in ("rectangle", "slot", "ellipse"):
+        size = f"{hole['length_mm']:.2f} x {hole['width_mm']:.2f}, angle {hole['angle_deg']}"
+    else:
+        size = (f"{len(hole['polygon_mm'])} corners, bounding {hole['length_mm']:.2f} x {hole['width_mm']:.2f}, "
+                f"equal-area diameter {hole['diameter_mm']:.2f}")
+    return f"{hole['shape']:9s} {size} mm at [{u:.1f}, {v:.1f}] (match {hole['shape_match']}, solidity {hole['solidity']})"
+
+
+def measure(out, image, card, part, crop_mask, truth=None, true_masks=None):
+    """Measurement tables from each hole method; truth and true masks are optional (real photos)."""
     corners = card_corners(largest_contour(card.mask))
     homography, _ = card_homography(corners)
     masks = {"sam_full": part.mask}
@@ -182,7 +195,17 @@ def measure(out, image, card, part, crop_mask, truth, true_masks):
         masks["sam_crop"] = crop_mask
     masks["color"], _ = refine_holes(image, part.mask)
     tables = {name: measure_part(mask, homography) for name, mask in masks.items()}
-    comparisons = {name: compare_to_truth(table, truth) for name, table in tables.items()}
+    if truth is None:
+        print(f"[3] card edges L-R/T-B {[round(float(d) * 100, 2) for d in edge_differences(corners)]} %")
+        for name, table in tables.items():
+            print(f"    {name:9s} outline {table['outline']['length_mm']} x {table['outline']['width_mm']} mm, "
+                  f"{table['outline']['vertex_count']} corners, {table['hole_count']} holes"
+                  f"{'' if holes_look_right(table) else '  (hole check FAILS)'}")
+            for hole in table["holes"]:
+                print(f"        {describe_hole(hole)}")
+        comparisons = {}
+    else:
+        comparisons = {name: compare_to_truth(table, truth) for name, table in tables.items()}
 
     # Color first: it was the most accurate in every synthetic scene. The cropped SAM mask is the
     # fallback; its holes came out about 3% too large there.
@@ -196,21 +219,27 @@ def measure(out, image, card, part, crop_mask, truth, true_masks):
     save_json(out / "3_measurements.json", {
         "chosen_method": chosen, "table": table, "card_edge_differences": edge_differences(corners),
         "tables": tables, "errors_vs_truth": comparisons,
-        "mask_iou_vs_truth": {name: round(mask_iou(mask, true_masks["part"]), 4) for name, mask in masks.items()},
+        "mask_iou_vs_truth": {name: round(mask_iou(mask, true_masks["part"]), 4) for name, mask in masks.items()}
+        if true_masks else None,
     })
+    for name, mask in masks.items():  # each method's part mask, for visual checks
+        cv2.imwrite(str(out / f"3_mask_{name}.png"), mask.astype(np.uint8) * 255)
 
-    print(f"[3] hole methods vs truth ({len(truth['holes'])} holes, diameters "
-          f"{[h['diameter_mm'] for h in truth['holes']]} mm):")
-    for name, comparison in comparisons.items():
-        found = [h for h in comparison["holes"] if h["center_error_mm"] is not None]
-        d_err = max((abs(h["diameter_error_mm"]) for h in found), default=float("nan"))
-        c_err = max((h["center_error_mm"] for h in found), default=float("nan"))
-        print(f"    {name:9s} holes {tables[name]['hole_count']:2d}  max diameter error {d_err:5.2f} mm  "
-              f"max center error {c_err:5.2f} mm  mask IoU {mask_iou(masks[name], true_masks['part']):.4f}"
-              f"{'  <- used' if name == chosen else ''}")
-    print(f"    outline {table['outline']['length_mm']} x {table['outline']['width_mm']} mm "
-          f"(true {truth['length']} x {truth['width']}), {table['outline']['vertex_count']} corners "
-          f"(true {truth['outline_vertices']})")
+    if truth is None:
+        print(f"    used: {chosen}")
+    else:
+        print(f"[3] hole methods vs truth ({len(truth['holes'])} holes, diameters "
+              f"{[h['diameter_mm'] for h in truth['holes']]} mm):")
+        for name, comparison in comparisons.items():
+            found = [h for h in comparison["holes"] if h["center_error_mm"] is not None]
+            d_err = max((abs(h["diameter_error_mm"]) for h in found), default=float("nan"))
+            c_err = max((h["center_error_mm"] for h in found), default=float("nan"))
+            print(f"    {name:9s} holes {tables[name]['hole_count']:2d}  max diameter error {d_err:5.2f} mm  "
+                  f"max center error {c_err:5.2f} mm  mask IoU {mask_iou(masks[name], true_masks['part']):.4f}"
+                  f"{'  <- used' if name == chosen else ''}")
+        print(f"    outline {table['outline']['length_mm']} x {table['outline']['width_mm']} mm "
+              f"(true {truth['length']} x {truth['width']}), {table['outline']['vertex_count']} corners "
+              f"(true {truth['outline_vertices']})")
 
     center = np.array(table["center_on_table_mm"])
     half = table["outline"]["length_mm"] / 2 + 8
@@ -254,14 +283,17 @@ def make_candidates(out, folder_name, table, count):
 
 
 # ---------- step 5 ----------
-def check_program(path, reference, truth):
-    """Compile and score one program; returns a result row (without 'candidate')."""
+def check_program(path, reference, truth=None):
+    """Compile and score one program; returns a result row (without 'candidate').
+
+    Without a truth (real photos) topology_ok is None.
+    """
     mask, error = run_candidate(path, MM_PER_PIXEL)
     if error:
         return {"file": str(path), "error": error}
     alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)
     table = measure_part(mask, SCALE)
-    ok, issues = check_topology(table, truth)
+    ok, issues = check_topology(table, truth) if truth else (None, [])
     return {"file": str(path), "iou": round(alignment.iou, 4), "topology_ok": ok, "topology_issues": issues,
             "outline_mm": [table["outline"]["length_mm"], table["outline"]["width_mm"]],
             "corners": table["outline"]["vertex_count"], "hole_count": table["hole_count"],
@@ -274,9 +306,10 @@ def check_program(path, reference, truth):
             "_alignment": alignment}
 
 
-def validate(out, folder_name, entries, baseline_path, reference, truth, truth_workplane):
+def validate(out, folder_name, entries, baseline_path, reference, truth=None, truth_workplane=None):
+    """Score all candidates and the baseline. Truth and the true part are optional (real photos)."""
     ceiling = aligned_iou(reference, MM_PER_PIXEL, render_top_silhouette(truth_workplane, MM_PER_PIXEL) > 0,
-                          MM_PER_PIXEL).iou
+                          MM_PER_PIXEL).iou if truth_workplane is not None else float("nan")
     rows = []
     for i, (path, error) in enumerate(entries, 1):
         row = {"file": str(path), "error": error} if error else check_program(path, reference, truth)
@@ -286,18 +319,19 @@ def validate(out, folder_name, entries, baseline_path, reference, truth, truth_w
     correct = [r for r in compiled if r["topology_ok"]]
     shapes = {(r["corners"], tuple(map(tuple, r["hole_layout"])), tuple(round(x) for x in r["outline_mm"]))
               for r in compiled}
-    print(f"[5] {len(compiled)}/{len(rows)} compiled, {len(correct)}/{len(rows)} correct topology, "
+    topology = f"{len(correct)}/{len(rows)}" if truth else "n/a (no ground truth)"
+    print(f"[5] {len(compiled)}/{len(rows)} compiled, correct topology {topology}, "
           f"{len(shapes)} distinct shape(s); IoU ceiling (true part vs reference) {ceiling:.4f}")
     for r in rows:
         if "error" in r:
             print(f"    cand {r['candidate']:2d}  FAILED  {r['error'].strip().splitlines()[-1]}")
         else:
-            status = "ok" if r["topology_ok"] else "WRONG: " + "; ".join(r["topology_issues"])
+            status = {True: "ok", None: ""}.get(r["topology_ok"], "WRONG: " + "; ".join(r["topology_issues"]))
             print(f"    cand {r['candidate']:2d}  IoU {r['iou']:.4f}  params {r['parameter_count']:2d}  "
                   f"corners {r['corners']}  holes {r['hole_diameters_mm']}  {status}")
 
-    # Winner: correct topology first, then IoU, then fewer parameters.
-    best = max(compiled, key=lambda r: (r["topology_ok"], round(r["iou"], 3), -r["parameter_count"])) \
+    # Winner: correct topology first (when known), then IoU, then fewer parameters.
+    best = max(compiled, key=lambda r: (r["topology_ok"] is not False, round(r["iou"], 3), -r["parameter_count"])) \
         if compiled else None
     baseline = check_program(baseline_path, reference, truth)
     if best:
@@ -307,16 +341,17 @@ def validate(out, folder_name, entries, baseline_path, reference, truth, truth_w
         xor[a.reference & ~a.candidate] = (0, 0, 255)  # red: in the photo, missing in the model
         xor[~a.reference & a.candidate] = (255, 128, 0)  # blue: in the model, not in the photo
         cv2.imwrite(str(out / f"5_best_xor_{folder_name}.png"), xor)
-        best["design_intent"] = evaluate_design_intent(best["file"], truth)
-    baseline["design_intent"] = evaluate_design_intent(baseline_path, truth)
     for label, row in [("winner", best), ("baseline", baseline)]:
-        if row:
-            intent = row["design_intent"]
-            print(f"    {label:8s} {Path(row['file']).name:12s} IoU {row.get('iou', 0):.4f}  "
-                  f"topology {'ok' if row.get('topology_ok') else 'WRONG'}  params {intent['parameter_count']:2d}  "
-                  f"holes linked {intent.get('hole_diameter_linked')}  length param {intent.get('length_parameter')}  "
-                  f"symmetric {intent.get('symmetric_after_length_change')}  "
-                  f"edge margin {intent.get('edge_margin_kept')}")
+        if not row or "iou" not in row:
+            continue
+        # The design-intent test needs the true part (repeated holes, symmetry); without it only count parameters.
+        intent = evaluate_design_intent(row["file"], truth) if truth else {"parameter_count": row["parameter_count"]}
+        row["design_intent"] = intent
+        print(f"    {label:8s} {Path(row['file']).name:12s} IoU {row['iou']:.4f}  "
+              f"topology {({True: 'ok', None: 'n/a'}).get(row['topology_ok'], 'WRONG')}  "
+              f"params {intent['parameter_count']:2d}  holes linked {intent.get('hole_diameter_linked')}  "
+              f"length param {intent.get('length_parameter')}  "
+              f"symmetric {intent.get('symmetric_after_length_change')}  edge margin {intent.get('edge_margin_kept')}")
 
     def clean(row):
         return {k: v for k, v in row.items() if not k.startswith("_")} if row else None
@@ -338,11 +373,27 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     image = load_photo(out / "1_scene.png")
     sam = SamCache(out / "sam")
     click_point = simulated_click(true_masks["part"]) if click else None
-    card, part, crop_mask, source = find_masks(out, image, sam, click_point)
+    card, part, crop_mask, source = find_masks(out, image, sam, click_point, out / "1_scene.png")
     table, reference, comparisons, hole_method = measure(out, image, card, part, crop_mask, truth, true_masks)
     result = {"scene": name, "part_found_by": source, "hole_method": hole_method, "hole_methods": comparisons}
     if candidate_count:
         entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count)
         result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference, truth,
                                         truth_workplane)
+    return result
+
+
+def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_intent"):
+    """The same pipeline on a real photo: no ground truth, the part is picked by `click` (x, y in pixels)."""
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"\n######## photo {name} ########")
+    image = load_photo(photo_path)
+    sam = SamCache(out / "sam")
+    card, part, crop_mask, source = find_masks(out, image, sam, click, photo_path)
+    table, reference, _, hole_method = measure(out, image, card, part, crop_mask)
+    result = {"photo": name, "part_found_by": source, "hole_method": hole_method, "table": table}
+    if candidate_count:
+        entries, baseline_path = make_candidates(out, candidates_folder, table, candidate_count)
+        result["candidates"] = validate(out, candidates_folder, entries, baseline_path, reference)
     return result

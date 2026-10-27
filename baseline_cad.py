@@ -17,11 +17,12 @@ def _hole(i, hole):
     if shape == "circle":
         arguments = [f"    {name}_u={u!r}, {name}_v={v!r}, {name}_diameter={hole['diameter_mm']!r},"]
         return arguments, f"{at}.circle({name}_diameter / 2).extrude(thickness + 2)"
-    if shape in ("rectangle", "slot"):
+    if shape in ("rectangle", "slot", "ellipse"):
         arguments = [f"    {name}_u={u!r}, {name}_v={v!r}, {name}_length={hole['length_mm']!r}, "
                      f"{name}_width={hole['width_mm']!r}, {name}_angle={hole['angle_deg']!r},"]
-        sketch = f"rect({name}_length, {name}_width)" if shape == "rectangle" \
-            else f"slot2D({name}_length, {name}_width)"
+        sketch = {"rectangle": f"rect({name}_length, {name}_width)",
+                  "slot": f"slot2D({name}_length, {name}_width)",
+                  "ellipse": f"ellipse({name}_length / 2, {name}_width / 2)"}[shape]
         return arguments, f"{at}.transformed(rotate=(0, 0, {name}_angle)).{sketch}.extrude(thickness + 2)"
     corners = hole["polygon_mm"]
     arguments = [f"    {name}_corner{j}_u={cu!r}, {name}_corner{j}_v={cv!r}," for j, (cu, cv) in enumerate(corners, 1)]

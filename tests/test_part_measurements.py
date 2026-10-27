@@ -3,6 +3,7 @@
 Uses the scenes' ground-truth masks, so it checks scene geometry, homography
 and the measurement table without SAM in the loop.
 """
+import cadquery as cq
 import cv2
 import numpy as np
 import pytest
@@ -45,6 +46,14 @@ def test_rectangular_hole_and_slot_are_told_apart():
     # Both run along the part's length, whatever the part's angle in the image.
     assert abs(rectangle["angle_deg"]) < 2 and abs(slot["angle_deg"]) < 2
     assert all(len(hole["polygon_mm"]) >= 4 for hole in holes)
+
+
+def test_elliptical_hole_is_an_ellipse():
+    plate = cq.Workplane("XY").box(40, 30, 3).cut(cq.Workplane("XY", origin=(0, 0, -5)).ellipse(6, 3).extrude(10))
+    holes = measure_part(render_top_silhouette(plate.rotate((0, 0, 0), (0, 0, 1), 25), MM_PER_PIXEL) > 0,
+                         SCALE)["holes"]
+    assert [hole["shape"] for hole in holes] == ["ellipse"]
+    assert (holes[0]["length_mm"], holes[0]["width_mm"]) == pytest.approx((12, 6), abs=0.3)
 
 
 def test_round_holes_stay_circles():

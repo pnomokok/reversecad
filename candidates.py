@@ -35,9 +35,9 @@ Coordinates are [u, v]: u along the part's length, v along its width, origin at 
 outline's bounding rectangle. "outline.polygon_mm" lists the outer boundary's corners in order.
 Holes are through-holes. Each hole has a "shape":
 - "circle": use diameter_mm;
-- "rectangle" or "slot" (a slot has semicircular ends): use length_mm (overall, end to end), width_mm and
+- "rectangle", "slot" (semicircular ends) or "ellipse": use length_mm (overall, end to end), width_mm and
   angle_deg (rotation of its length from the u axis). CadQuery's `slot2D(length, diameter, angle)` takes the
-  overall end-to-end length;
+  overall end-to-end length; `ellipse(x_radius, y_radius)` takes half the length and half the width;
 - "polygon": use polygon_mm, its corners in order.
 Thickness cannot be seen from the top; use 3.0 mm.
 
@@ -65,6 +65,7 @@ HOLE_FIELDS = {  # what the model needs per hole shape; quality scores are left 
     "circle": ["shape", "center_from_part_center_mm", "diameter_mm"],
     "rectangle": ["shape", "center_from_part_center_mm", "length_mm", "width_mm", "angle_deg"],
     "slot": ["shape", "center_from_part_center_mm", "length_mm", "width_mm", "angle_deg"],
+    "ellipse": ["shape", "center_from_part_center_mm", "length_mm", "width_mm", "angle_deg"],
     "polygon": ["shape", "center_from_part_center_mm", "polygon_mm"],
 }
 
