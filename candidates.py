@@ -35,7 +35,9 @@ Measurement table in millimeters, measured by deterministic code. Take every num
 {table}
 
 Coordinates are [u, v]: u along the part's length, v along its width, origin at the center of the
-outline's bounding rectangle. "outline.polygon_mm" lists the outer boundary's corners in order.
+outline's bounding rectangle. "outline.polygon_mm" lists the outer boundary's corners in order; edges are
+straight except those listed in "outline.arcs": the edge from corner `from` to corner `to` (indices into
+polygon_mm) is a circular arc with center_mm and radius_mm (a notch, a rounded corner).
 Holes are through-holes. Each hole has a "shape":
 - "circle": use diameter_mm;
 - "rectangle", "slot" (semicircular ends) or "ellipse": use length_mm (overall, end to end), width_mm and
@@ -59,6 +61,8 @@ Requirements:
   or the part is rejected: outline length and width within max(1 mm, 2%) of the table; every outline corner
   within that distance of your outline (0.5 mm for corners of features with an edge under 20 mm, such as tabs
   and notches); holes within 0.5 mm in size and position.
+- If these limits contradict each other or the image, do not keep trying numbers: write the nearest clean
+  shape and add a comment line `# exceeds: <which limit and by how much>`. Decide quickly.
 - Placement: X = u, Y = v, bottom face at Z = 0, top face at Z = thickness.
 - Build the part with the helper library `partkit` (`import partkit as pk`); it takes absolute coordinates
   and is tested. Plain CadQuery is allowed for anything it does not cover. You decide the structure and the
@@ -90,7 +94,8 @@ def partkit_reference():
 
 def build_prompt(view):
     """Prompt text for a model view of the table (see model_view.py)."""
-    shown = {"outline": {key: view["outline"][key] for key in ("length_mm", "width_mm", "vertex_count", "polygon_mm")},
+    shown = {"outline": {key: view["outline"][key]
+                         for key in ("length_mm", "width_mm", "vertex_count", "polygon_mm", "arcs")},
              "hole_count": view["hole_count"],
              "holes": [{field: hole[field] for field in HOLE_FIELDS[hole["shape"]]} for hole in view["holes"]]}
     return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME,

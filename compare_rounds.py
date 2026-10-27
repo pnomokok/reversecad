@@ -12,12 +12,14 @@ from pathlib import Path
 
 import numpy as np
 
-ROUNDS = [  # (part, scene folder, earlier round, new round)
-    ("A", Path("outputs/e2e/A_light"), "candidates_intent", "candidates_kit"),
-    ("B", Path("outputs/e2e/B"), "candidates_intent", "candidates_kit"),
-    ("C", Path("outputs/e2e/C"), "candidates_intent", "candidates_kit"),
-    ("D", Path("outputs/e2e/D"), "candidates_intent", "candidates_kit"),
-    ("carton", Path("outputs/real/carton"), "candidates_clean", "candidates_kit"),
+ROUND_LABELS = {"candidates_intent": "intent", "candidates_clean": "clean", "candidates_kit": "partkit",
+                "candidates_arcs": "arcs"}
+ROUNDS = [  # (part, scene folder, rounds in order)
+    ("A", Path("outputs/e2e/A_light"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
+    ("B", Path("outputs/e2e/B"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
+    ("C", Path("outputs/e2e/C"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
+    ("D", Path("outputs/e2e/D"), ["candidates_intent", "candidates_kit", "candidates_arcs"]),
+    ("carton", Path("outputs/real/carton"), ["candidates_clean", "candidates_kit", "candidates_arcs"]),
 ]
 
 
@@ -50,11 +52,11 @@ def round_stats(scene, folder):
 
 def main():
     rows = []
-    for part, scene, earlier, new in ROUNDS:
-        for label, folder in (("earlier", earlier), ("partkit", new)):
+    for part, scene, folders in ROUNDS:
+        for folder in folders:
             stats = round_stats(scene, folder)
             if stats:
-                rows.append({"part": part, "round": label, "folder": folder, **stats})
+                rows.append({"part": part, "round": ROUND_LABELS[folder], "folder": folder, **stats})
     header = (f"{'part':7s} {'round':8s} {'compiled':>8s} {'topology':>8s} {'in limits':>9s} {'16k hits':>8s} "
               f"{'tokens':>7s} {'batch s':>7s} {'req s':>6s} {'params':>6s} {'IoU':>7s}")
     print(header)

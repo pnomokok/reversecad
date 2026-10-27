@@ -94,7 +94,9 @@ def _is_smooth_arc(points, max_radius_mm):
     residual = np.sqrt(np.mean((np.hypot(x - cx, y - cy) - radius) ** 2))
     angles = np.unwrap(np.arctan2(y - cy, x - cx))
     span = math.degrees(abs(angles[-1] - angles[0]))
-    return residual <= 0.2 and span >= 60
+    # 45 degrees: approxPolyDP's corners do not sit exactly where a rounded corner starts, so a 90-degree
+    # fillet's chord covered only 56-68 degrees of it. Torn edges fail the tight residual instead.
+    return residual <= 0.2 and span >= 45
 
 
 def least_squares_outline(contour_mm, epsilon_mm, max_flatten_mm, merge_angle_deg=40):
@@ -130,6 +132,10 @@ def least_squares_outline(contour_mm, epsilon_mm, max_flatten_mm, merge_angle_de
                 a, b = indices[j], indices[(j + 1) % count]
                 if np.linalg.norm(contour_mm[b] - contour_mm[a]) < 20:
                     protected.add(far)
+        # A rounded corner is often split into two shorter arcs; test the two edges around corner i together.
+        before, after = indices[i - 1], indices[(i + 1) % count]
+        if _is_smooth_arc(edge_points(before, after), max_flatten_mm * 2):
+            protected.update({before, indices[i], after})
 
     while len(indices) > 3:
         candidates = []

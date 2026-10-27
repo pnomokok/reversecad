@@ -63,6 +63,25 @@ def test_missing_tab_is_rejected():
     assert not ok and any(name.startswith("corner") for name in failing(rows))  # tab 2 mm too narrow
 
 
+def test_model_view_gives_notches_and_rounded_corners_as_arcs():
+    notched = model_view(table_of(pk.semicircle_notch(pk.plate(80, 40, 3), (40, 0), 8)))["outline"]
+    assert notched["vertex_count"] == 6 and len(notched["arcs"]) == 1
+    assert abs(notched["arcs"][0]["radius_mm"] - 8) < 0.3
+    filleted = model_view(table_of(cq.Workplane("XY").box(80, 40, 3, centered=(True, True, False))
+                                   .edges("|Z").fillet(5)))["outline"]
+    assert len(filleted["arcs"]) == 4
+    assert all(abs(arc["radius_mm"] - 5) < 0.5 for arc in filleted["arcs"])
+    assert model_view(table_of(make_part("D")))["outline"]["arcs"] == []  # straight-edged parts get no arcs
+
+
+def test_notch_radius_is_checked_on_the_arc():
+    view = model_view(table_of(pk.semicircle_notch(pk.plate(80, 40, 3), (40, 0), 8)))
+    ok, rows = check_deviation(view, table_of(pk.semicircle_notch(pk.plate(80, 40, 3), (40, 0), 8)))
+    assert ok, failing(rows)
+    ok, rows = check_deviation(view, table_of(pk.semicircle_notch(pk.plate(80, 40, 3), (40, 0), 9)))
+    assert not ok and "arc 1" in failing(rows)
+
+
 def test_extra_hole_is_rejected():
     extra = ((-32, -12), (-32, 12), (32, -12), (32, 12), (0, 0))
     ok, rows = check_deviation(model_view(table_of(plate())), table_of(plate(holes=extra)))

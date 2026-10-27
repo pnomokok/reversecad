@@ -418,7 +418,7 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
 
 
 def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, candidate_count,
-              candidates_folder="candidates_kit", click=True):
+              candidates_folder="candidates_arcs", click=True):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     print(f"\n######## scene {name} ########")
@@ -437,7 +437,7 @@ def run_scene(name, photo_rgb, true_masks, truth, truth_workplane, out_dir, cand
     return result
 
 
-def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_kit",
+def run_photo(name, photo_path, click, out_dir, candidate_count, candidates_folder="candidates_arcs",
               suggest=True):
     """The same pipeline on a real photo: no ground truth, the part is picked by `click` (x, y in pixels).
 

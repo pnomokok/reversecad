@@ -7,13 +7,16 @@ shape a designer meant, within these limits of the model's view of the table
 - holes, size and position: 0.5 mm;
 - outline corners: each corner the model was shown must lie within the limit of
   the candidate's outline; 0.5 mm for corners of features with an edge shorter
-  than 20 mm (tabs, notches), else the outline limit.
+  than 20 mm (tabs, notches), else the outline limit;
+- outline arcs (notches, rounded corners): points along each arc must lie on the
+  candidate's outline, 0.5 mm for arcs under 20 mm across.
 A candidate that strays further is rejected. Each check produces a row with the
 measured value, the candidate's value, the deviation and the limit, so the
 report can show them side by side.
 """
 import numpy as np
 
+from model_view import arc_points
 from part_measurements import FLIPS, match_holes
 
 SMALL_FEATURE_MM = 20.0
@@ -75,6 +78,18 @@ def check_deviation(view, candidate):
         rows.append({"dimension": f"corner {i}", "measured_mm": [round(float(c), 2) for c in corner],
                      "candidate_mm": "on outline" if distance <= limit else "off outline",
                      "deviation_mm": round(float(distance), 2), "limit_mm": round(float(limit), 2),
+                     "ok": bool(distance <= limit)})
+
+    # Arcs: points along each arc must lie on the candidate's outline (0.5 mm for arcs under 20 mm across).
+    for i, arc in enumerate(view["outline"].get("arcs", []), 1):
+        start, end = corners[arc["from"]], corners[arc["to"]]
+        points = arc_points(start, end, np.array(arc["center_mm"]), arc["radius_mm"])
+        limit = tolerance(float(np.linalg.norm(end - start)))
+        distance = min((_distances_to_outline(points * np.array(flip), candidate["outline"]["contour_mm"]).max()
+                        for flip in FLIPS))
+        rows.append({"dimension": f"arc {i}", "measured_mm": f"r {arc['radius_mm']} at {arc['center_mm']}",
+                     "candidate_mm": "on outline" if distance <= limit else "off outline",
+                     "deviation_mm": round(float(distance), 2), "limit_mm": round(limit, 2),
                      "ok": bool(distance <= limit)})
 
     if candidate["hole_count"] != view["hole_count"]:
