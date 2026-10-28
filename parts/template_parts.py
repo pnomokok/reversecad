@@ -71,19 +71,37 @@ def _truth_hole(x, y, size, cx, cy):
 
 
 def part_truth(name):
-    """Ground truth in the measurement table's frame: [u, v] from the bounding-rectangle center."""
-    spec = SPECS[name]
-    xs = [x for x, _ in spec["outline"]]
-    ys = [y for _, y in spec["outline"]]
+    """Ground truth of a template part in the measurement table's frame: [u, v] from the bounding-rectangle center."""
+    return truth_from_spec(SPECS[name], name)
+
+
+def truth_from_spec(spec, name="part"):
+    """Ground truth of any spec ({"outline", "holes"}, mm) in the measurement table's frame. The table puts u
+    along the longer side, so a part that is longer in y is turned 90 degrees first."""
+    outline, holes = spec["outline"], spec["holes"]
+    xs = [x for x, _ in outline]
+    ys = [y for _, y in outline]
+    if max(ys) - min(ys) > max(xs) - min(xs):  # turn (x, y) -> (y, -x); elongated holes turn with it
+        outline = [(y, -x) for x, y in outline]
+        holes = [((y, -x), (size[0], size[1], size[2]) if isinstance(size, tuple) else size) for (x, y), size in holes]
+        turned = True
+    else:
+        turned = False
+    xs = [x for x, _ in outline]
+    ys = [y for _, y in outline]
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
     width_x, width_y = max(xs) - min(xs), max(ys) - min(ys)
-    assert width_x >= width_y, "template parts are laid out with their length along x"
+    truth_holes = [_truth_hole(x, y, size, cx, cy) for (x, y), size in holes]
+    if turned:
+        for hole in truth_holes:
+            if "angle_deg" in hole:
+                hole["angle_deg"] = 90.0
     return {
         "name": name,
         "length": width_x,
         "width": width_y,
         "thickness": THICKNESS,
-        "outline_vertices": len(spec["outline"]),
-        "outline_mm": [[x - cx, y - cy] for x, y in spec["outline"]],
-        "holes": [_truth_hole(x, y, size, cx, cy) for (x, y), size in spec["holes"]],
+        "outline_vertices": len(outline),
+        "outline_mm": [[x - cx, y - cy] for x, y in outline],
+        "holes": truth_holes,
     }
