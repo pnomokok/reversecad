@@ -24,6 +24,10 @@ Built for the Meta Global AI Developer Hackathon with Meta's SAM 3.1, Muse Spark
 | **Muse Wonder** (Meta Model API, `muse-wonder-1.0`, reasoning effort `medium`): repair | When no candidate passes: diagnoses the failed programs from their code, difference images and rejection reasons, and writes a corrected program | `repair.py`, `repair_inputs.py` |
 | **Muse Wonder**: completion of broken parts | Only when the code finds break cues: reads the cues, the rectified photo and the winning program, and suggests the missing part (a parameter or feature) with its reason | `completion.py`, `break_cues.py` |
 
+## Online demo
+
+**https://zeynepsdklc--reversecad-demo-web.us-east.modal.run** replays the saved synthetic samples in the browser, nothing to install: the whole flow (`A_light`), a Muse Wonder repair (`A_light_repair`), the "no design found" state (`A_torn_fallback`) and a broken part with its completion card (`D_tab_broken`); the drawing, STEP/STL/DXF/.py downloads and the 1:1 print template work. Live mode, repair and voice editing need API keys, so they are off there; run the app locally for them. The first request after a quiet spell takes a little longer (the server starts).
+
 ## Quick start
 
 Tested with **Python 3.13 on Windows 11**. The web page loads three.js from a CDN, so the browser needs internet access.
