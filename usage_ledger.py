@@ -16,7 +16,8 @@ WONDER = "muse-wonder-1.0"
 PRICES = {  # USD
     SAM: {"per_image": 0.0025, "source": "Meta Model API docs (CLAUDE.md)"},
     WONDER: {"input_per_million": 4.0, "output_per_million": 20.0, "source": "project document"},
-    SPARK_OPEN: None,  # Baseten credit; per-token price not known yet
+    SPARK_OPEN: {"input_per_million": 1.25, "output_per_million": 4.25, "unverified": True,
+                 "source": "third-party listing; to be checked in the Baseten dashboard"},
 }
 FILE_NAME = "usage.jsonl"
 _lock = threading.Lock()  # candidate requests finish on several threads
@@ -65,9 +66,11 @@ def summarize(folder):
     for model, total in models.items():
         dollars = cost(model, total["input_tokens"], total["output_tokens"], total["images"])
         total["cost_usd"] = round(dollars, 4) if dollars is not None else None
+        total["price_unverified"] = bool((PRICES.get(model) or {}).get("unverified"))
     known = [t["cost_usd"] for t in models.values() if t["cost_usd"] is not None]
     return {"models": models, "known_cost_usd": round(sum(known), 4),
-            "unpriced_models": [m for m, t in models.items() if t["cost_usd"] is None]}
+            "unpriced_models": [m for m, t in models.items() if t["cost_usd"] is None],
+            "unverified_price_models": [m for m, t in models.items() if t["price_unverified"]]}
 
 
 def describe(summary):
@@ -75,6 +78,7 @@ def describe(summary):
     lines = []
     for model, t in summary["models"].items():
         price = f"${t['cost_usd']:.4f}" if t["cost_usd"] is not None else "price unknown"
+        price += " (unverified price)" if t.get("price_unverified") else ""
         amount = f"{t['images']} images" if t["images"] else f"{t['input_tokens']} in / {t['output_tokens']} out tokens"
         lines.append(f"{model}: {t['calls']} calls, {amount}, {t['seconds']} s, {price}")
     lines.append(f"known cost ${summary['known_cost_usd']:.4f}"

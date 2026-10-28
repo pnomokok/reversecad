@@ -528,7 +528,7 @@ function usageRows(usage) {
   // One row per model this run called (from the run's usage ledger), then the total of the known prices.
   const rows = Object.entries(usage.models).map(([model, t]) => {
     const amount = t.images ? `${t.images} images` : `${(t.input_tokens + t.output_tokens).toLocaleString("en-US")} tokens`;
-    const price = t.cost_usd == null ? "price unknown" : `$${t.cost_usd.toFixed(3)}`;
+    const price = t.cost_usd == null ? "price unknown" : `$${t.cost_usd.toFixed(3)}${t.price_unverified ? " (unverified)" : ""}`;
     return [MODEL_NAMES[model] || model, `${t.calls} calls · ${amount} · ${price}`];
   });
   rows.push(["Known cost", `$${usage.known_cost_usd.toFixed(3)}`]);
