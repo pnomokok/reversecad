@@ -9,10 +9,12 @@ Run from the repository root:
 then open http://127.0.0.1:8000
 """
 import asyncio
+import io
 import json
 import os
 import threading
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,6 +23,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import drawing_export
 from webapp import live, replay
 from webapp.builder import Builder
 
@@ -229,22 +232,67 @@ DOWNLOADS = {  # format -> (file suffix, media type)
     "stl": (".stl", "model/stl"),
     "step": (".step", "application/step"),
     "py": (".py", "text/x-python"),
+    "dxf": (".dxf", "image/vnd.dxf"),
+    "pdf": ("_template_1to1.pdf", "application/pdf"),
+    "zip": (".zip", "application/zip"),
 }
+
+
+async def _profile(name, overrides):
+    """The built part's top face (outline, holes, thickness) for drawings, DXF and the 1:1 template."""
+    program, _ = replay.result_program(name)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    output = (MODEL_DIR / f"{name}_{uuid.uuid4().hex}.profile.json").resolve()
+    error = await asyncio.to_thread(builder.build, program, output, overrides)
+    if error:
+        raise HTTPException(422, f"the program did not build with these values: {error.splitlines()[-1]}")
+    data = json.loads(output.read_text(encoding="utf-8"))
+    output.unlink()
+    return data
+
+
+@app.post("/api/runs/{name}/drawing")
+async def drawing(name: str, request: Request):
+    """Screen 5: the part's top-face profile and thickness for the technical drawing (mm)."""
+    overrides = await _parameters(name, request)
+    winner = replay.winner(name)
+    return {"name": name, "program": winner["program"], "source": winner["source"],
+            "profile": await _profile(name, overrides)}
 
 
 @app.post("/api/runs/{name}/download")
 async def download(name: str, request: Request, format: str = "stl"):
-    """Screen 5: the part with the current slider values as STL, STEP or the CadQuery program (.py)."""
+    """Screen 5: the part with the current slider values as STL, STEP, DXF, the CadQuery program (.py),
+    the 1:1 print template (PDF) or all of them (.zip)."""
     if format not in DOWNLOADS:
         raise HTTPException(400, f"format must be one of {', '.join(DOWNLOADS)}")
     overrides = await _parameters(name, request)
     suffix, media_type = DOWNLOADS[format]
-    if format == "py":  # the parametric program itself, with the slider values as its new defaults
-        data = replay.program_with_defaults(name, overrides).encode("utf-8")
-    else:
-        data = await _export(name, overrides, suffix)
+    try:
+        data = await _download_data(name, overrides, format)
+    except ValueError as error:  # e.g. the part does not fit on an A3 page
+        raise HTTPException(422, str(error))
     filename = f"reversecad_{name}{suffix}"
     return Response(data, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+async def _download_data(name, overrides, format):
+    if format == "py":  # the parametric program itself, with the slider values as its new defaults
+        return replay.program_with_defaults(name, overrides).encode("utf-8")
+    if format == "dxf":
+        return drawing_export.dxf_bytes(await _profile(name, overrides), name)
+    if format == "pdf":
+        return drawing_export.template_pdf(await _profile(name, overrides), name)
+    if format == "zip":  # every format at once
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+            for part in ("step", "stl", "dxf", "py", "pdf"):
+                try:
+                    archive.writestr(f"reversecad_{name}{DOWNLOADS[part][0]}", await _download_data(name, overrides, part))
+                except ValueError:  # too large for the template: the other files still go in
+                    continue
+        return stream.getvalue()
+    return await _export(name, overrides, DOWNLOADS[format][0])
 
 
 # ---------- live mode ----------

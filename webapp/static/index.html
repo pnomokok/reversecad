@@ -29,6 +29,7 @@
       <button data-screen="capture" title="Capture"><span class="icon">photo_camera</span></button>
       <button data-screen="search" title="Search" disabled><span class="icon">travel_explore</span></button>
       <button data-screen="edit" title="Edit" disabled><span class="icon">architecture</span></button>
+      <button data-screen="export" title="Export" disabled><span class="icon">output</span></button>
     </nav>
   </aside>
 
@@ -37,7 +38,8 @@
     <nav class="steps" id="steps">
       <button data-screen="capture">1 Capture</button><span class="dot">·</span>
       <button data-screen="search" disabled>2 Search</button><span class="dot">·</span>
-      <button data-screen="edit" disabled>3 Edit</button>
+      <button data-screen="edit" disabled>3 Edit</button><span class="dot">·</span>
+      <button data-screen="export" disabled>4 Export</button>
     </nav>
     <div class="progress hidden" id="progress">
       <div class="progress-text"><span id="progress-label"></span><span class="progress-count" id="progress-count"></span></div>
@@ -242,6 +244,57 @@
             </div>
             <p class="status-line" id="download-status"></p>
           </div>
+        </aside>
+      </div>
+    </section>
+    <!-- ================= EXPORT ================= -->
+    <section class="screen hidden" id="screen-export">
+      <div class="subbar">
+        <span class="subbar-title"><span class="dot-accent"></span>ACTIVE MODEL</span>
+        <span class="subbar-text" id="export-name"></span>
+        <span class="subbar-right">
+          <span class="chip-muted">Scale 1:1</span>
+          <span class="chip-muted">Units: mm</span>
+          <span class="chip-muted">Third-angle projection</span>
+        </span>
+      </div>
+      <div class="edit-layout">
+        <div class="sheet-area">
+          <div class="viewport-bar">
+            <span class="chip"><span class="icon accent">straighten</span>TECHNICAL DRAWING</span>
+            <span class="mono-muted" id="drawing-facts"></span>
+          </div>
+          <div class="sheet"><svg id="drawing" viewBox="0 0 420 297" preserveAspectRatio="xMidYMid meet"></svg></div>
+        </div>
+        <aside class="export-panel">
+          <div class="panel-head"><h2>EXPORT PACKAGES</h2><p class="panel-sub">Built from the current parameter values.</p></div>
+          <div class="export-card">
+            <div class="export-card-head"><span class="icon export-icon">deployed_code</span><div><strong>STEP · CAD software</strong><span>Solid model (B-rep)</span></div></div>
+            <p>Opens as a solid in FreeCAD, Fusion 360, SolidWorks and other CAD tools.</p>
+            <div class="export-card-foot"><span id="fact-step">solid, mm</span><button data-format="step"><span class="icon">download</span>Export STEP</button></div>
+          </div>
+          <div class="export-card">
+            <div class="export-card-head"><span class="icon export-icon">view_in_ar</span><div><strong>STL · 3D printing</strong><span>Triangle mesh</span></div></div>
+            <p>For slicers such as PrusaSlicer, Cura or Bambu Studio.</p>
+            <div class="export-card-foot"><span id="fact-stl"></span><button data-format="stl"><span class="icon">download</span>Export STL</button></div>
+          </div>
+          <div class="export-card">
+            <div class="export-card-head"><span class="icon export-icon">polyline</span><div><strong>DXF · laser cutting</strong><span>2D contours, mm</span></div></div>
+            <p>Closed outline (layer CUT_OUTER) and holes (CUT_INNER), origin at the lower-left corner.</p>
+            <div class="export-card-foot"><span id="fact-dxf"></span><button data-format="dxf"><span class="icon">download</span>Export DXF</button></div>
+          </div>
+          <div class="export-card">
+            <div class="export-card-head"><span class="icon export-icon">code</span><div><strong>CadQuery program (.py)</strong><span>Parametric Python</span></div></div>
+            <pre class="code-preview" id="code-preview"></pre>
+            <div class="export-card-foot"><span id="fact-py"></span><button data-format="py"><span class="icon">download</span>Export .py</button></div>
+          </div>
+          <button class="print-card" data-format="pdf">
+            <span class="icon export-icon">print</span>
+            <span><strong>Print 1:1 template</strong><span>True-size PDF with a 100 mm line to check the print scale</span></span>
+            <span class="icon">arrow_forward</span>
+          </button>
+          <button class="cta" data-format="zip"><span class="icon">folder_zip</span><span>Download all (.zip)</span></button>
+          <p class="status-line" id="export-status">STEP + STL + DXF + Python + PDF template</p>
         </aside>
       </div>
     </section>

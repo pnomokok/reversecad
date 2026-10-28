@@ -39,7 +39,7 @@ const mm = (value, digits = 2) => `${Number(value).toFixed(digits)} mm`;
 function setScreen(screen) {
   state.screen = screen;
   document.querySelectorAll("#steps button, #rail button").forEach((b) => b.classList.toggle("active", b.dataset.screen === screen));
-  ["capture", "search", "edit"].forEach((name) => $(`screen-${name}`).classList.toggle("hidden", name !== screen));
+  ["capture", "search", "edit", "export"].forEach((name) => $(`screen-${name}`).classList.toggle("hidden", name !== screen));
   if (screen === "capture") render();
   if (screen === "edit" && state.viewer) state.viewer.resize();
   updateHeader();
@@ -48,12 +48,13 @@ function setScreen(screen) {
 function enableSteps() {
   const canEdit = !!(state.done && state.done.result_source && !state.done.result_source.startsWith("none"));
   document.querySelectorAll('[data-screen="search"]').forEach((b) => (b.disabled = !state.analysis));
-  document.querySelectorAll('[data-screen="edit"]').forEach((b) => (b.disabled = !canEdit));
+  document.querySelectorAll('[data-screen="edit"], [data-screen="export"]').forEach((b) => (b.disabled = !canEdit));
 }
 
 document.querySelectorAll("#steps button, #rail button").forEach((button) =>
   button.addEventListener("click", () => {
-    if (button.dataset.screen === "edit" && !state.winner) showModel();
+    if (button.dataset.screen === "export") showExport();
+    else if (button.dataset.screen === "edit" && !state.winner) showModel();
     else setScreen(button.dataset.screen);
   }));
 
@@ -966,8 +967,7 @@ document.querySelectorAll(".view-tools button").forEach((b) => b.addEventListene
   state.viewer?.setView(b.dataset.view);
 }));
 
-async function downloadFile(format) {
-  const status = $("download-status");
+async function downloadFile(format, status = $("download-status")) {
   status.textContent = `Preparing ${format.toUpperCase()}…`;
   const response = await fetch(`/api/runs/${state.run}/download?format=${format}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -986,6 +986,157 @@ async function downloadFile(format) {
   status.textContent = `Saved ${name}.`;
 }
 document.querySelectorAll(".exports button").forEach((b) => b.addEventListener("click", () => downloadFile(b.dataset.format)));
+document.querySelectorAll("#screen-export [data-format]").forEach((b) =>
+  b.addEventListener("click", () => downloadFile(b.dataset.format, $("export-status"))));
+
+// ---------- export: technical drawing and packages ----------
+async function showExport() {
+  if (!state.winner) await showModel();
+  setScreen("export");
+  const body = JSON.stringify({ parameters: currentValues() });
+  const response = await fetch(`/api/runs/${state.run}/drawing`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  if (!response.ok) {
+    $("export-status").textContent = `Not built: ${(await response.json()).detail}`;
+    return;
+  }
+  const data = await response.json();
+  const p = data.profile;
+  const [x0, y0, x1, y1] = p.box;
+  $("export-name").innerHTML = `<strong>${data.name}</strong> · ${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${p.thickness.toFixed(2)} mm`
+    + ` · ${data.program} (${data.source})`;
+  $("drawing-facts").textContent = `${p.holes.length} holes · outline ${p.outline.length} points · all dimensions in mm`;
+  $("drawing").innerHTML = drawingSVG(data);
+  $("fact-stl").textContent = state.viewer ? `${state.viewer.triangleCount().toLocaleString("en-US")} triangles` : "";
+  $("fact-dxf").textContent = `${1 + p.holes.length} closed contours`;
+  const program = await fetch(`/api/runs/${state.run}/download?format=py`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  const source = await program.text();
+  $("code-preview").textContent = source.split("\n").filter((line) => line.trim()).slice(0, 8).join("\n");
+  $("fact-py").textContent = `${state.winner.parameters.length} named parameters`;
+}
+
+function drawingSVG(data) {
+  // A drawing sheet (420 × 297 units): top view with overall dimensions and hole callouts, front view with
+  // the thickness and hidden holes, a hole table from the lower-left corner, and a title block.
+  const p = data.profile;
+  const [x0, y0, x1, y1] = p.box;
+  const [length, width, thickness] = [x1 - x0, y1 - y0, p.thickness];
+  const area = { left: 46, top: 42, width: 250, height: 150 };
+  const s = Math.min(area.width / length, area.height / (width + thickness + 30));
+  const ox = area.left + (area.width - length * s) / 2;
+  const oy = area.top;
+  const X = (x) => ox + (x - x0) * s;
+  const Y = (y) => oy + (y1 - y) * s;
+  const fmt = (v) => v.toFixed(2);
+  const out = [];
+  const box = (text, cx, cy, size = 7) => {
+    const w = text.length * size * 0.62 + 4;
+    out.push(`<rect class="box" x="${cx - w / 2}" y="${cy - size * 0.75}" width="${w}" height="${size * 1.5}"/>`
+      + `<text class="value" x="${cx}" y="${cy + size * 0.36}" text-anchor="middle" style="font-size:${size}px">${text}</text>`);
+  };
+  const arrowhead = (x, y, dx, dy) => {
+    const n = Math.hypot(dx, dy) || 1;
+    const [ux, uy] = [dx / n, dy / n];
+    out.push(`<polygon class="arrow" points="${x},${y} ${x - ux * 2.4 - uy * 0.8},${y - uy * 2.4 + ux * 0.8} ${x - ux * 2.4 + uy * 0.8},${y - uy * 2.4 - ux * 0.8}"/>`);
+  };
+  const dimension = (ax, ay, bx, by, text) => {
+    out.push(`<line class="dim" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}"/>`);
+    arrowhead(ax, ay, ax - bx, ay - by);
+    arrowhead(bx, by, bx - ax, by - ay);
+    box(text, (ax + bx) / 2, (ay + by) / 2);
+  };
+  out.push(`<rect class="frame" x="5" y="5" width="410" height="287"/>`);
+  out.push(`<text class="view-title" x="${area.left}" y="22">VIEW A · TOP</text>`);
+
+  // Top view: outline, holes, centerlines, and the origin of the hole table.
+  out.push(`<polygon class="part" points="${p.outline.map(([x, y]) => `${X(x)},${Y(y)}`).join(" ")}"/>`);
+  p.holes.forEach((hole) => {
+    if (hole.type === "circle") {
+      const [cx, cy, r] = [X(hole.center[0]), Y(hole.center[1]), (hole.diameter / 2) * s];
+      out.push(`<circle class="cut" cx="${cx}" cy="${cy}" r="${r}"/>`);
+      out.push(`<path class="center" d="M${cx - r - 2},${cy}H${cx + r + 2}M${cx},${cy - r - 2}V${cy + r + 2}"/>`);
+    } else {
+      out.push(`<polygon class="cut" points="${hole.points.map(([x, y]) => `${X(x)},${Y(y)}`).join(" ")}"/>`);
+    }
+  });
+  out.push(`<path class="origin" d="M${X(x0) - 3},${Y(y0)}H${X(x0) + 3}M${X(x0)},${Y(y0) - 3}V${Y(y0) + 3}"/>`);
+  out.push(`<text class="small" x="${X(x0) - 4}" y="${Y(y0) + 6}" text-anchor="end">0,0</text>`);
+
+  // Overall dimensions: length above, width on the right.
+  const top = Y(y1) - 12;
+  out.push(`<path class="ext" d="M${X(x0)},${Y(y1) - 2}V${top - 2}M${X(x1)},${Y(y1) - 2}V${top - 2}"/>`);
+  dimension(X(x0), top, X(x1), top, fmt(length));
+  const right = X(x1) + 16;
+  out.push(`<path class="ext" d="M${X(x1) + 2},${Y(y1)}H${right + 2}M${X(x1) + 2},${Y(y0)}H${right + 2}"/>`);
+  dimension(right, Y(y1), right, Y(y0), fmt(width));
+
+  // Hole callouts: one per diameter, with a leader to one hole of the group.
+  const groups = new Map();
+  p.holes.filter((h) => h.type === "circle").forEach((h) => {
+    const key = h.diameter.toFixed(2);
+    groups.set(key, [...(groups.get(key) || []), h]);
+  });
+  let row = 0;
+  for (const [diameter, holes] of groups) {
+    const h = holes.reduce((a, b) => (b.center[0] + b.center[1] > a.center[0] + a.center[1] ? b : a));
+    const [hx, hy] = [X(h.center[0]), Y(h.center[1])];
+    const lx = X(x1) + 40;
+    const ly = Y(y1) - 2 + row * 12;
+    out.push(`<path class="dim" d="M${hx},${hy}L${lx - 18},${ly}"/>`);
+    box(`${holes.length > 1 ? `${holes.length}× ` : ""}Ø${diameter} THRU`, lx + 16, ly, 6);
+    row += 1;
+  }
+
+  // Front view (third-angle: below the top view): thickness and hidden holes.
+  const fy = Y(y0) + 22;
+  const ft = Math.max(thickness * s, 2);
+  out.push(`<text class="view-title" x="${area.left}" y="${fy - 4}">VIEW B · FRONT</text>`);
+  out.push(`<rect class="part" x="${X(x0)}" y="${fy}" width="${length * s}" height="${ft}"/>`);
+  p.holes.forEach((hole) => {
+    const xs = hole.type === "circle" ? [hole.center[0] - hole.diameter / 2, hole.center[0] + hole.diameter / 2]
+      : [Math.min(...hole.points.map((q) => q[0])), Math.max(...hole.points.map((q) => q[0]))];
+    xs.forEach((x) => out.push(`<line class="hidden-line" x1="${X(x)}" y1="${fy}" x2="${X(x)}" y2="${fy + ft}"/>`));
+  });
+  const fl = X(x0) - 12;
+  out.push(`<path class="ext" d="M${X(x0) - 2},${fy}H${fl - 2}M${X(x0) - 2},${fy + ft}H${fl - 2}"/>`);
+  out.push(`<line class="dim" x1="${fl}" y1="${fy - 6}" x2="${fl}" y2="${fy + ft + 6}"/>`);
+  arrowhead(fl, fy, 0, 1);
+  arrowhead(fl, fy + ft, 0, -1);
+  box(fmt(thickness), fl - 18, fy + ft / 2);
+
+  // Hole table (from the lower-left corner, 0,0) and, for a shaped outline, its corners.
+  const tx = 12;
+  const ty = 222;
+  const span = (h, k) => [Math.min(...h.points.map((q) => q[k])), Math.max(...h.points.map((q) => q[k]))];
+  const rows = p.holes.map((h, i) => (h.type === "circle"
+    ? [`H${i + 1}`, fmt(h.center[0] - x0), fmt(h.center[1] - y0), `Ø${fmt(h.diameter)}`]
+    : [`H${i + 1}`, fmt(span(h, 0)[0] - x0), fmt(span(h, 1)[0] - y0),
+       `${fmt(span(h, 0)[1] - span(h, 0)[0])} × ${fmt(span(h, 1)[1] - span(h, 1)[0])}`]));
+  const columns = [0, 18, 50, 82];
+  out.push(`<text class="view-title" x="${tx}" y="${ty - 4}">HOLE TABLE · from 0,0</text>`);
+  [["HOLE", "X", "Y", "SIZE"], ...rows].slice(0, 12).forEach((cells, i) => {
+    cells.forEach((cell, j) => out.push(`<text class="table-text" x="${tx + columns[j]}" y="${ty + 5 + i * 6.4}">${cell}</text>`));
+    out.push(`<line class="table-line" x1="${tx}" y1="${ty + 6.8 + i * 6.4}" x2="${tx + 120}" y2="${ty + 6.8 + i * 6.4}"/>`);
+  });
+  if (p.outline.length > 4 && p.outline.length <= 16) {
+    const cx = tx + 128;
+    out.push(`<text class="view-title" x="${cx}" y="${ty - 4}">OUTLINE CORNERS</text>`);
+    p.outline.slice(0, 12).forEach(([x, y], i) => out.push(`<text class="table-text" x="${cx}" y="${ty + 5 + i * 6.4}">`
+      + `C${i + 1}  ${fmt(x - x0)}, ${fmt(y - y0)}</text>`));
+  }
+
+  // Title block.
+  const bx = 262;
+  const by = 236;
+  out.push(`<rect class="frame" x="${bx}" y="${by}" width="148" height="51"/>`);
+  out.push(`<path class="table-line" d="M${bx},${by + 17}H${bx + 148}M${bx},${by + 34}H${bx + 148}M${bx + 74},${by + 17}V${by + 51}"/>`);
+  out.push(`<text class="small" x="${bx + 3}" y="${by + 5}">PART NAME</text><text class="block-title" x="${bx + 3}" y="${by + 13}">${data.name}</text>`);
+  out.push(`<text class="small" x="${bx + 3}" y="${by + 22}">SCALE</text><text class="value" x="${bx + 3}" y="${by + 30}">1:1</text>`);
+  out.push(`<text class="small" x="${bx + 77}" y="${by + 22}">UNITS</text><text class="value" x="${bx + 77}" y="${by + 30}">mm</text>`);
+  out.push(`<text class="small" x="${bx + 3}" y="${by + 39}">PROGRAM</text><text class="table-text" x="${bx + 3}" y="${by + 46}">${data.program}</text>`);
+  out.push(`<text class="small" x="${bx + 77}" y="${by + 39}">DATE · PROJECTION</text><text class="table-text" x="${bx + 77}" y="${by + 46}">`
+    + `${new Date().toISOString().slice(0, 10)} · 3rd angle</text>`);
+  return out.join("");
+}
 
 // ---------- start ----------
 (async () => {
@@ -1011,8 +1162,12 @@ async function openDeepLink(run, params) {
   await measure();
   if (step === "measure") return;
   await streamCandidates();
-  if (step !== "edit") return;
+  if (step !== "edit" && step !== "export") return;
   await showModel();
+  if (step === "export") {
+    await showExport();
+    return;
+  }
   // &set=length:95,hole_diameter:7 moves sliders as a user would (to show a changed state).
   const changes = (params.get("set") || "").split(",").filter(Boolean).map((pair) => pair.split(":"));
   for (const [name, value] of changes) {

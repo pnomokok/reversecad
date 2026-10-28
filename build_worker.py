@@ -36,6 +36,10 @@ def build(job):
     if job.get("compare_to"):  # a completion: what it adds to and removes from another program's part
         compare(result, _run_program(job["compare_to"]), job)
         return
+    if job["output"].endswith(".profile.json"):  # the top face for drawings, DXF and the 1:1 template
+        with open(job["output"], "w", encoding="utf-8") as file:
+            json.dump(profile(result), file)
+        return
     if job["output"].endswith(".npy"):  # top-view silhouette instead of a CAD file
         import numpy as np
 
@@ -63,6 +67,55 @@ def compare(result, base, job):
         cq.exporters.export(removed, job["removed_output"])
     with open(job["features"], "w", encoding="utf-8") as file:
         json.dump(report, file)
+
+
+def profile(result):
+    """The part's top face in mm: outline and holes (circles as center and diameter, other shapes as closed
+    polylines, 0.01 mm accurate), the bounding box and the thickness. Prismatic parts only."""
+    import cv2
+    import numpy as np
+
+    solid = result.findSolid()
+    top = max(vertex.Z for vertex in solid.Vertices())
+    faces = [f for f in solid.Faces() if f.normalAt().z > 0.99 and abs(f.Center().z - top) < 1e-3]
+    face = max(faces, key=lambda f: f.Area())
+
+    def polyline(wire):
+        # Edge by edge in the wire's order: a straight edge adds its exact start corner, a curved edge its
+        # points every 0.25 mm; then collinear points are dropped (0.01 mm).
+        import cadquery as cq
+        from OCP.BRepTools import BRepTools_WireExplorer
+
+        points = []
+        explorer = BRepTools_WireExplorer(wire.wrapped)
+        while explorer.More():
+            edge = cq.Edge(explorer.Current())
+            start = cq.Vertex(explorer.CurrentVertex()).toTuple()[:2]
+            if edge.geomType() == "LINE":
+                points.append(start)
+            else:
+                count = max(8, int(edge.Length() / 0.25))
+                samples = [(p.x, p.y) for p in edge.positions(np.linspace(0, 1, count, endpoint=False))]
+                if np.hypot(samples[0][0] - start[0], samples[0][1] - start[1]) > 1e-3:  # the edge runs backwards
+                    samples = [(p.x, p.y) for p in edge.positions(np.linspace(1, 0, count, endpoint=False))]
+                points.extend(samples)
+            explorer.Next()
+        simple = cv2.approxPolyDP(np.array(points, np.float32).reshape(-1, 1, 2), 0.01, True).reshape(-1, 2)
+        return [[round(float(x), 3), round(float(y), 3)] for x, y in simple]
+
+    holes = []
+    for wire in face.innerWires():
+        edges = wire.Edges()
+        if len(edges) == 1 and edges[0].geomType() == "CIRCLE":
+            center = edges[0].arcCenter()
+            holes.append({"type": "circle", "center": [round(center.x, 3), round(center.y, 3)],
+                          "diameter": round(2 * edges[0].radius(), 3)})
+        else:
+            holes.append({"type": "polyline", "points": polyline(wire)})
+    box = solid.BoundingBox()
+    bottom = min(vertex.Z for vertex in solid.Vertices())
+    return {"outline": polyline(face.outerWire()), "holes": holes, "thickness": round(top - bottom, 3),
+            "box": [round(v, 3) for v in (box.xmin, box.ymin, box.xmax, box.ymax)]}
 
 
 def features(result):

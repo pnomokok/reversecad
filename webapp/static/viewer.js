@@ -206,5 +206,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   window.addEventListener("resize", resize);
   resize();
   loop();
-  return { show, showSuggestion, resize, setView, setChanged, reset: () => { framedRadius = null; } };
+  // Triangles of the shown part's mesh (the STL the viewer loaded).
+  const triangleCount = () => (part ? part.children[0].geometry.attributes.position.count / 3 : 0);
+  return { show, showSuggestion, resize, setView, setChanged, triangleCount, reset: () => { framedRadius = null; } };
 }

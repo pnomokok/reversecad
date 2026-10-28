@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 
 OUT = Path("outputs") / "screenshots"
 SIZE = {"width": 1440, "height": 900}
-DESIGN = {"capture": "capture", "measure": "capture", "search": "search", "edit": "edit"}
+DESIGN = {"capture": "capture", "measure": "capture", "search": "search", "edit": "edit", "export": "export"}
 
 
 def shot_path(run, step):
