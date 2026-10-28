@@ -9,7 +9,8 @@ import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const ISO = new THREE.Vector3(1, -1, 0.9).normalize();  // looking at the front (-y) and right (+x) faces
 
-export function createViewer(container) {
+// shiftRight (px) moves the picture right, to keep the part clear of an overlay on the left.
+export function createViewer(container, { shiftRight = 0 } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   container.appendChild(renderer.domElement);
@@ -46,9 +47,10 @@ export function createViewer(container) {
   }
 
   function setFrustum(radius) {
-    const aspect = (container.clientWidth || 800) / (container.clientHeight || 600);
+    const [width, height] = [container.clientWidth || 800, container.clientHeight || 600];
     const half = radius * 1.35;  // room around the part for the dimension labels
-    Object.assign(camera, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
+    Object.assign(camera, { left: -half * width / height, right: half * width / height, top: half, bottom: -half });
+    if (shiftRight) camera.setViewOffset(width, height, -shiftRight, 0, width, height);
     camera.updateProjectionMatrix();
   }
 

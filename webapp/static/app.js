@@ -15,7 +15,6 @@ const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const canvas = $("photo-canvas");
 const context = canvas.getContext("2d");
-const GRID_SLOTS = 30;  // the search grid is 6 × 5 cells; more candidates add rows
 
 async function getJSON(url) {
   const response = await fetch(url);
@@ -172,7 +171,9 @@ function edgeDimension(edges, center, text, gap) {
   // photo without covering another label, else inside (gap toward the center).
   const options = [...edges.map(([p, q]) => dimensionBeside(p, q, center, gap)),
                    ...edges.map(([p, q]) => dimensionBeside(p, q, center, -gap))];
-  const { a, b, middle } = options.find((d) => fits(labelBox(text, ...d.middle))) || options[0];
+  const found = options.find((d) => fits(labelBox(text, ...d.middle)));
+  const { a, b } = found || options[0];
+  const middle = found ? found.middle : clampInside(text, options[0].middle);  // never cut off by the photo edge
   dimensionLine(a[0], a[1], b[0], b[1]);
   callout(text, middle[0], middle[1]);
   occupied.push(labelBox(text, ...middle));
@@ -206,25 +207,65 @@ function drawMeasurements(a) {
   polygon(a.outline_px, css("--color-overlay-part"), Number(css("--overlay-line-width")), true, true);
   a.holes.forEach((hole) => polygon(hole.contour_px, css("--color-overlay-hole"), 2));
 
-  // Holes: a small box moved across the part's main axis toward its center line, so the boxes of
-  // holes on the same side stay apart and clear of the tap marker in the middle.
   const box = orientedBox(a.outline_px);
-  a.holes.forEach((hole) => {
-    const [hx, hy] = hole.center_px;
-    const across = (hx - box.center[0]) * box.v[0] + (hy - box.center[1]) * box.v[1];
-    const shift = -Math.sign(across) * Math.min(32 * s, Math.abs(across) * 0.6);
-    const [x, y] = [hx + box.v[0] * shift, hy + box.v[1] * shift];
-    const text = hole.size.replace(" mm", "");
-    callout(text, x, y, 15);
-    occupied.push(labelBox(text, x, y, 15));
-  });
   if (state.click) occupied.push([state.click[0] - 70 * s, state.click[1] - 30 * s, state.click[0] + 70 * s, state.click[1] + 62 * s]);
 
-  // The part's outline first (its labels matter most), along its own axes; then the card's known size.
+  // The part's outline first (its labels matter most), along its own axes; then the holes; then the card.
   const { longPair, shortPair } = sidePairs(box.corners);
   edgeDimension(longPair, box.center, mm(a.outline_mm.length), 56 * s);
   edgeDimension(shortPair, box.center, mm(a.outline_mm.width), 56 * s);
+  holeGroups(a.holes).forEach((group) => drawHoleGroup(group, box));
   drawCard(a.card_corners_px);
+}
+
+function holeGroups(holes) {
+  // Holes of the same shape and nearly the same size (within 0.25 mm or 4%) share one label.
+  const groups = [];
+  for (const hole of holes) {
+    const size = holeSize(hole);
+    const group = groups.find((g) => g.shape === hole.shape && Math.abs(g.size - size) <= Math.max(0.25, 0.04 * size));
+    if (group) group.holes.push(hole);
+    else groups.push({ shape: hole.shape, size, holes: [hole] });
+  }
+  return groups;
+}
+
+const holeSize = (hole) => Number(hole.size.match(/[\d.]+/)[0]);  // diameter, or length for other shapes
+
+function holeGroupText(group) {
+  const count = group.holes.length > 1 ? `${group.holes.length}× ` : "";
+  if (group.shape === "circle") {
+    const mean = group.holes.reduce((sum, h) => sum + holeSize(h), 0) / group.holes.length;
+    return `${count}Ø${mean.toFixed(1)}`;
+  }
+  return `${count}${group.holes[0].size.replace(" mm", "")}`;
+}
+
+function drawHoleGroup(group, box) {
+  // One label for the group, at the first free spot near the holes, with a thin leader to each hole.
+  const s = scale();
+  const text = holeGroupText(group);
+  const centers = group.holes.map((h) => h.center_px);
+  const middle = [centers.reduce((t, c) => t + c[0], 0) / centers.length, centers.reduce((t, c) => t + c[1], 0) / centers.length];
+  const step = 48 * s;
+  const spots = [middle, ...[1, -1, 2, -2].map((k) => [middle[0] + box.v[0] * step * k, middle[1] + box.v[1] * step * k]),
+                 ...centers.map(([x, y]) => [x + (box.center[0] - x) * 0.35, y + (box.center[1] - y) * 0.35])];
+  const [x, y] = spots.find((p) => fits(labelBox(text, ...p, 16))) || clampInside(text, spots[0], 16);
+  context.strokeStyle = css("--color-overlay-hole");
+  context.lineWidth = 1.5 * s;
+  context.beginPath();
+  for (const [hx, hy] of centers) { context.moveTo(x, y); context.lineTo(hx, hy); }
+  context.stroke();
+  callout(text, x, y, 16);
+  occupied.push(labelBox(text, x, y, 16));
+}
+
+function clampInside(text, [x, y], fontPx) {
+  // Move a label's center so its whole box stays inside the photo.
+  const [left, top, right, bottom] = labelBox(text, x, y, fontPx);
+  const pad = 4 * scale();
+  return [x + Math.max(pad - left, 0) - Math.max(right - (canvas.width - pad), 0),
+          y + Math.max(pad - top, 0) - Math.max(bottom - (canvas.height - pad), 0)];
 }
 
 function drawClick() {
@@ -450,18 +491,47 @@ async function measure() {
 $("analyze").addEventListener("click", measure);
 
 // ---------- search ----------
+const escapeAttribute = (text) => String(text).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const percent = (model, truth) => `${model - truth >= 0 ? "+" : "−"}${Math.abs((100 * (model - truth)) / truth).toFixed(1)}%`;
+
 function scoreLine(event) {
-  if (event.iou == null) return `<span>IoU –</span><span>–</span>`;
-  const edge = event.edge_error_mm == null ? "–" : `${event.edge_error_mm.toFixed(2)}mm`;
-  return `<span>IoU ${event.iou.toFixed(3)}</span><span>${edge}</span>`;
+  // IoU, and the fit to the measurements when it was checked (title explains the number).
+  if (event.iou == null) return `<span>no shape</span>`;
+  const fit = event.fit_mm == null ? ""
+    : `<span title="fit to measurements: largest distance from a measured outline point to this candidate's outline">fit ${event.fit_mm.toFixed(2)}mm</span>`;
+  return `<span>IoU ${event.iou.toFixed(3)}</span>${fit}`;
 }
+
+function resultRows(event) {
+  // [label, value] rows for what was computed for this candidate; rows without a value are left out.
+  const rows = [];
+  if (event.fit_mm != null) rows.push(["Fit to measurements", mm(event.fit_mm)]);
+  const truth = event.ground_truth;
+  if (truth) {
+    rows.push(["vs ground truth", null]);  // a heading row
+    for (const key of ["length", "width"]) {
+      const [model, real] = truth[key];
+      rows.push([key === "length" ? "Length" : "Width", `${model.toFixed(2)} vs ${real.toFixed(2)} (${percent(model, real)})`]);
+    }
+    if (truth.holes && truth.holes.length) {
+      const worst = Math.max(...truth.holes.map(([model, real]) => Math.abs(model - real)));
+      rows.push(["Holes", `Ø within ${mm(worst)}`]);
+    }
+  }
+  if (event.parameters != null) rows.push(["Parameters", event.parameters]);
+  return rows;
+}
+
+const tableHTML = (rows) => rows.map(([k, v]) => (v === null
+  ? `<tr class="heading"><td colspan="2">${k}</td></tr>` : `<tr><td>${k}</td><td class="number">${v}</td></tr>`)).join("");
 
 function candidateCard(event) {
   const card = document.createElement("div");
   card.className = `candidate-card ${event.status}`;
   card.id = `candidate-${event.candidate}`;
   const picture = event.silhouette ? `<img src="${event.silhouette}" alt="candidate ${event.candidate} silhouette">` : "";
-  const reason = event.reasons.length ? `<div class="reason">${event.reasons[0]}</div>` : "";
+  const reason = event.reasons.length  // plain words on the card, the technical text on hover
+    ? `<div class="reason" title="${escapeAttribute(event.reasons.join("\n"))}">${event.plain_reasons[0]}</div>` : "";
   const status = { passed: "PASS", rejected: "REJECTED", failed: "FAILED" }[event.status];
   card.innerHTML = `<header><span>#${pad2(event.candidate)}</span><span class="status-chip">${status}</span></header>`
     + `<div class="shape">${picture}${reason}</div><div class="scores">${scoreLine(event)}</div>`;
@@ -474,43 +544,52 @@ function winnerCard(event) {
   card.id = `candidate-${event.candidate}`;
   const length = event.outline_mm ? `<div class="dimension"><span class="line" style="left:12%;right:12%"></span>`
     + `<span>${mm(event.outline_mm[0])}</span></div>` : "";
-  const edge = event.edge_error_mm == null ? "–" : mm(event.edge_error_mm);
+  const fit = event.fit_mm == null ? ""
+    : `<div><span class="label">Fit to measurements</span><span class="big-plain">${mm(event.fit_mm)}</span></div>`;
+  const truth = event.ground_truth
+    ? `<div class="truth-line">vs ground truth: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
+      + ` vs ${event.ground_truth.length[1].toFixed(2)} × ${event.ground_truth.width[1].toFixed(2)} mm`
+      + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
   card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${pad2(event.candidate)}</span>BEST MATCH</span>`
     + `<span class="winner-chip">Selected · ${event.parameters} params</span></div>`
     + `<div class="shape">${length}<img src="${event.silhouette}" alt="selected candidate silhouette"></div>`
     + `<div class="winner-scores"><div><span class="label">Overlap (IoU)</span><span class="big-accent">IoU ${event.iou.toFixed(4)}</span></div>`
-    + `<div><span class="label">Edge error</span><span class="big-plain">${edge}</span></div></div>`;
+    + `${fit}</div>${truth}`;
   return card;
 }
 
-function fillSlots() {
-  // Cards for candidates still on their way (live), then empty cells up to the 6 × 5 grid.
+function layoutGrid() {
+  // Cards for candidates still on their way (live), then columns and rows chosen so the cards are as
+  // large as the space allows for this many candidates (the selected one takes 2 × 2).
   const grid = $("candidate-grid");
-  grid.querySelectorAll(".waiting, .slot").forEach((e) => e.remove());
+  grid.querySelectorAll(".waiting").forEach((e) => e.remove());
   const arrived = state.seen.length;
   const waiting = state.done ? 0 : Math.max((state.expected || 0) - arrived, 0);
   for (let i = 0; i < waiting; i++) {
     const card = document.createElement("div");
     card.className = "candidate-card waiting";
     card.innerHTML = `<header><span>#${pad2(arrived + i + 1)}</span><span class="status-chip">queued</span></header>`
-      + `<div class="shape">waiting</div><div class="scores"><span>–</span><span>–</span></div>`;
+      + `<div class="shape">waiting</div><div class="scores"><span>–</span></div>`;
     grid.appendChild(card);
   }
-  const used = arrived + waiting + (grid.querySelector(".winner") ? 3 : 0);
-  for (let i = used; i < GRID_SLOTS; i++) {
-    const slot = document.createElement("div");
-    slot.className = "candidate-card slot";
-    grid.appendChild(slot);
+  const cells = Math.max(arrived + waiting + (grid.querySelector(".winner") ? 3 : 0), 1);
+  const [width, height] = [grid.clientWidth || 1000, grid.clientHeight || 700];
+  let best = null;
+  for (let columns = 2; columns <= 8; columns++) {
+    const rows = Math.ceil(cells / columns);
+    const size = Math.min(width / columns / 1.15, height / rows);  // the card height its cell allows
+    if (!best || size > best.size) best = { columns, rows, size };
   }
-  const rows = Math.max(5, Math.ceil(Math.max(used, GRID_SLOTS) / 6));
-  grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+  grid.style.gridTemplateColumns = `repeat(${best.columns}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${best.rows}, minmax(0, 1fr))`;
 }
 
-function streamItem(tag, tagClass, text) {
+function streamItem(tag, tagClass, text, detail = "") {
   const now = new Date();
   const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, "0")}`;
   const item = document.createElement("div");
   item.className = "stream-item";
+  if (detail) item.title = detail;
   item.innerHTML = `<div class="when"><span>${time}</span><span class="${tagClass}">${tag}</span></div><span class="text">${text}</span>`;
   $("stream").prepend(item);
 }
@@ -521,10 +600,13 @@ function updateSummary() {
   $("search-count").textContent = seen.length;
   $("search-total").textContent = `${state.done ? state.done.candidate_count : state.expected || seen.length} requested`;
   $("search-split").innerHTML = `<strong>${passed.length} passed</strong> · ${seen.length - passed.length} rejected or failed`;
-  const withEdge = passed.filter((e) => e.edge_error_mm != null);
-  const best = withEdge.reduce((a, b) => (a && a.edge_error_mm <= b.edge_error_mm ? a : b), null);
-  $("best-edge").textContent = best ? mm(best.edge_error_mm) : "–";
-  $("best-edge-note").textContent = best ? `candidate #${best.candidate} · IoU ${best.iou.toFixed(4)}` : "";
+  // The selected candidate once the round is done; until then the passed one with the highest IoU.
+  const chosen = state.done ? seen.find((e) => e.candidate === state.done.winner)
+    : passed.reduce((x, y) => (x && x.iou >= y.iou ? x : y), null);
+  $("pick-label").textContent = state.done ? "Selected" : "Leading so far";
+  $("pick-name").textContent = chosen ? `#${pad2(chosen.candidate)}` : state.done ? state.done.result_source || "no result" : "–";
+  $("pick-iou").textContent = chosen ? `IoU ${chosen.iou.toFixed(4)}` : "";
+  $("pick-table").innerHTML = chosen ? tableHTML(resultRows(chosen)) : "";
   const a = state.analysis;
   $("search-target").innerHTML = a ? `Target <strong>${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} mm · ${a.holes.length} holes</strong>` : "";
   $("search-state").innerHTML = state.done ? "" : `<span class="pulse"></span>Checking ${seen.length + 1}${state.expected ? ` / ${state.expected}` : ""}`;
@@ -543,11 +625,10 @@ function streamCandidates() {
     const grid = $("candidate-grid");
     grid.innerHTML = "";
     $("stream").innerHTML = "";
-    $("selected-summary").textContent = "–";
     $("search-round").textContent = "";
     enableSteps();
     $("to-model").disabled = true;
-    fillSlots();
+    layoutGrid();
     updateSummary();
     const count = $("candidate-count").value;
     state.stream = new EventSource(state.live
@@ -557,15 +638,15 @@ function streamCandidates() {
     state.stream.addEventListener("candidate", (m) => {
       const event = JSON.parse(m.data);
       state.seen.push(event);
-      grid.insertBefore(candidateCard(event), grid.querySelector(".waiting, .slot"));
+      grid.insertBefore(candidateCard(event), grid.querySelector(".waiting"));
       if (event.status === "passed") {
-        const edge = event.edge_error_mm == null ? "" : `, edge ${event.edge_error_mm.toFixed(2)} mm`;
-        streamItem("OK", "tag-ok", `candidate ${event.candidate} passed: IoU ${event.iou.toFixed(4)}${edge}`);
+        const fit = event.fit_mm == null ? "" : `, fit ${event.fit_mm.toFixed(2)} mm`;
+        streamItem("OK", "tag-ok", `candidate ${event.candidate} passed: IoU ${event.iou.toFixed(4)}${fit}`);
       } else {
         streamItem(event.status === "failed" ? "FAIL" : "REJECT", "tag-bad",
-          `candidate ${event.candidate} ${event.status}: ${event.reasons[0] || "no reason given"}`);
+          `candidate ${event.candidate} ${event.status}: ${event.plain_reasons[0] || "no reason given"}`, event.reasons.join("\n"));
       }
-      fillSlots();
+      layoutGrid();
       updateSummary();
     });
     state.stream.addEventListener("done", (m) => {
@@ -575,14 +656,12 @@ function streamCandidates() {
       const chosen = state.seen.find((e) => e.candidate === state.done.winner);
       if (chosen) {
         $(`candidate-${chosen.candidate}`).replaceWith(winnerCard(chosen));
-        $("selected-summary").textContent = `#${pad2(chosen.candidate)} · IoU ${chosen.iou.toFixed(4)} · ${chosen.parameters} parameters`;
         streamItem("BEST", "tag-best", `candidate ${chosen.candidate} selected: correct shape, best IoU, fewest parameters`);
       } else {
-        $("selected-summary").textContent = state.done.result_source || "no result";
         streamItem("FALLBACK", "tag-bad", `no candidate passed: ${state.done.result_source}`);
       }
       $("to-model").disabled = !state.done.result_source || state.done.result_source.startsWith("none");
-      fillSlots();
+      layoutGrid();
       updateSummary();
       enableSteps();
       resolve();
@@ -660,7 +739,7 @@ function slider(parameter) {
 
 async function showModel() {
   setScreen("edit");
-  if (!state.viewer) state.viewer = createViewer($("viewer"));
+  if (!state.viewer) state.viewer = createViewer($("viewer"), { shiftRight: 140 });  // clear of the capture-fit inset
   state.viewer.resize();
   state.viewer.reset();
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
@@ -669,7 +748,8 @@ async function showModel() {
   $("model-source").textContent = `Source: ${w.source}`;
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
   $("fit-iou").textContent = w.iou == null ? "" : `IoU ${w.iou.toFixed(4)}`;
-  $("fit-error").textContent = w.edge_error_mm == null ? "" : `edge error ${mm(w.edge_error_mm)}`;
+  // The program's own values (before any slider moves) against the measurements and, if known, the truth.
+  $("fit-table").innerHTML = tableHTML(resultRows({ fit_mm: w.fit_mm, ground_truth: w.ground_truth }));
   const sliders = $("sliders");
   sliders.innerHTML = "";
   w.parameters.forEach((p) => sliders.appendChild(slider(p)));

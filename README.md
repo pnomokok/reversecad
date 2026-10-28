@@ -97,9 +97,12 @@ The tests never call an API. A few need runs saved under `outputs/` and are skip
 | Holes on synthetic scenes (color method) | diameter within 0.15 mm, centers within 0.7 mm |
 | Real photo: brass key next to a card (ruler: 57 × 22.5 mm, elliptical hole 12 × 6 mm) | outline 56.6 × 23.2 mm (−0.7% / +2.9%), hole measured as an ellipse 11.8 × 6.2 mm (−1.9% / +3.0%) |
 | Candidates on synthetic parts A-D (plate, asymmetric plate, L plate, tabbed part), 10 each | 100% compiled with correct topology, IoU 0.98-0.99 |
+| Selected model vs ground truth, synthetic plate `A_light` (true 80 × 40 mm, 4 × Ø6 mm) | 79.30 × 40.20 mm (−0.9% / +0.5%), hole diameters within 0.02 mm; fit to measurements 0.03 mm |
 | Design intent of the winner vs the baseline | 5-8 named parameters instead of 15-23; shared hole diameter, symmetry and edge margins kept when a dimension changes |
 | Reasoning effort | `medium` (the default here) keeps the default level's quality at 3-6× fewer tokens |
 | Live run, end to end (3 candidates) | about 45 s |
+
+Two different numbers appear in the app. **Fit to measurements** is how closely a candidate follows the measured outline (the largest distance from a measured corner or arc point to the candidate's outline); it says nothing about whether the measurements were right. **vs ground truth** compares the model with the part's true size and is only shown for synthetic scenes, where that size is known; it includes the photo measurement's own error.
 
 Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the project's working notes).
 

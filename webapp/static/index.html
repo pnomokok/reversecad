@@ -147,7 +147,7 @@
             <span class="chip-muted" id="search-total"></span>
             <span class="legend">
               <span><i class="swatch swatch-shape"></i>Top-view silhouette</span>
-              <span><i class="swatch swatch-rejected"></i>Rejected</span>
+              <span><i class="swatch swatch-rejected"></i>Rejected or failed</span>
               <span><i class="swatch swatch-selected"></i>Selected</span>
             </span>
           </div>
@@ -159,13 +159,10 @@
             <div class="headline"><span id="search-count">0</span> candidates</div>
             <div class="split-line" id="search-split"></div>
             <div class="best-box">
-              <span class="label">Best edge error</span>
-              <span class="best-value" id="best-edge">–</span>
-              <span class="label-muted" id="best-edge-note"></span>
-            </div>
-            <div class="best-box">
-              <span class="label">Selected</span>
-              <span class="selected-value" id="selected-summary">–</span>
+              <span class="label" id="pick-label">Selected</span>
+              <span class="selected-value" id="pick-name">–</span>
+              <span class="best-value" id="pick-iou"></span>
+              <table class="values" id="pick-table"></table>
             </div>
             <button class="cta" id="to-model" disabled><span id="to-model-label">Open in editor</span><span class="icon">arrow_forward</span></button>
           </div>
@@ -194,7 +191,7 @@
           <div class="fit-inset">
             <div class="fit-head"><span class="label-strong"><span class="dot-accent"></span>CAPTURE FIT</span><span class="chip-accent" id="fit-iou"></span></div>
             <img id="fit-image" alt="top-down photo with the model's silhouette outline">
-            <div class="fit-foot"><span>Photo vs model</span><span class="mono" id="fit-error"></span></div>
+            <table class="values" id="fit-table"></table>
           </div>
           <div class="view-tools">
             <button data-view="iso" class="active" title="Isometric view"><span class="icon">deployed_code</span></button>

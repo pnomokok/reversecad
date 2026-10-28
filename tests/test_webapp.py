@@ -54,11 +54,30 @@ def test_candidate_stream_replays_the_saved_round(monkeypatch):
 @pytest.mark.skipif("C" not in replay.list_runs(), reason="needs the saved run outputs/e2e/C")
 def test_failed_candidate_has_a_reason_and_no_silhouette(monkeypatch):
     monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
-    failed = [data for kind, data in _events(client.get("/api/runs/C/candidates/stream").text)
-              if kind == "candidate" and data["status"] == "failed"]
-    if not failed:
-        pytest.skip("this saved round has no failed candidate")
-    assert failed[0]["reasons"] and failed[0]["silhouette"] is None
+    stream = client.get("/api/runs/C/candidates/stream?round=candidates_intent")  # a round with 2 failures
+    if stream.status_code == 404:
+        pytest.skip("this run has no saved candidates_intent round")
+    failed = [data for kind, data in _events(stream.text) if kind == "candidate" and data["status"] == "failed"]
+    assert failed and failed[0]["silhouette"] is None
+    assert failed[0]["reasons"][0].startswith("no python code block")  # the technical text, for hovering
+    assert failed[0]["plain_reasons"][0] == "ran out of reasoning budget, no code returned"
+
+
+def test_plain_reasons():
+    assert replay.plain_reason("no python code block (finish=stop, 900 output tokens)") == "the answer contained no code"
+    assert replay.plain_reason("ValueError: Null TopoDS_Shape object") == "the program crashed while building the part"
+    assert replay.plain_reason("hole 2 diameter: off by 0.8 mm (limit 0.5)") == "hole 2 diameter is off by 0.8 mm (limit 0.5)"
+
+
+@needs_saved_run
+def test_fit_and_ground_truth_are_separate(monkeypatch):
+    monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
+    winner = client.get("/api/runs/A_light/winner").json()
+    assert 0 <= winner["fit_mm"] < 0.5  # follows the measurements closely
+    truth = winner["ground_truth"]  # A_light shows template part A: 80 × 40 mm, four Ø6 holes
+    assert [real for _, real in (truth["length"], truth["width"])] == [80, 40]
+    assert abs(truth["length"][0] - 80) < 0.05 * 80 and all(abs(m - 6) < 0.3 for m, _ in truth["holes"])
+    assert replay.ground_truth_error("live-anything", {"outline_mm": [1, 1]}) is None  # real photos: unknown
 
 
 def _stl_x_extent(data):

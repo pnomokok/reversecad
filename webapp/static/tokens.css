@@ -22,11 +22,10 @@
   --color-text-faint: #7f736f;
   --color-text-on-accent: #3b0a00;
 
-  /* accents: orange only for what is selected or being changed; cyan for references */
+  /* accent: orange only, for what is selected or being changed */
   --color-selected: #ff6a2b;
   --color-selected-soft: rgba(255, 106, 43, 0.12);
   --color-selected-glow: rgba(255, 106, 43, 0.45);
-  --color-reference: #58d7eb;
   --color-dimension: #ffffff;
   --color-ok: #e5e2e1;
   --color-bad: #ffb4ab;
@@ -47,7 +46,7 @@
   --color-model: #e8eaed;
   --color-model-edge: #1b1e21;
   --color-dimension-line: #ffffff;
-  --color-extension-line: #58d7eb;
+  --color-extension-line: #6f6f6f;
 
   /* type */
   --font-heading: "Space Grotesk", system-ui, sans-serif;

@@ -99,12 +99,58 @@ def _status(row):
     return ("rejected" if reasons else "passed"), reasons
 
 
-def edge_error_mm(row):
+def plain_reason(reason):
+    """A rejection or failure reason in plain words (the technical text stays available alongside)."""
+    text = reason.lower()
+    if text.startswith("no python code block"):
+        return ("ran out of reasoning budget, no code returned" if "finish=length" in text
+                else "the answer contained no code")
+    if text.startswith("request failed"):
+        return "the request to the model failed"
+    if text.startswith("rejected before running"):
+        return "the code used something that is not allowed"
+    if "timed out" in text:
+        return "the program took too long to build"
+    if ": off by" in text:
+        dimension, rest = reason.split(": off by", 1)
+        return f"{dimension} is off by{rest}"
+    if any(word in text for word in ("error", "exception")) or ":" in reason.split(" ")[0]:
+        return "the program crashed while building the part"
+    return reason
+
+
+def fit_to_measurements_mm(row):
     """Largest distance (mm) from a measured outline point (corner, or a point on an arc) to the
-    candidate's outline, from the deviation check; None if the candidate was not checked."""
+    candidate's outline, from the deviation check; None if the candidate was not checked.
+
+    This is how well the candidate follows the measurements, not how accurate it is: the
+    measurements themselves carry the photo's error (see ground_truth_error)."""
     distances = [abs(d["deviation_mm"]) for d in row.get("deviation", [])
                  if d["dimension"].startswith(("corner", "arc")) and isinstance(d.get("deviation_mm"), (int, float))]
     return round(max(distances), 2) if distances else None
+
+
+# Synthetic scenes (run_template_scenes.py) and the template part each one shows: their true
+# dimensions are known. Real photos and live runs have no ground truth.
+SCENE_PARTS = {"A_light": "A", "A_dark": "A", "B": "B", "C": "C", "D": "D", "E": "E"}
+
+
+def ground_truth_error(name, row):
+    """The candidate's outline and hole sizes against the true part, for synthetic scenes; else None.
+
+    {"length": [model, true], "width": [model, true], "holes": [[model, true], ...] or None if the
+    hole counts differ}. Sizes in mm; holes as equal-area diameters, matched by size.
+    """
+    if name not in SCENE_PARTS or not row.get("outline_mm"):
+        return None
+    from parts.template_parts import part_truth  # loads CadQuery; only needed for synthetic scenes
+
+    truth = part_truth(SCENE_PARTS[name])
+    true_holes = sorted(h["diameter_mm"] for h in truth["holes"])
+    model_holes = sorted(row.get("hole_diameters_mm") or [])
+    return {"length": [row["outline_mm"][0], truth["length"]], "width": [row["outline_mm"][1], truth["width"]],
+            "holes": [[m, round(t, 2)] for m, t in zip(model_holes, true_holes)]
+            if len(model_holes) == len(true_holes) else None}
 
 
 def candidate_event(name, row, round_name=None):
@@ -112,9 +158,10 @@ def candidate_event(name, row, round_name=None):
     status, reasons = _status(row)
     query = f"?round={round_name}" if round_name else ""
     return {"type": "candidate", "candidate": row["candidate"], "status": status, "reasons": reasons,
+            "plain_reasons": [plain_reason(r) for r in reasons],
             "iou": row.get("iou"), "parameters": row.get("parameter_count"),
-            "edge_error_mm": edge_error_mm(row), "outline_mm": row.get("outline_mm"),
-            "hole_count": row.get("hole_count"),
+            "fit_mm": fit_to_measurements_mm(row), "ground_truth": ground_truth_error(name, row),
+            "outline_mm": row.get("outline_mm"), "hole_count": row.get("hole_count"),
             "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png{query}"
             if status != "failed" else None}
 
@@ -189,7 +236,7 @@ def winner(name):
               if isinstance(v, (int, float)) and not isinstance(v, bool)]
     row = _result_row(name) or {}
     return {"name": name, "program": path.name, "source": source, "parameters": params,
-            "iou": row.get("iou"), "edge_error_mm": edge_error_mm(row)}
+            "iou": row.get("iou"), "fit_mm": fit_to_measurements_mm(row), "ground_truth": ground_truth_error(name, row)}
 
 
 def capture_fit_png(name):

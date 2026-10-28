@@ -223,6 +223,12 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .winner-scores { display: flex; justify-content: space-between; background: var(--color-container); padding: var(--space-3) var(--space-4); }
 .winner-scores div { display: flex; flex-direction: column; gap: 2px; }
 .winner-scores div:last-child { text-align: right; }
+.truth-line { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); padding: 0 var(--space-1); }
+.best-box table.values td, .fit-inset table.values td { text-transform: none; white-space: nowrap; padding: 2px 0; }
+table.values tr.heading td { padding-top: var(--space-2); color: var(--color-text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-size: var(--font-size-label-sm); }
+.fit-inset table.values td.number, .best-box table.values td.number { font-size: var(--font-size-label); }
+.best-box table.values td.number { white-space: normal; padding-left: var(--space-3); }
+.reason { cursor: help; }
 .big-accent { font-family: var(--font-heading); font-size: var(--font-size-headline-lg); font-weight: 700; color: var(--color-selected); }
 .big-plain { font-family: var(--font-heading); font-size: var(--font-size-headline-lg); font-weight: 700; color: var(--color-text-strong); }
 
@@ -233,6 +239,7 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .split-line strong { color: var(--color-text-strong); }
 .best-box { background: var(--color-container); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
 .best-value { font-family: var(--font-heading); font-size: var(--font-size-headline-xl); font-weight: 700; color: var(--color-selected); }
+.best-value:empty { display: none; }
 .selected-value { font-family: var(--font-mono); font-size: var(--font-size-body-lg); color: var(--color-text-strong); }
 .search-side .cta { height: 48px; font-size: var(--font-size-body-lg); }
 .stream-card { flex: 1; min-height: 0; }
@@ -259,7 +266,7 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .viewer canvas { cursor: grab; display: block; }
 .fit-inset { position: absolute; top: var(--space-4); left: var(--space-4); width: var(--inset-width); z-index: 5; background: var(--color-low); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); box-shadow: 0 10px 30px var(--color-lowest); }
 .fit-head, .fit-foot { display: flex; justify-content: space-between; align-items: center; }
-.fit-inset img { width: 100%; height: 150px; object-fit: contain; background: var(--color-bg); display: block; }
+.fit-inset img { width: 100%; height: 120px; object-fit: contain; background: var(--color-bg); display: block; }
 .fit-foot { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); white-space: nowrap; gap: var(--space-3); }
 .fit-foot .mono { color: var(--color-text-strong); font-size: var(--font-size-label-lg); }
 .view-tools { position: absolute; left: var(--space-4); bottom: var(--space-4); z-index: 5; display: flex; gap: var(--space-1); background: var(--color-low); padding: var(--space-1); }
@@ -286,7 +293,7 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--color-text); border: 2px solid var(--color-bg); }
 .slider input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--color-text); border: 2px solid var(--color-bg); }
 .slider .range { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); }
-.slider .range .default { color: var(--color-reference); }
+.slider .range .default { color: var(--color-text-muted); }
 .slider.changed { background: linear-gradient(90deg, var(--color-container), var(--color-highest)); }
 .slider.changed .name::before { content: ""; width: 8px; height: 8px; background: var(--color-selected); }
 .slider.changed output { color: var(--color-selected); }
