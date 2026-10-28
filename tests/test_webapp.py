@@ -153,3 +153,20 @@ def test_saved_run_analysis():
     assert len(data["holes"]) == data["table"]["hole_count"] == 4
     assert abs(data["outline_mm"]["length"] - 80) < 1 and abs(data["outline_mm"]["width"] - 40) < 1
     assert data["click_px"] and len(data["outline_px"]) > 4
+
+
+@pytest.mark.skipif("D_tab_broken" not in replay.list_runs(), reason="needs the saved run outputs/e2e/D_tab_broken")
+def test_completion_can_be_applied_and_undone():
+    base = "/api/runs/D_tab_broken"
+    suggestion = client.get(f"{base}/completion").json()
+    assert suggestion["available"] and suggestion["valid"] and suggestion["added_stl"]
+    assert client.get(suggestion["added_stl"]).content[:5] != b""  # the added material, for the 3D view
+    try:
+        assert client.post(f"{base}/completion/apply").json()["decision"] == "apply"
+        winner = client.get(f"{base}/winner").json()
+        assert winner["program"] == "completed.py" and winner["source"] == replay.COMPLETION_SOURCE
+        assert client.post(f"{base}/model", json={"parameters": {}}).status_code == 200
+    finally:
+        client.post(f"{base}/completion/undo")
+    assert client.get(f"{base}/winner").json()["program"] != "completed.py"
+    assert client.post(f"{base}/completion/maybe").status_code == 400

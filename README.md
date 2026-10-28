@@ -98,6 +98,8 @@ The tests never call an API. A few need runs saved under `outputs/` and are skip
 | Real photo: brass key next to a card (ruler: 57 × 22.5 mm, elliptical hole 12 × 6 mm) | outline 56.6 × 23.2 mm (−0.7% / +2.9%), hole measured as an ellipse 11.8 × 6.2 mm (−1.9% / +3.0%) |
 | Candidates on synthetic parts A-D (plate, asymmetric plate, L plate, tabbed part), 10 each | 100% compiled with correct topology, IoU 0.98-0.99 |
 | Selected model vs ground truth, synthetic plate `A_light` (true 80 × 40 mm, 4 × Ø6 mm) | 79.30 × 40.20 mm (−0.9% / +0.5%), hole diameters within 0.02 mm; fit to measurements 0.03 mm |
+| Repair with Muse Wonder when no candidate passes (6 deliberately broken candidates + the cardboard) | 6/7 repaired, all in the first round; every diagnosis named the injected fault; $0.04-0.08 and 9-25 s per repair |
+| Completion of broken parts with Muse Wonder (4 synthetic broken parts with a known design) | 4/4 valid suggestions; IoU against the true design 0.78-0.97 before, 0.87-0.98 after |
 | Design intent of the winner vs the baseline | 5-8 named parameters instead of 15-23; shared hole diameter, symmetry and edge margins kept when a dimension changes |
 | Reasoning effort | `medium` (the default here) keeps the default level's quality at 3-6× fewer tokens |
 | Live run, end to end (3 candidates) | about 45 s |

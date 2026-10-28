@@ -60,7 +60,7 @@ class Builder:
         error = self.build(code_path, mask_path, mm_per_pixel=mm_per_pixel)
         return (None, error) if error else (np.load(mask_path), None)
 
-    def build(self, code_path, output_path, overrides=None, mm_per_pixel=None, features_path=None):
+    def build(self, code_path, output_path, overrides=None, mm_per_pixel=None, features_path=None, extra=None):
         """Export the program with overrides to output_path (and its features to features_path, if
         given). Returns an error message or None."""
         problems = check_code(Path(code_path).read_text(encoding="utf-8"))
@@ -70,7 +70,8 @@ class Builder:
             if self.process is None or self.process.poll() is not None:
                 self._start()
             job = {"code": str(Path(code_path).resolve()), "output": str(output_path), "overrides": overrides or {},
-                   "mm_per_pixel": mm_per_pixel, "features": str(features_path) if features_path else None}
+                   "mm_per_pixel": mm_per_pixel, "features": str(features_path) if features_path else None,
+                   **(extra or {})}
             self.process.stdin.write(json.dumps(job) + "\n")
             self.process.stdin.flush()
             try:
@@ -79,6 +80,14 @@ class Builder:
                 self._stop()
                 return f"timed out after {TIMEOUT_SECONDS} s"
         return None if reply.get("ok") else reply.get("error", "build failed")
+
+    def compare(self, code_path, base_path, added_path, removed_path, report_path):
+        """Build both programs and write what code_path adds to / removes from base_path. Error or None."""
+        problems = check_code(Path(base_path).read_text(encoding="utf-8"))
+        if problems:
+            return "rejected before running: " + "; ".join(problems)
+        return self.build(code_path, added_path, features_path=report_path,
+                          extra={"compare_to": str(Path(base_path).resolve()), "removed_output": str(removed_path)})
 
     def close(self):
         self._stop()

@@ -365,10 +365,11 @@ def check_program(path, reference, truth=None, measured_table=None, render=None)
 
 
 def validate(out, folder_name, entries, baseline_path, reference, truth=None, truth_workplane=None,
-             measured_table=None):
+             measured_table=None, repair=True):
     """Score all candidates and the baseline. Truth and the true part are optional (real photos).
 
     Candidates whose dimensions stray too far from measured_table are rejected (deviation_check.py).
+    If none passes, or the best IoU is under the threshold, Muse Wonder repairs (repair.py; repair=False skips it).
     """
     ceiling = aligned_iou(reference, MM_PER_PIXEL, render_top_silhouette(truth_workplane, MM_PER_PIXEL) > 0,
                           MM_PER_PIXEL).iou if truth_workplane is not None else float("nan")
@@ -402,13 +403,25 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
     best = max(eligible, key=lambda r: (r["topology_ok"] is not False, round(r["iou"], 3), -r["parameter_count"])) \
         if eligible else None
     print(f"    {len(eligible)}/{len(compiled)} compiled candidates within the deviation limits")
+    repaired = None
+    if repair and measured_table is not None:
+        from repair import needs_repair, repair_loop, repaired_row  # repair.py imports this module
+
+        if needs_repair({"winner": best}):
+            print("    no candidate good enough -> repair with Muse Wonder")
+            repaired = repair_loop(out, measured_table, reference, out / "3_part_mask_topdown.png", rows, truth=truth)
+            for entry in repaired["rounds"]:
+                print(f"    repair round {entry['round']}: {'passed' if entry['passed'] else 'failed'}, "
+                      f"IoU {entry['iou']}, {entry['seconds']} s; diagnosis: {entry['diagnosis']}")
+            if repaired["passed"]:
+                best = repaired_row(repaired)
     baseline = check_program(baseline_path, reference, truth, measured_table)
     if best and best["deviation"]:
         print(f"    winner {Path(best['file']).name}: measured vs chosen")
         for d in best["deviation"]:
             print(f"      {d['dimension']:18s} measured {str(d['measured_mm']):>16s}  chosen {str(d['candidate_mm']):>16s}"
                   f"  deviation {str(d['deviation_mm']):>6s}  limit {d['limit_mm']:>5}  {'ok' if d['ok'] else 'OVER'}")
-    if best:
+    if best and "_alignment" in best:
         cv2.imwrite(str(out / f"5_best_xor_{folder_name}.png"), xor_image(best["_alignment"]))
     for label, row in [("winner", best), ("baseline", baseline)]:
         if not row or "iou" not in row:
@@ -427,7 +440,7 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
 
     # Safety net: if no candidate passed, the result is the baseline, clearly marked as such.
     if best is not None:
-        result, result_source = clean(best), "candidate"
+        result, result_source = clean(best), ("repair · Muse Wonder" if repaired and repaired["passed"] else "candidate")
     elif "iou" in baseline:
         result, result_source = clean(baseline), FALLBACK_LABEL
         print(f"    no candidate passed -> result is the baseline ({FALLBACK_LABEL})")
@@ -438,7 +451,7 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
                "candidate_count": len(rows), "distinct_shapes": len(shapes), "winner": clean(best),
                "result": result, "result_source": result_source,
                "baseline": clean(baseline), "candidates": [clean(r) for r in rows],
-               "usage": usage_ledger.summarize(out)}
+               "repair": repaired, "usage": usage_ledger.summarize(out)}
     for line in usage_ledger.describe(summary["usage"]):
         print(f"    usage: {line}")
     save_json(out / f"5_summary_{folder_name}.json", summary)

@@ -151,6 +151,28 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     if (!framedRadius) setView("iso");  // keep the user's view when a slider rebuilds the part
   }
 
+  let suggestion = null;
+  const suggestionMaterial = new THREE.MeshStandardMaterial({
+    color: css("--color-selected"), transparent: true, opacity: 0.55, metalness: 0, roughness: 0.6, depthWrite: false,
+  });
+
+  function showSuggestion(stlBuffer) {
+    // Material a completion suggestion would add, drawn in its own (orange, see-through) tone; null hides it.
+    if (suggestion) {
+      scene.remove(suggestion);
+      suggestion.traverse((o) => o.geometry && o.geometry.dispose());
+      suggestion = null;
+    }
+    if (!stlBuffer) return;
+    const geometry = new STLLoader().parse(stlBuffer);
+    geometry.computeVertexNormals();
+    suggestion = new THREE.Group();
+    suggestion.add(new THREE.Mesh(geometry, suggestionMaterial));
+    suggestion.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25),
+      new THREE.LineBasicMaterial({ color: css("--color-selected") })));
+    scene.add(suggestion);
+  }
+
   function setChanged(keys) {
     changed = new Set(keys);
     for (const [key, element] of Object.entries(labelElements)) element.classList.toggle("changed", changed.has(key));
@@ -166,5 +188,5 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   window.addEventListener("resize", resize);
   resize();
   loop();
-  return { show, resize, setView, setChanged, reset: () => { framedRadius = null; } };
+  return { show, showSuggestion, resize, setView, setChanged, reset: () => { framedRadius = null; } };
 }

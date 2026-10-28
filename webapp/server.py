@@ -150,6 +150,42 @@ async def build_model(name: str, request: Request):
     return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
 
 
+@app.get("/api/runs/{name}/completion")
+def run_completion(name: str):
+    """Screen 4: the completion suggestion (Muse Wonder) for a part that looks broken, or {"available": false}."""
+    try:
+        data = replay.completion(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    return {"available": False} if data is None else {"available": True, **data}
+
+
+@app.get("/api/runs/{name}/completion/added.stl")
+def completion_added(name: str):
+    """The material the suggestion adds, for showing it in its own tone in the 3D view."""
+    try:
+        path = replay.run_dir(name) / "6_completion" / "added.stl"
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    if not path.exists():
+        raise HTTPException(404, "the suggestion adds no material")
+    return Response(path.read_bytes(), media_type="model/stl")
+
+
+@app.post("/api/runs/{name}/completion/{decision}")
+def completion_decision(name: str, decision: str):
+    """Apply or ignore the suggestion ("undo" clears the answer); applying makes the completed program the result."""
+    if decision not in ("apply", "ignore", "undo"):
+        raise HTTPException(400, "decision must be apply, ignore or undo")
+    try:
+        replay.decide_completion(name, None if decision == "undo" else decision)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(422, str(error))
+    return replay.completion(name)
+
+
 @app.get("/api/runs/{name}/capture-fit.png")
 def capture_fit(name: str):
     """Screen 4 inset: the top-down photo with the result's silhouette outline, aligned as the IoU is."""
@@ -243,7 +279,7 @@ async def live_candidates(name: str, count: int = 5, thickness: float = 3.0):
         raise HTTPException(404, str(error))
     if not 1 <= count <= 10 or not 0.1 <= thickness <= 100:
         raise HTTPException(400, "count must be 1-10 and thickness 0.1-100 mm")
-    return job_stream(lambda emit: live.candidates_job(name, count, thickness, builder.silhouette, emit))
+    return job_stream(lambda emit: live.candidates_job(name, count, thickness, builder.silhouette, emit, builder))
 
 
 @app.get("/")

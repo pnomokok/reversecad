@@ -32,6 +32,7 @@ function loadImage(url) {
 }
 
 const pad2 = (n) => String(n).padStart(2, "0");
+const idOf = (event) => event.label || pad2(event.candidate);  // repaired programs are R1, R2
 const mm = (value, digits = 2) => `${Number(value).toFixed(digits)} mm`;
 
 // ---------- screens ----------
@@ -546,7 +547,7 @@ function candidateCard(event) {
   const reason = event.reasons.length  // plain words on the card, the technical text on hover
     ? `<div class="reason" title="${escapeAttribute(event.reasons.join("\n"))}">${event.plain_reasons[0]}</div>` : "";
   const status = { passed: "PASS", rejected: "REJECTED", failed: "FAILED" }[event.status];
-  card.innerHTML = `<header><span>#${pad2(event.candidate)}</span><span class="status-chip">${status}</span></header>`
+  card.innerHTML = `<header><span>#${idOf(event)}</span><span class="status-chip">${status}</span></header>`
     + `<div class="shape">${picture}${reason}</div><div class="scores">${scoreLine(event)}</div>`;
   return card;
 }
@@ -563,7 +564,7 @@ function winnerCard(event) {
     ? `<div class="truth-line">vs ground truth: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
       + ` vs ${event.ground_truth.length[1].toFixed(2)} × ${event.ground_truth.width[1].toFixed(2)} mm`
       + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
-  card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${pad2(event.candidate)}</span>BEST MATCH</span>`
+  card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${idOf(event)}</span>${event.label ? "REPAIRED" : "BEST MATCH"}</span>`
     + `<span class="winner-chip">Selected · ${event.parameters} params</span></div>`
     + `<div class="shape">${length}<img src="${event.silhouette}" alt="selected candidate silhouette"></div>`
     + `<div class="winner-scores"><div><span class="label">Overlap (IoU)</span><span class="big-accent">IoU ${event.iou.toFixed(4)}</span></div>`
@@ -651,16 +652,23 @@ function streamCandidates() {
       ? `/api/live/${state.run}/candidates/stream?count=${count}&thickness=${thickness() ?? 3}`
       : `/api/runs/${state.run}/candidates/stream${state.round ? `?round=${state.round}` : ""}`);
     state.stream.addEventListener("progress", (m) => streamItem("…", "tag-ok", JSON.parse(m.data).message));
+    state.stream.addEventListener("repair", (m) => {
+      // A Muse Wonder repair round: its diagnosis, and whether its program passed the same checks.
+      const r = JSON.parse(m.data);
+      streamItem(r.passed ? "REPAIRED" : "REPAIR", r.passed ? "tag-best" : "tag-bad",
+        `repair round ${r.round} · Muse Wonder: ${r.passed ? `passed, IoU ${r.iou.toFixed(4)}` : "not passed"}. ${r.diagnosis || ""}`,
+        r.reasons.join("\n"));
+    });
     state.stream.addEventListener("candidate", (m) => {
       const event = JSON.parse(m.data);
       state.seen.push(event);
       grid.insertBefore(candidateCard(event), grid.querySelector(".waiting"));
       if (event.status === "passed") {
         const fit = event.fit_mm == null ? "" : `, fit ${event.fit_mm.toFixed(2)} mm`;
-        streamItem("OK", "tag-ok", `candidate ${event.candidate} passed: IoU ${event.iou.toFixed(4)}${fit}`);
+        streamItem("OK", "tag-ok", `candidate ${idOf(event)} passed: IoU ${event.iou.toFixed(4)}${fit}`);
       } else {
         streamItem(event.status === "failed" ? "FAIL" : "REJECT", "tag-bad",
-          `candidate ${event.candidate} ${event.status}: ${event.plain_reasons[0] || "no reason given"}`, event.reasons.join("\n"));
+          `candidate ${idOf(event)} ${event.status}: ${event.plain_reasons[0] || "no reason given"}`, event.reasons.join("\n"));
       }
       layoutGrid();
       updateSummary();
@@ -672,7 +680,7 @@ function streamCandidates() {
       const chosen = state.seen.find((e) => e.candidate === state.done.winner);
       if (chosen) {
         $(`candidate-${chosen.candidate}`).replaceWith(winnerCard(chosen));
-        streamItem("BEST", "tag-best", `candidate ${chosen.candidate} selected: correct shape, best IoU, fewest parameters`);
+        streamItem("BEST", "tag-best", chosen.label ? `repaired program ${chosen.label} selected (Muse Wonder)` : `candidate ${idOf(chosen)} selected: correct shape, best IoU, fewest parameters`);
       } else {
         streamItem("FALLBACK", "tag-bad", `no candidate passed: ${state.done.result_source}`);
       }
@@ -770,8 +778,41 @@ async function showModel() {
   sliders.innerHTML = "";
   w.parameters.forEach((p) => sliders.appendChild(slider(p)));
   await rebuild();
+  await showCompletion();
 }
 $("to-model").addEventListener("click", showModel);
+
+async function showCompletion() {
+  // The "possible break" card: shown when Muse Wonder suggested a completion and it was not ignored.
+  const data = await getJSON(`/api/runs/${state.run}/completion`);
+  const c = data.available ? data : null;
+  state.completion = c;
+  state.viewer.showSuggestion(null);
+  const hidden = !c || c.broken === false || c.decision === "ignore";
+  $("break-card").classList.toggle("hidden", hidden);
+  if (hidden) return;
+  const applied = c.decision === "apply";
+  const check = c.check || {};
+  $("break-suggestion").textContent = c.suggestion || "";
+  $("break-rationale").textContent = c.rationale || "";
+  $("break-note").textContent = !c.valid ? `Not offered: ${(check.reasons || ["no program returned"]).join("; ")}`
+    : applied ? "Applied: the parameters above belong to the completed program."
+    : [check.added_volume_mm3 > 0 ? `adds ${check.added_volume_mm3.toFixed(0)} mm³ (orange in the 3D view)` : "",
+       check.removed_volume_mm3 > 0 ? `cuts ${check.removed_volume_mm3.toFixed(0)} mm³` : ""].filter(Boolean).join(", ");
+  $("break-apply").disabled = !c.valid;
+  $("break-apply").innerHTML = applied ? "Undo" : `<span class="icon">check</span>Apply`;
+  $("break-ignore").classList.toggle("hidden", applied);
+  if (!applied && c.valid && c.added_stl) state.viewer.showSuggestion(await (await fetch(c.added_stl)).arrayBuffer());
+}
+
+$("break-apply").addEventListener("click", async () => {
+  await fetch(`/api/runs/${state.run}/completion/${state.completion.decision === "apply" ? "undo" : "apply"}`, { method: "POST" });
+  await showModel();  // the result program changed: new parameters, new model
+});
+$("break-ignore").addEventListener("click", async () => {
+  await fetch(`/api/runs/${state.run}/completion/ignore`, { method: "POST" });
+  await showCompletion();
+});
 
 $("reset-parameters").addEventListener("click", () => {
   document.querySelectorAll("#sliders .slider").forEach((row) => {

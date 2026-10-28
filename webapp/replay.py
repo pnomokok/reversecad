@@ -12,9 +12,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from completion import topdown_photo
+from repair import REPAIR_NUMBER
 from design_intent import parameters
 from e2e_pipeline import CARD_PROMPTS, MM_PER_PIXEL, card_aspect_ok, pixel_to_mm_scales
-from homography import card_corners, largest_contour, rectify_image, to_mm
+from homography import card_corners, largest_contour, to_mm
 from iou import _centroid_and_angle, aligned_iou
 from part_measurements import classify_hole
 from sam_client import load_photo, parse_detections
@@ -162,6 +164,7 @@ def candidate_event(name, row, round_name=None):
             "iou": row.get("iou"), "parameters": row.get("parameter_count"),
             "fit_mm": fit_to_measurements_mm(row), "ground_truth": ground_truth_error(name, row),
             "outline_mm": row.get("outline_mm"), "hole_count": row.get("hole_count"),
+            "label": row.get("label"), "diagnosis": row.get("diagnosis"),  # set for a repaired program
             "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png{query}"
             if status != "failed" else None}
 
@@ -182,7 +185,19 @@ def candidate_events(name, round_name=None):
     elif round_name not in CANDIDATE_ROUNDS or not (run_dir(name) / f"5_summary_{round_name}.json").exists():
         raise FileNotFoundError(f"no saved round {round_name!r} for {name!r}")
     summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
-    return [candidate_event(name, row, round_name) for row in summary["candidates"]] + [done_event(summary, round_name)]
+    events = [candidate_event(name, row, round_name) for row in summary["candidates"]]
+    repaired = summary.get("repair") or {}
+    events += [{"type": "repair", **entry} for entry in repaired.get("rounds", [])]
+    if repaired.get("passed"):
+        events.append(candidate_event(name, repaired["result"]))
+    return events + [done_event(summary, round_name)]
+
+
+def _program_path(name, round_name, file):
+    """A summary's program path inside this run: a candidate round's folder or a repair round's folder."""
+    path = Path(file.replace("\\", "/"))
+    folder = path.parent.name if path.parent.name.startswith("repair_round_") else round_name
+    return run_dir(name) / folder / path.name
 
 
 def silhouette_png(name, candidate, round_name=None):
@@ -194,8 +209,11 @@ def silhouette_png(name, candidate, round_name=None):
     folder = run_dir(name)
     if round_name is not None and round_name not in CANDIDATE_ROUNDS:
         raise FileNotFoundError(f"unknown round {round_name!r}")
-    paths = [folder / r / f"cand_{int(candidate)}.default.mask{ext}"
-             for r in ([round_name] if round_name else CANDIDATE_ROUNDS) for ext in (".npy", ".png")]  # .png in compact samples
+    if int(candidate) > REPAIR_NUMBER:  # a repaired program (repair.py numbers them 101, 102)
+        paths = [folder / f"repair_round_{int(candidate) - REPAIR_NUMBER}" / "repaired.default.mask.npy"]
+    else:
+        paths = [folder / r / f"cand_{int(candidate)}.default.mask{ext}"
+                 for r in ([round_name] if round_name else CANDIDATE_ROUNDS) for ext in (".npy", ".png")]  # .png in compact samples
     path = next((p for p in paths if p.exists()), None)
     if path is None:
         raise FileNotFoundError(f"no saved silhouette for candidate {candidate}")
@@ -209,15 +227,51 @@ def silhouette_png(name, candidate, round_name=None):
     return data.tobytes()
 
 
+COMPLETION_SOURCE = "completion suggested by Muse Wonder"
+FALLBACK_SOURCE = "fallback: measured shape, no design intent"
+
+
+def completion(name):
+    """The run's completion suggestion (6_completion/completion.json) with the user's decision, or None."""
+    folder = run_dir(name) / "6_completion"
+    path = folder / "completion.json"
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    decision = folder / "decision.json"
+    data["decision"] = json.loads(decision.read_text(encoding="utf-8"))["decision"] if decision.exists() else None
+    data["added_stl"] = f"/api/runs/{name}/completion/added.stl" if (folder / "added.stl").exists() else None
+    data["added_volume_mm3"] = (data.get("check") or {}).get("added_volume_mm3")
+    return data
+
+
+def decide_completion(name, decision):
+    """Store the user's answer to the suggestion: "apply", "ignore", or None to undo it."""
+    data = completion(name)
+    if data is None:
+        raise FileNotFoundError("this run has no completion suggestion")
+    if decision == "apply" and not data.get("valid"):
+        raise ValueError("this suggestion did not pass its check")
+    path = run_dir(name) / "6_completion" / "decision.json"
+    if decision is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(json.dumps({"decision": decision}), encoding="utf-8")
+
+
 def result_program(name):
-    """(program path, source label) of the run's result: the winner, or the baseline fallback."""
+    """(program path, source label) of the run's result: the applied completion, else the winner, or the
+    baseline fallback."""
+    applied = completion(name)
+    if applied and applied["decision"] == "apply" and applied.get("valid"):
+        return run_dir(name) / "6_completion" / applied["program"], COMPLETION_SOURCE
     round_name = candidate_round(name)
     summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
     result = summary.get("result") or summary.get("winner")
     if not result:
         raise FileNotFoundError("this run has no result program")
-    # By file name inside the run's own round folder, so a run still works after it is moved (samples).
-    path = run_dir(name) / round_name / Path(result["file"].replace("\\", "/")).name
+    # By file name inside the run's own folders, so a run still works after it is moved (samples).
+    path = _program_path(name, round_name, result["file"])
     source = summary.get("result_source", "candidate")
     return path, source
 
@@ -249,16 +303,15 @@ def capture_fit_png(name):
     on top. PNG bytes.
     """
     folder = run_dir(name)
-    measurements = json.loads((folder / "3_measurements.json").read_text(encoding="utf-8"))
-    table = measurements["table"]
-    image = load_photo(_photo(folder))
-    pixel_to_mm = pixel_to_mm_scales(_cached_card_mask(folder, image))[0][measurements["scale_used"]]
-    center = np.array(table["center_on_table_mm"])
-    half = table["outline"]["length_mm"] / 2 + 8  # the same region the pipeline rectified
-    photo, _ = rectify_image(np.asarray(image), pixel_to_mm, (*(center - half), *(center + half)), MM_PER_PIXEL)
+    _cached_card_mask(folder, load_photo(_photo(folder)))  # makes sure 3_mask_card.png exists
+    photo = topdown_photo(folder)
     reference = cv2.imread(str(folder / "3_part_mask_topdown.png"), cv2.IMREAD_GRAYSCALE) > 0
 
-    path, _ = result_program(name)
+    # The program the search chose (not an applied completion: that one differs from the photo on purpose).
+    row = _result_row(name)
+    if not row:
+        raise FileNotFoundError("this run has no result program")
+    path = _program_path(name, candidate_round(name), row["file"])
     mask_path = next((p for p in (path.with_suffix(".default.mask.npy"), path.with_suffix(".default.mask.png"))
                       if p.exists()), None)
     if mask_path is None:

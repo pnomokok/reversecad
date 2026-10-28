@@ -15,14 +15,20 @@ import re
 import time
 import uuid
 
+from pathlib import Path
+
 import cv2
+import numpy as np
 from PIL import Image, ImageOps
 
 import usage_ledger
 from baseline_cad import baseline_code
+from break_cues import find_break_cues
+from completion import suggest_completion
 from candidates import extract_python_block, iter_candidates
 from e2e_pipeline import SamCache, check_program, find_masks, measure, save_json
 from model_view import model_view
+from repair import needs_repair, repair_loop, repaired_row
 from sam_client import load_photo
 from webapp import replay
 
@@ -81,10 +87,11 @@ def measure_job(name, click, emit):
     emit({"type": "analysis", **replay.analysis(name)})
 
 
-def candidates_job(name, count, thickness, render, emit):
+def candidates_job(name, count, thickness, render, emit, builder=None):
     """Screen 3 live: ask for candidates, check each as it arrives, then pick the result.
 
     render(path, mm_per_pixel) -> (mask, error) builds a silhouette (the web app's build process).
+    With the builder, a part that shows break cues also gets a completion suggestion (Muse Wonder).
     """
     folder = live_dir(name)
     table = json.loads((folder / "3_measurements.json").read_text(encoding="utf-8"))["table"]
@@ -116,7 +123,23 @@ def candidates_job(name, count, thickness, render, emit):
     baseline_path = round_dir / "baseline.py"
     baseline_path.write_text(baseline_code(table, thickness), encoding="utf-8")
     baseline = check_program(baseline_path, reference, None, table, render=render)
-    summary = {**_summary(rows, baseline), "usage": usage_ledger.summarize(folder)}
+    summary = _summary(rows, baseline)
+    if needs_repair(summary):  # no candidate passed, or the best is under the IoU threshold
+        repaired = repair_loop(folder, table, reference, folder / "3_part_mask_topdown.png", rows,
+                               thickness=thickness, render=render, emit=emit)
+        summary["repair"] = repaired
+        if repaired["passed"]:
+            row = repaired_row(repaired)
+            emit(replay.candidate_event(name, row))
+            summary.update({"winner": row, "result": row, "result_source": "repair · Muse Wonder"})
+    result = summary["result"]
+    if builder and result and summary["result_source"] != replay.FALLBACK_SOURCE:
+        cues = find_break_cues(table)
+        if cues["break_likely"]:  # Wonder is asked only when code found evidence of a break
+            emit({"type": "progress", "message": "Possible break: asking Muse Wonder for a completion…"})
+            program = Path(result["file"])
+            suggest_completion(folder, program, np.load(program.with_suffix(".default.mask.npy")), builder, cues=cues)
+    summary["usage"] = usage_ledger.summarize(folder)
     save_json(folder / f"5_summary_{ROUND}.json", summary)
     emit(replay.done_event(summary, ROUND))
 
