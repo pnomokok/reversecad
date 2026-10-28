@@ -56,6 +56,17 @@ From Baseten's docs plus our first calls (`baseten_client.py`, `try_baseten.py`)
 - An image of about 840 × 440 px cost about 475 prompt tokens; `usage.prompt_tokens_details.image_tokens` comes back empty.
 - Code prompts must say: fixed function name, no `show_object(...)` (CQ-editor only; raises `NameError` in our code), a single ```python block. In image prompts, say "white = part, black = background" (the model read the render's black margin as a "thick border").
 
+## How to call Muse Wonder
+
+From the user's summary of Meta's docs plus one trial call (2026-10-28).
+
+- Model name exactly `muse-wonder-1.0` (checked in `GET https://api.meta.ai/v1/models` with `MODEL_API_KEY`; the same list has `sam-3.1`, `muse-spark-1.3`, `muse-image-1.0`, `muse-voice-transcribe-1.0`).
+- Same requests and endpoints as Muse Spark on the Meta Model API: Responses, Chat Completions and Messages; only the model name differs. `base_url="https://api.meta.ai/v1"`, `api_key=MODEL_API_KEY`.
+- Input: text, images, video, audio and PDF; context 1,048,576 tokens. Reasoning levels from `minimal` to `max` (`max` does not turn on Wonder Full).
+- Trial call (Chat Completions, `reasoning_effort="low"`, two 320 px PNGs as base64 data URLs in `image_url` parts plus a short question): accepted, 8.9 s. **Both images were seen** (it described the tilted mask and the axis-aligned XOR image with its red and blue fringes separately).
+- Response fields: the answer is in `choices[0].message.content`. **No reasoning text is returned** (no `reasoning_content`, unlike Spark on Baseten), but reasoning is counted: `usage.completion_tokens_details.reasoning_tokens` (727 of 806 completion tokens at `low`). `usage.prompt_tokens` was 237 for the two small images and the question; `prompt_tokens_details.image_tokens` comes back empty.
+- Price (project document): $4 per million input tokens, $20 per million output tokens; completion tokens include the reasoning tokens. The trial call cost about $0.017.
+
 ## How to call SAM 3.1
 
 Summary of Meta's docs. Source: Meta Model API docs, "Segment Anything Model" pages.

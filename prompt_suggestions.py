@@ -7,7 +7,9 @@ confident SAM mask wins.
 """
 import json
 import re
+import time
 
+import usage_ledger
 from baseten_client import MODEL, image_data_url, make_client
 
 MAX_TOKENS = 6000  # reasoning tokens count toward this limit
@@ -37,8 +39,9 @@ def parse_prompts(text):
     return prompts[:MAX_PROMPTS]
 
 
-def suggest_part_prompts(photo_path):
-    """Return (prompts, raw answer text)."""
+def suggest_part_prompts(photo_path, ledger_folder=None):
+    """Return (prompts, raw answer text). With ledger_folder, the call is recorded in that run's usage ledger."""
+    started = time.perf_counter()
     response = make_client().chat.completions.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
@@ -50,5 +53,8 @@ def suggest_part_prompts(photo_path):
             ],
         }],
     )
+    if ledger_folder is not None:
+        usage_ledger.record_response(ledger_folder, usage_ledger.SPARK_OPEN, "part name suggestions",
+                                     response.model_dump(), seconds=time.perf_counter() - started)
     content = response.choices[0].message.content
     return parse_prompts(content), content

@@ -18,6 +18,7 @@ import uuid
 import cv2
 from PIL import Image, ImageOps
 
+import usage_ledger
 from baseline_cad import baseline_code
 from candidates import extract_python_block, iter_candidates
 from e2e_pipeline import SamCache, check_program, find_masks, measure, save_json
@@ -97,6 +98,7 @@ def candidates_job(name, count, thickness, render, emit):
                                                    thickness=thickness):
         (round_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
         save_json(round_dir / f"cand_{index}_response.json", response)
+        usage_ledger.record_response(folder, usage_ledger.SPARK_OPEN, f"candidate {index}", response)
         path = round_dir / f"cand_{index}.py"
         code = None if "error" in response else extract_python_block(response["choices"][0]["message"]["content"])
         if "error" in response:
@@ -114,7 +116,7 @@ def candidates_job(name, count, thickness, render, emit):
     baseline_path = round_dir / "baseline.py"
     baseline_path.write_text(baseline_code(table, thickness), encoding="utf-8")
     baseline = check_program(baseline_path, reference, None, table, render=render)
-    summary = _summary(rows, baseline)
+    summary = {**_summary(rows, baseline), "usage": usage_ledger.summarize(folder)}
     save_json(folder / f"5_summary_{ROUND}.json", summary)
     emit(replay.done_event(summary, ROUND))
 

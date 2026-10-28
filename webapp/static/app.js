@@ -522,6 +522,19 @@ function resultRows(event) {
   return rows;
 }
 
+const MODEL_NAMES = { "sam-3.1": "SAM 3.1", "meta-models/muse-spark-open-1026": "Muse Spark Open", "muse-wonder-1.0": "Muse Wonder" };
+
+function usageRows(usage) {
+  // One row per model this run called (from the run's usage ledger), then the total of the known prices.
+  const rows = Object.entries(usage.models).map(([model, t]) => {
+    const amount = t.images ? `${t.images} images` : `${(t.input_tokens + t.output_tokens).toLocaleString("en-US")} tokens`;
+    const price = t.cost_usd == null ? "price unknown" : `$${t.cost_usd.toFixed(3)}`;
+    return [MODEL_NAMES[model] || model, `${t.calls} calls · ${amount} · ${price}`];
+  });
+  rows.push(["Known cost", `$${usage.known_cost_usd.toFixed(3)}`]);
+  return rows;
+}
+
 const tableHTML = (rows) => rows.map(([k, v]) => (v === null
   ? `<tr class="heading"><td colspan="2">${k}</td></tr>` : `<tr><td>${k}</td><td class="number">${v}</td></tr>`)).join("");
 
@@ -607,6 +620,9 @@ function updateSummary() {
   $("pick-name").textContent = chosen ? `#${pad2(chosen.candidate)}` : state.done ? state.done.result_source || "no result" : "–";
   $("pick-iou").textContent = chosen ? `IoU ${chosen.iou.toFixed(4)}` : "";
   $("pick-table").innerHTML = chosen ? tableHTML(resultRows(chosen)) : "";
+  const usage = state.done && state.done.usage;
+  $("usage-box").classList.toggle("hidden", !(usage && Object.keys(usage.models).length));
+  if (usage) $("usage-table").innerHTML = tableHTML(usageRows(usage));
   const a = state.analysis;
   $("search-target").innerHTML = a ? `Target <strong>${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} mm · ${a.holes.length} holes</strong>` : "";
   $("search-state").innerHTML = state.done ? "" : `<span class="pulse"></span>Checking ${seen.length + 1}${state.expected ? ` / ${state.expected}` : ""}`;

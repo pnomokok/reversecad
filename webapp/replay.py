@@ -171,7 +171,8 @@ def done_event(summary, round_name):
     winner = (summary.get("winner") or {}).get("candidate")
     return {"type": "done", "round": round_name, "winner": winner,
             "result_source": summary.get("result_source", "candidate" if winner else None),
-            "compiled": summary["compiled"], "candidate_count": summary["candidate_count"]}
+            "compiled": summary["compiled"], "candidate_count": summary["candidate_count"],
+            "usage": summary.get("usage")}  # model calls, tokens and cost; runs before the ledger have none
 
 
 def candidate_events(name, round_name=None):

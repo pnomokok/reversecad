@@ -14,11 +14,13 @@ Steps and their outputs (in the scene's output folder):
 SAM and Muse Spark Open answers are cached in the folder; delete them to ask again.
 """
 import json
+import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+import usage_ledger
 from baseline_cad import baseline_code
 from candidates import DEFAULT_REASONING_EFFORT, extract_python_block, generate_candidates
 from design_intent import evaluate as evaluate_design_intent
@@ -75,7 +77,7 @@ def simulated_click(part_mask):
 
 
 class SamCache:
-    """SAM calls with their raw answers cached as text files."""
+    """SAM calls with their raw answers cached as text files; real calls go to the run's usage ledger."""
 
     def __init__(self, folder):
         self.folder = Path(folder)
@@ -87,7 +89,10 @@ class SamCache:
         if path.exists():
             return parse_detections(path.read_text(encoding="utf-8"), image.size)
         self.client = self.client or make_client()
+        started = time.perf_counter()
         detections, raw_text = segment(self.client, image, prompt)
+        usage_ledger.record(self.folder.parent, usage_ledger.SAM, f"segment {tag}{key or prompt}", images=1,
+                            seconds=time.perf_counter() - started)
         path.write_text(raw_text, encoding="utf-8")
         return detections
 
@@ -150,7 +155,7 @@ def find_masks(out, image, sam, click, photo_path, suggest=True):
         if suggestions_path.exists():
             suggestions = json.loads(suggestions_path.read_text(encoding="utf-8"))
         else:
-            prompts, content = suggest_part_prompts(photo_path)
+            prompts, content = suggest_part_prompts(photo_path, ledger_folder=out)
             suggestions = {"prompts": prompts, "answer": content}
             save_json(suggestions_path, suggestions)
         options = try_prompts([(p, None) for p in suggestions["prompts"]], "suggested")
@@ -294,6 +299,7 @@ def make_candidates(out, folder_name, table, count, reasoning_effort=DEFAULT_REA
         (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
         for i, response in enumerate(responses, 1):
             save_json(folder / f"cand_{i}_response.json", response)
+            usage_ledger.record_response(out, usage_ledger.SPARK_OPEN, f"candidate {i}", response)
     tokens = [(r.get("usage") or {}).get("completion_tokens") for r in responses if "error" not in r]
     seconds = [r["elapsed_s"] for r in responses if "elapsed_s" in r]
     if tokens:
@@ -320,6 +326,16 @@ def make_candidates(out, folder_name, table, count, reasoning_effort=DEFAULT_REA
 
 
 # ---------- step 5 ----------
+def xor_image(alignment):
+    """The aligned photo mask vs a candidate's silhouette as a BGR image (OpenCV's channel order)."""
+    a = alignment
+    xor = np.zeros((*a.reference.shape, 3), dtype=np.uint8)
+    xor[a.reference & a.candidate] = (255, 255, 255)
+    xor[a.reference & ~a.candidate] = (0, 0, 255)  # red: in the photo, missing in the model
+    xor[~a.reference & a.candidate] = (255, 128, 0)  # blue: in the model, not in the photo
+    return xor
+
+
 def check_program(path, reference, truth=None, measured_table=None, render=None):
     """Compile and score one program; returns a result row (without 'candidate').
 
@@ -393,12 +409,7 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
             print(f"      {d['dimension']:18s} measured {str(d['measured_mm']):>16s}  chosen {str(d['candidate_mm']):>16s}"
                   f"  deviation {str(d['deviation_mm']):>6s}  limit {d['limit_mm']:>5}  {'ok' if d['ok'] else 'OVER'}")
     if best:
-        a = best["_alignment"]
-        xor = np.zeros((*a.reference.shape, 3), dtype=np.uint8)
-        xor[a.reference & a.candidate] = (255, 255, 255)
-        xor[a.reference & ~a.candidate] = (0, 0, 255)  # red: in the photo, missing in the model
-        xor[~a.reference & a.candidate] = (255, 128, 0)  # blue: in the model, not in the photo
-        cv2.imwrite(str(out / f"5_best_xor_{folder_name}.png"), xor)
+        cv2.imwrite(str(out / f"5_best_xor_{folder_name}.png"), xor_image(best["_alignment"]))
     for label, row in [("winner", best), ("baseline", baseline)]:
         if not row or "iou" not in row:
             continue
@@ -426,7 +437,10 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
                "correct_topology": len(correct),
                "candidate_count": len(rows), "distinct_shapes": len(shapes), "winner": clean(best),
                "result": result, "result_source": result_source,
-               "baseline": clean(baseline), "candidates": [clean(r) for r in rows]}
+               "baseline": clean(baseline), "candidates": [clean(r) for r in rows],
+               "usage": usage_ledger.summarize(out)}
+    for line in usage_ledger.describe(summary["usage"]):
+        print(f"    usage: {line}")
     save_json(out / f"5_summary_{folder_name}.json", summary)
     return summary
 
