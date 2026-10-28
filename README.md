@@ -1,4 +1,5 @@
 # ReverseCAD
+**Live demo (no install, saved samples):** https://zeynepsdklc--reversecad-demo-web.us-east.modal.run
 
 ReverseCAD turns one top-down photo of a flat part into an **editable CAD program with real millimeter dimensions**. Put the part next to a bank card, click the part, and get CadQuery code whose parameters (length, hole diameter, edge margin, tab width, ...) can be changed with sliders, plus STL and STEP files.
 
