@@ -1,0 +1,3 @@
+{"time": "2026-10-28 21:30:01", "model": "sam-3.1", "purpose": "segment credit card", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "seconds": 5.6}
+{"time": "2026-10-28 21:30:06", "model": "sam-3.1", "purpose": "segment point", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "seconds": 4.5}
+{"time": "2026-10-28 21:30:10", "model": "sam-3.1", "purpose": "segment crop_point", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "seconds": 3.8}

@@ -235,6 +235,21 @@
             </div>
           </div>
           <div class="sliders" id="sliders"></div>
+          <div class="voice-card" id="voice-card">
+            <div class="voice-top">
+              <button class="mic" id="voice-mic" title="Speak a command (Muse Voice Transcribe)" disabled><span class="icon">mic</span></button>
+              <div class="voice-text">
+                <span class="voice-state" id="voice-state">Voice edit · Muse Spark Open</span>
+                <span class="voice-said" id="voice-said">Type a command, for example "make the holes 2 mm bigger".</span>
+              </div>
+            </div>
+            <form class="voice-form" id="voice-form"><input type="text" id="voice-input" maxlength="300" placeholder="make the holes 2 mm bigger" aria-label="edit command"><button type="submit">Go</button></form>
+            <div class="voice-proposal hidden" id="voice-proposal">
+              <div class="voice-changes" id="voice-changes"></div>
+              <div class="break-actions"><button class="break-apply" id="voice-apply"><span class="icon">check</span>Apply</button><button class="break-ignore" id="voice-dismiss">Dismiss</button></div>
+            </div>
+            <p class="break-note" id="voice-note"></p>
+          </div>
           <div class="exports-block">
             <span class="label">Export</span>
             <div class="exports">

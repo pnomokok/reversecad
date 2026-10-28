@@ -191,6 +191,14 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     scene.add(suggestion);
   }
 
+  function previewLabel(key, text) {
+    // Show a proposed value on a dimension label ("4× Ø6.00 → Ø8.00 mm"); null puts the built value back.
+    const element = labelElements[key];
+    if (!element) return;
+    if (element.dataset.built === undefined) element.dataset.built = element.textContent;
+    element.textContent = typeof text === "function" ? text(element.dataset.built) : text ?? element.dataset.built;
+  }
+
   function setChanged(keys) {
     changed = new Set(keys);
     for (const [key, element] of Object.entries(labelElements)) element.classList.toggle("changed", changed.has(key));
@@ -208,5 +216,5 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   loop();
   // Triangles of the shown part's mesh (the STL the viewer loaded).
   const triangleCount = () => (part ? part.children[0].geometry.attributes.position.count / 3 : 0);
-  return { show, showSuggestion, resize, setView, setChanged, triangleCount, reset: () => { framedRadius = null; } };
+  return { show, showSuggestion, resize, setView, setChanged, previewLabel, triangleCount, reset: () => { framedRadius = null; } };
 }

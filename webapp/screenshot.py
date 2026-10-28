@@ -45,6 +45,7 @@ def side_by_side(app_path, step, design_name=None):
 def main(arguments):
     compare = "--compare" in arguments
     design_name = next((a.split("=", 1)[1] for a in arguments if a.startswith("--design=")), None)
+    port = next((a.split("=", 1)[1] for a in arguments if a.startswith("--port=")), "8000")
     arguments = [a for a in arguments if not a.startswith("--")]
     run, *steps = arguments or ["A_light", "capture"]
     OUT.mkdir(parents=True, exist_ok=True)
@@ -52,7 +53,7 @@ def main(arguments):
         browser = playwright.chromium.launch(channel="msedge", args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
         page = browser.new_page(viewport=SIZE)
         for step in steps or ["capture"]:
-            page.goto(f"http://127.0.0.1:8000/?run={run}&step={step}")
+            page.goto(f"http://127.0.0.1:{port}/?run={run}&step={step}")
             page.wait_for_function("document.body.dataset.ready === 'true'", timeout=120_000)
             page.wait_for_timeout(1500)  # fonts, images and the 3D view settle
             path = shot_path(run, step)

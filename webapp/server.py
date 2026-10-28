@@ -19,15 +19,27 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import drawing_export
+import voice_edit
 from webapp import live, replay
 from webapp.builder import Builder
 
 load_dotenv()  # API keys from .env (never printed); live mode and repair need them
+
+# Online demo (modal_app.py): only the saved samples, and nothing that needs an API key.
+DEMO = os.getenv("REVERSECAD_DEMO") == "1"
+if DEMO:
+    replay.SOURCES = [replay.SAMPLES_DIR]
+
+
+def _needs_keys():
+    if DEMO:
+        raise HTTPException(403, "this online demo replays saved examples only; live mode, repair and voice "
+                                 "editing need API keys (run it locally, see the README)")
 
 STATIC = Path(__file__).parent / "static"
 MODEL_DIR = Path("outputs") / "web"  # temporary model files (git-ignored)
@@ -43,6 +55,13 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="ReverseCAD", lifespan=lifespan)
+
+
+@app.get("/api/config")
+def config():
+    """What this server can do: the online demo replays samples only; keys decide live mode and voice editing."""
+    return {"demo": DEMO, "live": not DEMO and bool(os.getenv("MODEL_API_KEY") and os.getenv("BASETEN_API_KEY")),
+            "voice": not DEMO and bool(os.getenv("BASETEN_API_KEY"))}
 
 
 @app.get("/api/runs")
@@ -157,6 +176,26 @@ async def build_model(name: str, request: Request):
     return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
 
 
+@app.post("/api/runs/{name}/voice/interpret", dependencies=[Depends(_needs_keys)])
+async def voice_interpret(name: str, request: Request):
+    """Voice editing: {"command": text, "parameters": {name: current value}} -> the proposed changes (not applied).
+
+    Muse Spark Open turns the command into changes of the program's named parameters (needs BASETEN_API_KEY).
+    """
+    body = await request.json()
+    command = str(body.get("command") or "").strip()
+    if not command or len(command) > 300:
+        raise HTTPException(400, "send a short command (1-300 characters)")
+    overrides = await _parameters(name, request)  # only the program's own numeric parameters
+    current = {p["name"]: overrides.get(p["name"], p["default"]) for p in replay.winner(name)["parameters"]}
+    if not os.getenv("BASETEN_API_KEY"):
+        raise HTTPException(503, "voice editing needs BASETEN_API_KEY in .env (Muse Spark Open)")
+    try:
+        return await asyncio.to_thread(voice_edit.interpret, command, current, replay.run_dir(name))
+    except Exception as error:  # the model call failed: say so, do not crash
+        raise HTTPException(502, f"Muse Spark Open did not answer: {type(error).__name__}")
+
+
 @app.get("/api/runs/{name}/irregularities")
 def run_irregularities(name: str):
     """The break cues summed up for the "no design found" panel (rough edges, missing material, holes)."""
@@ -166,7 +205,7 @@ def run_irregularities(name: str):
         raise HTTPException(404, str(error))
 
 
-@app.get("/api/runs/{name}/repair/stream")
+@app.get("/api/runs/{name}/repair/stream", dependencies=[Depends(_needs_keys)])
 async def repair_again(name: str):
     """Run the Muse Wonder repair again on a saved run where no candidate passed (needs MODEL_API_KEY)."""
     try:
@@ -328,7 +367,7 @@ def job_stream(job):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
-@app.post("/api/live/upload")
+@app.post("/api/live/upload", dependencies=[Depends(_needs_keys)])
 async def live_upload(photo: UploadFile = File(...)):
     """Screen 1 live: store the photo (upright, without EXIF) as a new live run."""
     try:
@@ -337,7 +376,7 @@ async def live_upload(photo: UploadFile = File(...)):
         raise HTTPException(400, str(error))
 
 
-@app.get("/api/live/{name}/measure/stream")
+@app.get("/api/live/{name}/measure/stream", dependencies=[Depends(_needs_keys)])
 async def live_measure(name: str, x: int, y: int):
     """Screens 1-2 live: SAM and measurement for the click at (x, y), with progress events."""
     try:
@@ -347,7 +386,7 @@ async def live_measure(name: str, x: int, y: int):
     return job_stream(lambda emit: live.measure_job(name, (x, y), emit))
 
 
-@app.get("/api/live/{name}/candidates/stream")
+@app.get("/api/live/{name}/candidates/stream", dependencies=[Depends(_needs_keys)])
 async def live_candidates(name: str, count: int = 5, thickness: float = 3.0):
     """Screen 3 live: candidates from Muse Spark Open, each checked and sent as soon as it arrives."""
     try:

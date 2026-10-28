@@ -842,6 +842,8 @@ async function showModel() {
   sliders.innerHTML = "";
   w.parameters.forEach((p) => sliders.appendChild(slider(p)));
   await rebuild();
+  state.voiceChanges = [];
+  $("voice-proposal").classList.add("hidden");
   await showCompletion();
 }
 $("to-model").addEventListener("click", showModel);
@@ -988,6 +990,119 @@ async function downloadFile(format, status = $("download-status")) {
 document.querySelectorAll(".exports button").forEach((b) => b.addEventListener("click", () => downloadFile(b.dataset.format)));
 document.querySelectorAll("#screen-export [data-format]").forEach((b) =>
   b.addEventListener("click", () => downloadFile(b.dataset.format, $("export-status"))));
+
+// ---------- voice editing: a command becomes named parameter changes, shown first, applied on Apply ----------
+function sliderRow(name) {
+  return document.querySelector(`#sliders input[name="${name}"]`)?.closest(".slider");
+}
+
+function clearVoicePreview() {
+  state.voiceChanges = [];
+  $("voice-proposal").classList.add("hidden");
+  document.querySelectorAll("#sliders .slider.pending").forEach((row) => {
+    row.classList.remove("pending");
+    const input = row.querySelector("input");
+    row.querySelector("output").textContent = `${input.value}${unitFor(input.name)}`;
+    row.querySelector(".voice-tag")?.remove();
+    row.querySelector(".range .default").textContent = `PROGRAM: ${input.dataset.default}`;
+  });
+  ["length", "width", "thickness", "hole"].forEach((key) => state.viewer?.previewLabel(key, null));
+  state.viewer?.setChanged(changedLabels());
+}
+
+function showVoiceChanges(result) {
+  // The proposal in the card and on each slider (old value struck, new value, the difference); nothing is built yet.
+  clearVoicePreview();
+  state.voiceChanges = result.changes;
+  $("voice-said").textContent = `“${result.command}”`;
+  $("voice-note").textContent = result.note || "";
+  if (!result.changes.length) return;
+  const fmt = (v) => Number(v.toFixed(2));
+  $("voice-changes").innerHTML = result.changes.map((c) => `<div class="voice-change"><span class="icon accent">edit</span>`
+    + `${prettyName(c.name)} <s>${fmt(c.from)}</s> → <strong>${fmt(c.to)}${unitFor(c.name)}</strong></div>`).join("");
+  $("voice-proposal").classList.remove("hidden");
+  for (const c of result.changes) {
+    const row = sliderRow(c.name);
+    if (!row) continue;
+    row.classList.add("pending");
+    row.querySelector(".name").insertAdjacentHTML("beforeend", `<span class="voice-tag">VOICE EDIT</span>`);
+    row.querySelector("output").innerHTML = `<s>${fmt(c.from)}</s> → ${fmt(c.to)}${unitFor(c.name)}`;
+    const delta = c.to - c.from;
+    row.querySelector(".range .default").textContent = `TARGET: ${fmt(c.to)} (${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))})`;
+  }
+  for (const c of result.changes) {  // the 3D label shows old -> new until Apply
+    const key = labelKey(c.name);
+    if (key === "hole") {
+      state.viewer.previewLabel("hole", (built) => `${built.split("Ø")[0]}Ø${fmt(c.from)} → Ø${fmt(c.to)} mm`);  // keeps "4× "
+    } else if (key) {
+      state.viewer.previewLabel(key, `${fmt(c.from)} → ${fmt(c.to)} mm`);
+    }
+  }
+  const pending = result.changes.map((c) => labelKey(c.name)).filter(Boolean);
+  state.viewer.setChanged([...changedLabels(), ...pending]);
+}
+
+async function interpretCommand(command) {
+  $("voice-state").textContent = "Understanding · Muse Spark Open";
+  $("voice-note").textContent = "";
+  const response = await fetch(`/api/runs/${state.run}/voice/interpret`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command, parameters: currentValues() }),
+  });
+  $("voice-state").textContent = "Voice edit · Muse Spark Open";
+  if (!response.ok) {
+    $("voice-note").textContent = `Not understood: ${(await response.json()).detail}`;
+    return;
+  }
+  showVoiceChanges(await response.json());
+}
+
+$("voice-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const command = $("voice-input").value.trim();
+  if (command) interpretCommand(command);
+});
+
+$("voice-apply").addEventListener("click", async () => {
+  // Move the sliders to the proposed values (widening a slider's range if needed), then rebuild once.
+  const changes = state.voiceChanges || [];
+  clearVoicePreview();
+  for (const c of changes) {
+    const input = document.querySelector(`#sliders input[name="${c.name}"]`);
+    if (!input) continue;
+    if (c.to > Number(input.max)) input.max = (c.to * 1.25).toFixed(2);
+    if (c.to < Number(input.min)) input.min = Math.max(0, c.to * 0.75).toFixed(2);
+    input.value = c.to;
+    input.dispatchEvent(new Event("input"));
+  }
+  $("voice-note").textContent = changes.length ? `Applied ${changes.length} change${changes.length > 1 ? "s" : ""}.` : "";
+  await rebuild();
+});
+$("voice-dismiss").addEventListener("click", () => {
+  clearVoicePreview();
+  $("voice-note").textContent = "Dismissed.";
+});
+
+function applyConfig(config) {
+  // Turn off, visibly and with the reason, what this server cannot do (the online demo has no API keys).
+  state.config = config;
+  const why = config.demo ? "Off in this online demo (it replays saved examples; run it locally with API keys)."
+    : "Needs API keys in .env (see the README).";
+  if (!config.live) {
+    const zone = document.querySelector(".dropzone");
+    zone.classList.add("disabled");
+    zone.querySelector("input").disabled = true;
+    zone.querySelector(".dropzone-hint").textContent = config.demo ? "off in this demo" : "needs API keys";
+    zone.title = why;
+    $("repair-again").disabled = true;
+    $("repair-again").title = why;
+  }
+  if (!config.voice) {
+    $("voice-input").disabled = true;
+    $("voice-form").querySelector("button").disabled = true;
+    $("voice-said").textContent = `Voice editing: ${why}`;
+  }
+}
 
 // ---------- export: technical drawing and packages ----------
 async function showExport() {
@@ -1142,6 +1257,7 @@ function drawingSVG(data) {
 (async () => {
   setScreen("capture");
   updateProcedure();
+  applyConfig(await getJSON("/api/config"));
   const { runs } = await getJSON("/api/runs");
   const examples = runs.filter((name) => !name.startsWith("live-"));
   $("example-list").innerHTML = examples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
@@ -1177,4 +1293,9 @@ async function openDeepLink(run, params) {
     input.dispatchEvent(new Event("input"));
   }
   if (changes.length) await rebuild();
+  // &say=make the holes 2 mm bigger types a voice command (shows the proposal, not applied).
+  if (params.get("say")) {
+    $("voice-input").value = params.get("say");
+    await interpretCommand(params.get("say"));
+  }
 }
