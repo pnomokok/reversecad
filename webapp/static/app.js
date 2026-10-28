@@ -65,7 +65,7 @@ function updateHeader() {
   $("progress").classList.toggle("hidden", !searching);
   if (!searching) return;
   const total = state.done ? state.done.candidate_count : state.expected;
-  const count = state.seen.length;
+  const count = state.seen.filter((e) => !e.label).length;  // requested candidates only, not repairs (R1, R2)
   $("progress-label").textContent = state.done ? "Search finished"
     : state.live ? "Generating with Muse Spark · Checking against the SAM 3.1 mask" : "Replaying a saved candidate round";
   $("progress-count").textContent = total ? `${Math.round((100 * count) / total)}% | ${count} / ${total}` : `${count}`;
@@ -618,7 +618,7 @@ function updateSummary() {
   const chosen = state.done ? seen.find((e) => e.candidate === state.done.winner)
     : passed.reduce((x, y) => (x && x.iou >= y.iou ? x : y), null);
   $("pick-label").textContent = state.done ? "Selected" : "Leading so far";
-  $("pick-name").textContent = chosen ? `#${pad2(chosen.candidate)}` : state.done ? state.done.result_source || "no result" : "–";
+  $("pick-name").textContent = chosen ? `#${idOf(chosen)}` : state.done ? state.done.note || state.done.result_source || "no result" : "–";
   $("pick-iou").textContent = chosen ? `IoU ${chosen.iou.toFixed(4)}` : "";
   $("pick-table").innerHTML = chosen ? tableHTML(resultRows(chosen)) : "";
   const usage = state.done && state.done.usage;
@@ -665,7 +665,7 @@ function streamCandidates() {
       grid.insertBefore(candidateCard(event), grid.querySelector(".waiting"));
       if (event.status === "passed") {
         const fit = event.fit_mm == null ? "" : `, fit ${event.fit_mm.toFixed(2)} mm`;
-        streamItem("OK", "tag-ok", `candidate ${idOf(event)} passed: IoU ${event.iou.toFixed(4)}${fit}`);
+        streamItem("OK", "tag-ok", `candidate ${idOf(event)}${event.style ? ` (${event.style.replace(/_/g, " ")})` : ""} passed: IoU ${event.iou.toFixed(4)}${fit}`);
       } else {
         streamItem(event.status === "failed" ? "FAIL" : "REJECT", "tag-bad",
           `candidate ${idOf(event)} ${event.status}: ${event.plain_reasons[0] || "no reason given"}`, event.reasons.join("\n"));
@@ -682,7 +682,7 @@ function streamCandidates() {
         $(`candidate-${chosen.candidate}`).replaceWith(winnerCard(chosen));
         streamItem("BEST", "tag-best", chosen.label ? `repaired program ${chosen.label} selected (Muse Wonder)` : `candidate ${idOf(chosen)} selected: correct shape, best IoU, fewest parameters`);
       } else {
-        streamItem("FALLBACK", "tag-bad", `no candidate passed: ${state.done.result_source}`);
+        streamItem("FALLBACK", "tag-bad", state.done.note || `no candidate passed: ${state.done.result_source}`);
       }
       $("to-model").disabled = !state.done.result_source || state.done.result_source.startsWith("none");
       layoutGrid();
@@ -769,7 +769,7 @@ async function showModel() {
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
   $("model-program").textContent = `Program ${w.program}`;
-  $("model-source").textContent = `Source: ${w.source}`;
+  $("model-source").textContent = w.note || `Source: ${w.source}`;
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
   $("fit-iou").textContent = w.iou == null ? "" : `IoU ${w.iou.toFixed(4)}`;
   // The program's own values (before any slider moves) against the measurements and, if known, the truth.
@@ -795,6 +795,7 @@ async function showCompletion() {
   const check = c.check || {};
   $("break-suggestion").textContent = c.suggestion || "";
   $("break-rationale").textContent = c.rationale || "";
+  $("break-parts").innerHTML = partsHTML(c.parts || [], c.answers || {}, applied);
   $("break-note").textContent = !c.valid ? `Not offered: ${(check.reasons || ["no program returned"]).join("; ")}`
     : applied ? "Applied: the parameters above belong to the completed program."
     : [check.added_volume_mm3 > 0 ? `adds ${check.added_volume_mm3.toFixed(0)} mm³ (orange in the 3D view)` : "",
@@ -805,8 +806,57 @@ async function showCompletion() {
   if (!applied && c.valid && c.added_stl) state.viewer.showSuggestion(await (await fetch(c.added_stl)).arrayBuffer());
 }
 
+function partsHTML(parts, answers, locked) {
+  // What the suggestion adds, split into measured (with its evidence), estimated (a question with the
+  // suggested value) and optional (a feature nothing in the photo shows; off unless ticked).
+  const escape = (text) => escapeAttribute(text || "");
+  const value = (p) => (answers[p.name] ?? p.value);
+  const input = (p) => `<span class="part-input"><input type="text" inputmode="decimal" data-part="${escape(p.name)}" `
+    + `value="${value(p) || p.value}" ${locked ? "disabled" : ""}>mm</span>`;
+  const groups = [];
+  const measured = parts.filter((p) => p.basis === "measured");
+  if (measured.length) {
+    groups.push(`<div class="parts-group"><span class="label">Measured</span><ul>${measured.map((p) =>
+      `<li><strong>${escape(prettyName(p.name))}</strong>: ${escape(p.evidence)}</li>`).join("")}</ul></div>`);
+  }
+  const estimated = parts.filter((p) => p.basis === "estimated");
+  if (estimated.length) {
+    groups.push(`<div class="parts-group"><span class="label">Estimated · please check</span>${estimated.map((p) =>
+      `<label class="part-question"><span>${escape(p.question || prettyName(p.name))}</span>${input(p)}</label>`).join("")}</div>`);
+  }
+  const optional = parts.filter((p) => p.basis === "optional");
+  if (optional.length) {
+    groups.push(`<div class="parts-group"><span class="label">Optional · not visible in the photo</span>${optional.map((p) =>
+      `<label class="part-question"><span class="ask"><input type="checkbox" data-optional="${escape(p.name)}" `
+      + `${answers[p.name] > 0 ? "checked" : ""} ${locked ? "disabled" : ""}><span>${escape(p.question || prettyName(p.name))}</span></span>`
+      + `${input(p)}</label>`).join("")}</div>`);
+  }
+  return groups.join("");
+}
+
+function partAnswers() {
+  // The user's answers: estimated values as typed; optional features their value if ticked, else 0 (left out).
+  const values = {};
+  document.querySelectorAll("#break-parts input[data-part]").forEach((input) => {
+    const number = Number(String(input.value).replace(",", "."));
+    if (Number.isFinite(number) && number >= 0) values[input.dataset.part] = number;
+  });
+  document.querySelectorAll("#break-parts input[data-optional]").forEach((box) => {
+    if (!box.checked) values[box.dataset.optional] = 0;
+  });
+  return values;
+}
+
 $("break-apply").addEventListener("click", async () => {
-  await fetch(`/api/runs/${state.run}/completion/${state.completion.decision === "apply" ? "undo" : "apply"}`, { method: "POST" });
+  const undo = state.completion.decision === "apply";
+  const response = await fetch(`/api/runs/${state.run}/completion/${undo ? "undo" : "apply"}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(undo ? {} : { values: partAnswers() }),
+  });
+  if (!response.ok) {
+    $("break-note").textContent = `Not applied: ${(await response.json()).detail}`;
+    return;
+  }
   await showModel();  // the result program changed: new parameters, new model
 });
 $("break-ignore").addEventListener("click", async () => {

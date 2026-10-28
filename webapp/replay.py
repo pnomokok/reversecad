@@ -12,6 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from break_cues import find_break_cues
 from completion import topdown_photo
 from repair import REPAIR_NUMBER
 from design_intent import parameters
@@ -134,7 +135,7 @@ def fit_to_measurements_mm(row):
 
 # Synthetic scenes (run_template_scenes.py) and the template part each one shows: their true
 # dimensions are known. Real photos and live runs have no ground truth.
-SCENE_PARTS = {"A_light": "A", "A_dark": "A", "B": "B", "C": "C", "D": "D", "E": "E"}
+SCENE_PARTS = {"A_light": "A", "A_light_repair": "A", "A_dark": "A", "B": "B", "C": "C", "D": "D", "E": "E"}
 
 
 def ground_truth_error(name, row):
@@ -165,14 +166,25 @@ def candidate_event(name, row, round_name=None):
             "fit_mm": fit_to_measurements_mm(row), "ground_truth": ground_truth_error(name, row),
             "outline_mm": row.get("outline_mm"), "hole_count": row.get("hole_count"),
             "label": row.get("label"), "diagnosis": row.get("diagnosis"),  # set for a repaired program
+            "style": row.get("style"),  # the approach the candidate was asked with (candidates.STYLES)
             "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png{query}"
             if status != "failed" else None}
 
 
-def done_event(summary, round_name):
-    """The end of a candidate round: the winner (or the fallback) and counts."""
+def result_note(name, summary):
+    """Why the result is the measured shape, in plain words, when no program passed; else None."""
+    if not (summary.get("result_source") or "").startswith("fallback"):
+        return None
+    table = json.loads((run_dir(name) / "3_measurements.json").read_text(encoding="utf-8"))["table"]
+    if any(cue["kind"] == "rough_edge" for cue in find_break_cues(table)["cues"]):
+        return "The edges are irregular; the measured shape is shown."
+    return "No candidate passed every check; the measured shape is shown."
+
+
+def done_event(summary, round_name, note=None):
+    """The end of a candidate round: the winner (or the fallback), counts, and why if it fell back."""
     winner = (summary.get("winner") or {}).get("candidate")
-    return {"type": "done", "round": round_name, "winner": winner,
+    return {"type": "done", "round": round_name, "winner": winner, "note": note,
             "result_source": summary.get("result_source", "candidate" if winner else None),
             "compiled": summary["compiled"], "candidate_count": summary["candidate_count"],
             "usage": summary.get("usage")}  # model calls, tokens and cost; runs before the ledger have none
@@ -190,7 +202,7 @@ def candidate_events(name, round_name=None):
     events += [{"type": "repair", **entry} for entry in repaired.get("rounds", [])]
     if repaired.get("passed"):
         events.append(candidate_event(name, repaired["result"]))
-    return events + [done_event(summary, round_name)]
+    return events + [done_event(summary, round_name, result_note(name, summary))]
 
 
 def _program_path(name, round_name, file):
@@ -210,7 +222,8 @@ def silhouette_png(name, candidate, round_name=None):
     if round_name is not None and round_name not in CANDIDATE_ROUNDS:
         raise FileNotFoundError(f"unknown round {round_name!r}")
     if int(candidate) > REPAIR_NUMBER:  # a repaired program (repair.py numbers them 101, 102)
-        paths = [folder / f"repair_round_{int(candidate) - REPAIR_NUMBER}" / "repaired.default.mask.npy"]
+        repair = folder / f"repair_round_{int(candidate) - REPAIR_NUMBER}"
+        paths = [repair / "repaired.default.mask.npy", repair / "repaired.default.mask.png"]
     else:
         paths = [folder / r / f"cand_{int(candidate)}.default.mask{ext}"
                  for r in ([round_name] if round_name else CANDIDATE_ROUNDS) for ext in (".npy", ".png")]  # .png in compact samples
@@ -239,24 +252,39 @@ def completion(name):
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
     decision = folder / "decision.json"
-    data["decision"] = json.loads(decision.read_text(encoding="utf-8"))["decision"] if decision.exists() else None
+    answer = json.loads(decision.read_text(encoding="utf-8")) if decision.exists() else {}
+    data["decision"], data["answers"] = answer.get("decision"), answer.get("values") or {}
     data["added_stl"] = f"/api/runs/{name}/completion/added.stl" if (folder / "added.stl").exists() else None
     data["added_volume_mm3"] = (data.get("check") or {}).get("added_volume_mm3")
     return data
 
 
-def decide_completion(name, decision):
-    """Store the user's answer to the suggestion: "apply", "ignore", or None to undo it."""
+def decide_completion(name, decision, values=None):
+    """Store the user's answer to the suggestion: "apply", "ignore", or None to undo it.
+
+    values: the user's answers to the estimated and optional parts (parameter -> number; 0 leaves an
+    optional feature out). Applying writes applied.py, the completed program with those as defaults.
+    """
     data = completion(name)
     if data is None:
         raise FileNotFoundError("this run has no completion suggestion")
     if decision == "apply" and not data.get("valid"):
         raise ValueError("this suggestion did not pass its check")
-    path = run_dir(name) / "6_completion" / "decision.json"
+    folder = run_dir(name) / "6_completion"
+    asked = {part["name"] for part in data.get("parts") or [] if part["basis"] in ("estimated", "optional")}
+    values = values or {}
+    for key, value in values.items():
+        if key not in asked or not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"not an answer to this suggestion's questions: {key}")
+    path = folder / "decision.json"
+    (folder / "applied.py").unlink(missing_ok=True)
     if decision is None:
         path.unlink(missing_ok=True)
-    else:
-        path.write_text(json.dumps({"decision": decision}), encoding="utf-8")
+        return
+    if decision == "apply":
+        source = (folder / data["program"]).read_text(encoding="utf-8")
+        (folder / "applied.py").write_text(replace_defaults(source, values), encoding="utf-8")
+    path.write_text(json.dumps({"decision": decision, "values": values}), encoding="utf-8")
 
 
 def result_program(name):
@@ -264,7 +292,9 @@ def result_program(name):
     baseline fallback."""
     applied = completion(name)
     if applied and applied["decision"] == "apply" and applied.get("valid"):
-        return run_dir(name) / "6_completion" / applied["program"], COMPLETION_SOURCE
+        folder = run_dir(name) / "6_completion"
+        program = folder / "applied.py" if (folder / "applied.py").exists() else folder / applied["program"]
+        return program, COMPLETION_SOURCE
     round_name = candidate_round(name)
     summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
     result = summary.get("result") or summary.get("winner")
@@ -290,7 +320,9 @@ def winner(name):
     params = [{"name": p, "default": v} for p, v in parameters(path.read_text(encoding="utf-8"))
               if isinstance(v, (int, float)) and not isinstance(v, bool)]
     row = _result_row(name) or {}
+    summary = json.loads((run_dir(name) / f"5_summary_{candidate_round(name)}.json").read_text(encoding="utf-8"))
     return {"name": name, "program": path.name, "source": source, "parameters": params,
+            "note": result_note(name, summary) if source != COMPLETION_SOURCE else None,
             "iou": row.get("iou"), "fit_mm": fit_to_measurements_mm(row), "ground_truth": ground_truth_error(name, row)}
 
 
@@ -336,13 +368,17 @@ def capture_fit_png(name):
 
 
 def program_with_defaults(name, values):
-    """The result program's source with build_part's defaults replaced by `values` (name -> number).
+    """The result program's source with build_part's defaults replaced by `values` (name -> number)."""
+    path, _ = result_program(name)
+    return replace_defaults(path.read_text(encoding="utf-8"), values)
+
+
+def replace_defaults(source, values):
+    """A program's source with build_part's defaults replaced by `values` (name -> number).
 
     Only the default values change (located by the parser, replaced from the end of the text so
     earlier positions stay valid); the rest of the code is kept as written.
     """
-    path, _ = result_program(name)
-    source = path.read_text(encoding="utf-8")
     function = next(node for node in ast.parse(source).body
                     if isinstance(node, ast.FunctionDef) and node.name == "build_part")
     args = function.args

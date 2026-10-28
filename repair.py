@@ -1,4 +1,4 @@
-"""Repair loop with Muse Wonder: when no candidate passes, or the best one is under the IoU threshold.
+"""Repair loop with Muse Wonder: when no candidate passes every check.
 
 Wonder sees the measurements (the model's view), the part's top-down mask and, for the best 2-3
 failed candidates, their code, their XOR difference image and why they failed (repair_inputs.py).
@@ -27,7 +27,6 @@ BASE_URL = "https://api.meta.ai/v1"
 MODEL = usage_ledger.WONDER
 REASONING_EFFORT = "medium"
 MAX_ROUNDS = 2
-IOU_THRESHOLD = 0.90  # the success criterion for the silhouette (CLAUDE.md)
 IMAGE_WIDTH = 640  # images are cropped to their content and scaled to this width
 REPAIR_NUMBER = 100  # a passing repaired program is candidate 101 (round 1) or 102 (round 2)
 
@@ -51,10 +50,13 @@ DIAGNOSIS: <one to three sentences: what is wrong in the failed programs, by nam
 ```"""
 
 
-def needs_repair(summary, threshold=IOU_THRESHOLD):
-    """True when no candidate passed, or the winner's IoU is below the threshold."""
-    winner = summary.get("winner")
-    return winner is None or winner.get("iou", 0) < threshold
+def needs_repair(summary):
+    """True when no candidate passed every check (built, within the deviation limits, right topology).
+
+    The winner is only chosen among candidates that passed, so no winner means repair. (Until
+    2026-10-28 a winner with IoU under 0.90 also triggered it; the consultation dropped that.)
+    """
+    return summary.get("winner") is None
 
 
 def make_client():

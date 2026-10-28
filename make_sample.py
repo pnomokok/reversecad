@@ -4,7 +4,10 @@ Keeps only what the web app's replay reads; the photo becomes a high-quality JPE
 candidate silhouettes PNGs (the replay reads the saved masks, not the photo, for measurements).
 Only synthetic scenes belong here: real photos show the user's card.
 
-Run: .venv\\Scripts\\python.exe make_sample.py A_light
+Muse Wonder repair rounds and a completion suggestion are kept when the run has them (their
+programs, silhouettes, results and the material a completion adds), and so is the usage ledger.
+
+Run: .venv\\Scripts\\python.exe make_sample.py A_light A_light_repair D_tab_broken
 """
 import json
 import shutil
@@ -41,6 +44,22 @@ def make_sample(name):
             cv2.imwrite(str(target / round_name / f"{program.stem}.default.mask.png"),
                         np.load(mask_path).astype(np.uint8) * 255)
     shutil.copy(source / round_name / "baseline.py", target / round_name / "baseline.py")
+    if (source / "usage.jsonl").exists():
+        shutil.copy(source / "usage.jsonl", target / "usage.jsonl")
+    for repair in source.glob("repair_round_*"):  # Muse Wonder repairs: program, silhouette, result
+        (target / repair.name).mkdir()
+        for file in ("repaired.py", "result.json"):
+            if (repair / file).exists():
+                shutil.copy(repair / file, target / repair.name / file)
+        mask_path = repair / "repaired.default.mask.npy"
+        if mask_path.exists():
+            cv2.imwrite(str(target / repair.name / "repaired.default.mask.png"), np.load(mask_path).astype(np.uint8) * 255)
+    completion = source / "6_completion"
+    if completion.exists():  # the completion suggestion, without the images sent to Muse Wonder
+        (target / completion.name).mkdir()
+        for file in ("completion.json", "completed.py", "added.stl", "removed.stl", "compare.json"):
+            if (completion / file).exists():
+                shutil.copy(completion / file, target / completion.name / file)
     size = sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
     print(f"sample {target}: {size / 1e6:.2f} MB")
 

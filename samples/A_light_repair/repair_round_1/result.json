@@ -1,0 +1,11 @@
+{
+  "round": 1,
+  "diagnosis": "cand_1 places a left hole at u=-27.77 instead of -31.79 (about 4 mm off); cand_2 invents a fifth outline corner on the left edge, cutting off the true top-left corner by 5.61 mm. Both ignore the symmetric 4-hole pattern with a common diameter and uniform edge margin.",
+  "passed": true,
+  "iou": 0.988,
+  "reasons": [],
+  "seconds": 9.6,
+  "input_tokens": 3595,
+  "output_tokens": 1295,
+  "cost_usd": 0.040279999999999996
+}

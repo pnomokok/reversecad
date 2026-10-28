@@ -326,6 +326,27 @@ def make_candidates(out, folder_name, table, count, reasoning_effort=DEFAULT_REA
 
 
 # ---------- step 5 ----------
+EARLY_STOP_AGREEING = 3  # the search stops once this many passing candidates build the same shape
+
+
+def geometry_key(row):
+    """Candidates with the same key build the same shape: corner count, hole layout and outline to 1 mm."""
+    return (row["corners"], tuple(map(tuple, row["hole_layout"])), tuple(round(x) for x in row["outline_mm"]))
+
+
+def passed_every_check(row):
+    return "iou" in row and row["deviation_ok"] and row.get("topology_ok") is not False
+
+
+def search_settled(rows, agreeing=EARLY_STOP_AGREEING):
+    """True once `agreeing` candidates that passed every check build the same shape (stop asking for more)."""
+    counts = {}
+    for row in rows:
+        if passed_every_check(row):
+            key = geometry_key(row)
+            counts[key] = counts.get(key, 0) + 1
+    return max(counts.values(), default=0) >= agreeing
+
 def xor_image(alignment):
     """The aligned photo mask vs a candidate's silhouette as a BGR image (OpenCV's channel order)."""
     a = alignment
@@ -381,8 +402,7 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
 
     compiled = [r for r in rows if "iou" in r]
     correct = [r for r in compiled if r["topology_ok"]]
-    shapes = {(r["corners"], tuple(map(tuple, r["hole_layout"])), tuple(round(x) for x in r["outline_mm"]))
-              for r in compiled}
+    shapes = {geometry_key(r) for r in compiled}
     topology = f"{len(correct)}/{len(rows)}" if truth else "n/a (no ground truth)"
     print(f"[5] {len(compiled)}/{len(rows)} compiled, correct topology {topology}, "
           f"{len(shapes)} distinct shape(s); IoU ceiling (true part vs reference) {ceiling:.4f}")
@@ -397,12 +417,11 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
             print(f"    cand {r['candidate']:2d}  IoU {r['iou']:.4f}  params {r['parameter_count']:2d}  "
                   f"corners {r['corners']}  holes {r['hole_diameters_mm']}  {status}")
 
-    # Winner among candidates within the deviation limits: correct topology first (when known),
-    # then IoU, then fewer parameters.
-    eligible = [r for r in compiled if r["deviation_ok"]]
-    best = max(eligible, key=lambda r: (r["topology_ok"] is not False, round(r["iou"], 3), -r["parameter_count"])) \
-        if eligible else None
-    print(f"    {len(eligible)}/{len(compiled)} compiled candidates within the deviation limits")
+    # Winner among candidates that passed every check (within the deviation limits and, when the truth
+    # is known, the right topology): highest IoU, then fewer parameters.
+    eligible = [r for r in compiled if r["deviation_ok"] and r["topology_ok"] is not False]
+    best = max(eligible, key=lambda r: (round(r["iou"], 3), -r["parameter_count"])) if eligible else None
+    print(f"    {len(eligible)}/{len(compiled)} compiled candidates passed every check")
     repaired = None
     if repair and measured_table is not None:
         from repair import needs_repair, repair_loop, repaired_row  # repair.py imports this module

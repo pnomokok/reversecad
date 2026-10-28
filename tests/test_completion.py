@@ -34,7 +34,7 @@ def test_answer_fields_are_read():
     answer = parse_answer("BROKEN: yes\nSUGGESTION: add the fourth hole (hole_pattern)\n"
                           "RATIONALE: three of four mirrored holes exist.\n```python\nprint(1)\n```")
     assert answer == {"broken": True, "suggestion": "add the fourth hole (hole_pattern)",
-                      "rationale": "three of four mirrored holes exist.", "code": "print(1)\n"}
+                      "rationale": "three of four mirrored holes exist.", "parts": [], "code": "print(1)\n"}
     assert parse_answer("BROKEN: no\nSUGGESTION: none\nRATIONALE: designed this way.")["broken"] is False
 
 
@@ -46,3 +46,16 @@ def test_a_completion_may_add_or_drill_but_not_take_away_the_part(tmp_path, buil
     assert result["ok"] is ok, result
     if code is ADDS_A_TAB:
         assert result["added_volume_mm3"] > 0 and (tmp_path / "added.stl").exists()
+
+
+def test_parts_say_what_is_measured_estimated_or_optional():
+    answer = parse_answer(
+        'BROKEN: yes\nSUGGESTION: restore the tab\nRATIONALE: rough edge.\n'
+        'PARTS: [{"name": "tab_width", "value": 15, "basis": "measured", "evidence": "rough edge 14.4 mm"}, '
+        '{"name": "tab_length", "value": 12.8, "basis": "estimated", "question": "How far did it stick out?"}, '
+        '{"name": "tab_hole_diameter", "value": 6, "basis": "optional", "question": "Was there a hole?"}, '
+        '{"name": "bad", "value": "x", "basis": "measured"}]\n```python\npass\n```')
+    assert [(p["name"], p["basis"]) for p in answer["parts"]] == [
+        ("tab_width", "measured"), ("tab_length", "estimated"), ("tab_hole_diameter", "optional")]
+    assert answer["parts"][1]["question"] == "How far did it stick out?" and answer["code"] == "pass\n"
+    assert parse_answer("BROKEN: no")["parts"] == []

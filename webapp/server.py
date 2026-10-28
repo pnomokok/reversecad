@@ -173,12 +173,17 @@ def completion_added(name: str):
 
 
 @app.post("/api/runs/{name}/completion/{decision}")
-def completion_decision(name: str, decision: str):
-    """Apply or ignore the suggestion ("undo" clears the answer); applying makes the completed program the result."""
+async def completion_decision(name: str, decision: str, request: Request):
+    """Apply or ignore the suggestion ("undo" clears the answer); applying makes the completed program the result.
+
+    Body (optional): {"values": {parameter: number}}, the answers to the estimated and optional parts.
+    """
     if decision not in ("apply", "ignore", "undo"):
         raise HTTPException(400, "decision must be apply, ignore or undo")
+    body = await request.body()
+    values = (json.loads(body) or {}).get("values") if body else None
     try:
-        replay.decide_completion(name, None if decision == "undo" else decision)
+        replay.decide_completion(name, None if decision == "undo" else decision, values)
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
     except ValueError as error:

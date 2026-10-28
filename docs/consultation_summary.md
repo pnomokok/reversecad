@@ -86,3 +86,13 @@ One top-down photo of a flat part next to an ID-1 card (85.60 × 53.98 mm). SAM 
 7. For the demo: should we add compact samples of a repaired run and a broken-part run so the jury can replay them without keys?
 8. Is sending the photo to Muse Wonder for completion acceptable, or should completion also work from the mask only (and how much would it lose)?
 9. Is a side shot (thickness, blind holes) worth building before the deadline, or should it stay a known limit?
+
+## Decisions after the consultation (2026-10-28, implemented)
+
+1. Deviation limits stay for hand-cut parts; a fallback result now says why in plain words ("The edges are irregular; the measured shape is shown.").
+2. Candidates use three approaches in turn (fewest parameters, feature based, symmetry first); the live search stops when three passing candidates build the same shape.
+3. The scale rule stays frozen; the 3-5% too-large width on real photos is recorded and will be examined with the hardware-store parts.
+4. The completion card separates measured, estimated and optional parts and asks about the last two. On the snapped-off tab, the suggested values give IoU 0.874 against the true design; the true answers give 0.974 with both holes.
+5. Repair runs only when no candidate passes every check.
+6. `samples/` now also holds a repair run and a broken-part run (synthetic, no EXIF), so the jury can replay both without keys.
+7. Completion from the mask only matched the photo exactly on all four broken parts, so the mask is the default and the photo no longer goes to Muse Wonder.

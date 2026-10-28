@@ -95,14 +95,40 @@ def partkit_reference():
     return "\n".join(lines)
 
 
-def build_prompt(view, thickness=3.0):
-    """Prompt text for a model view of the table (see model_view.py); thickness comes from the user."""
+# Candidates are asked in turn with different approaches, so they differ in structure, not only in code
+# (the same prompt for all gave the same geometry ten times). Decided at the consultation, 2026-10-28.
+STYLES = {
+    "fewest_parameters": "Use as few parameters as possible: one per independent design dimension, and derive "
+                         "every other number from them.",
+    "feature_based": "Build the part feature by feature, as a CAD designer would: the base shape first, then each "
+                     "tab, arm or notch as its own feature with its own named dimensions, then each group of holes.",
+    "symmetry_first": "Start from the part's symmetry: find its symmetry axes and repeated patterns first, and place "
+                      "everything relative to them (mirrored or patterned), with the pattern's spacing and margins "
+                      "as parameters.",
+}
+STYLE_ORDER = list(STYLES)
+
+
+def style_for(index):
+    """The approach for candidate `index` (from 1): the styles in turn."""
+    return STYLE_ORDER[(index - 1) % len(STYLE_ORDER)]
+
+
+def build_prompt(view, thickness=3.0, style=None):
+    """Prompt text for a model view of the table (see model_view.py); thickness comes from the user.
+
+    style (a key of STYLES) adds that approach as a requirement; None leaves it out.
+    """
     shown = {"outline": {key: view["outline"][key]
                          for key in ("length_mm", "width_mm", "vertex_count", "polygon_mm", "arcs")},
              "hole_count": view["hole_count"],
              "holes": [{field: hole[field] for field in HOLE_FIELDS[hole["shape"]]} for hole in view["holes"]]}
-    return PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME,
-                                  partkit=partkit_reference(), thickness=round(float(thickness), 2))
+    prompt = PROMPT_TEMPLATE.format(table=json.dumps(shown, indent=2), function=FUNCTION_NAME,
+                                    partkit=partkit_reference(), thickness=round(float(thickness), 2))
+    if style:
+        prompt = prompt.replace("- Reply with a single ```python code block",
+                                f"- Approach for this program: {STYLES[style]}\n- Reply with a single ```python code block")
+    return prompt
 
 
 def extract_python_block(text):
@@ -162,24 +188,32 @@ def _request_one(client, prompt, image_url, reasoning_effort=None):
 def iter_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT, thickness=3.0):
     """Yield (prompt, index from 1, response) as each request finishes (live mode streams these).
 
-    A failed request yields {"error": message} so the other candidates still arrive.
+    Candidate i is asked with the approach style_for(i); the response records it as "style". A failed
+    request yields {"error": message} so the other candidates still arrive. Closing the generator
+    early (the caller stops the search) cancels the requests that have not started.
     """
     client = make_client()
-    prompt = build_prompt(view, thickness)
     image_url = image_data_url(mask_image_path)
-    with ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS)) as pool:
-        futures = {pool.submit(_request_one, client, prompt, image_url, reasoning_effort): i
+    prompts = {i: build_prompt(view, thickness, style_for(i)) for i in range(1, count + 1)}
+    pool = ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS))
+    try:
+        futures = {pool.submit(_request_one, client, prompts[i], image_url, reasoning_effort): i
                    for i in range(1, count + 1)}
         for future in as_completed(futures):
+            index = futures[future]
             try:
                 response = future.result()
             except Exception as error:  # keep the other candidates if one request fails
                 response = {"error": f"{type(error).__name__}: {error}"}
-            yield prompt, futures[future], response
+            response["style"] = style_for(index)
+            yield prompts[index], index, response
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)  # requests already running finish unseen
 
 
 def generate_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT, thickness=3.0):
-    """Return (prompt, `count` results in request order: each the raw response dict, or {"error": message}).
+    """Return (prompt without a style, `count` results in request order: each the raw response dict, or
+    {"error": message}, with the "style" it was asked with).
 
     view is the model's view of the measurement table (model_view.py); reasoning_effort None
     leaves the model's default.

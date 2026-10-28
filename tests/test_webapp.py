@@ -132,7 +132,7 @@ def test_sample_run_replays_like_a_fresh_clone(monkeypatch):
     monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
     replay.analysis.cache_clear()
     try:
-        assert client.get("/api/runs").json()["runs"] == ["A_light"]
+        assert client.get("/api/runs").json()["runs"] == ["A_light", "A_light_repair", "D_tab_broken"]
         assert client.get("/api/runs/A_light/photo").headers["content-type"] == "image/jpeg"
         assert client.get("/api/runs/A_light/analysis").json()["table"]["hole_count"] == 4
         events = _events(client.get("/api/runs/A_light/candidates/stream").text)
@@ -164,9 +164,41 @@ def test_completion_can_be_applied_and_undone():
     try:
         assert client.post(f"{base}/completion/apply").json()["decision"] == "apply"
         winner = client.get(f"{base}/winner").json()
-        assert winner["program"] == "completed.py" and winner["source"] == replay.COMPLETION_SOURCE
+        assert winner["program"] == "applied.py" and winner["source"] == replay.COMPLETION_SOURCE
         assert client.post(f"{base}/model", json={"parameters": {}}).status_code == 200
     finally:
         client.post(f"{base}/completion/undo")
-    assert client.get(f"{base}/winner").json()["program"] != "completed.py"
+    assert client.get(f"{base}/winner").json()["program"] not in ("completed.py", "applied.py")
     assert client.post(f"{base}/completion/maybe").status_code == 400
+
+
+@pytest.mark.skipif("D_tab_broken" not in replay.list_runs(), reason="needs the run D_tab_broken")
+def test_answers_to_the_completion_questions_become_the_program_defaults():
+    base = "/api/runs/D_tab_broken"
+    parts = {p["basis"]: p["name"] for p in client.get(f"{base}/completion").json()["parts"]}
+    try:
+        answered = client.post(f"{base}/completion/apply",
+                               json={"values": {parts["estimated"]: 10.0, parts["optional"]: 6.0}}).json()
+        assert answered["answers"] == {parts["estimated"]: 10.0, parts["optional"]: 6.0}
+        defaults = {p["name"]: p["default"] for p in client.get(f"{base}/winner").json()["parameters"]}
+        assert defaults[parts["estimated"]] == 10.0 and defaults[parts["optional"]] == 6.0
+        assert client.post(f"{base}/model", json={"parameters": {}}).status_code == 200
+        bad = client.post(f"{base}/completion/apply", json={"values": {"length": 99}})
+        assert bad.status_code == 422  # only the suggestion's own questions can be answered
+    finally:
+        client.post(f"{base}/completion/undo")
+
+
+def test_samples_replay_the_repair_and_the_completion_without_keys(monkeypatch):
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])  # as in a fresh clone: no outputs/
+    monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
+    replay.analysis.cache_clear()
+    events = _events(client.get("/api/runs/A_light_repair/candidates/stream").text)
+    kinds = [kind for kind, _ in events]
+    assert "repair" in kinds and events[-1][1]["winner"] == 101  # the repaired program R1 won
+    assert client.get("/api/runs/A_light_repair/candidates/101/silhouette.png").status_code == 200
+    assert client.get("/api/runs/A_light_repair/winner").json()["program"] == "repaired.py"
+    completion = client.get("/api/runs/D_tab_broken/completion").json()
+    assert completion["available"] and completion["valid"] and completion["decision"] is None
+    assert client.get(completion["added_stl"]).status_code == 200
+    replay.analysis.cache_clear()

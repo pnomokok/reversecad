@@ -1,0 +1,16 @@
+{"time": "2026-10-28 17:39:19", "model": "sam-3.1", "purpose": "segment credit card", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "seconds": 2.9}
+{"time": "2026-10-28 17:39:22", "model": "sam-3.1", "purpose": "segment point", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "seconds": 2.7}
+{"time": "2026-10-28 17:39:24", "model": "sam-3.1", "purpose": "segment crop_point", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "seconds": 2.0}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 1", "input_tokens": 2199, "output_tokens": 4625, "reasoning_tokens": 4198, "images": 0, "seconds": 24.6}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 2", "input_tokens": 2199, "output_tokens": 4455, "reasoning_tokens": 4121, "images": 0, "seconds": 42.9}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 3", "input_tokens": 2199, "output_tokens": 3822, "reasoning_tokens": 3280, "images": 0, "seconds": 36.9}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 4", "input_tokens": 2199, "output_tokens": 4657, "reasoning_tokens": 4334, "images": 0, "seconds": 27.3}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 5", "input_tokens": 2199, "output_tokens": 4399, "reasoning_tokens": 3718, "images": 0, "seconds": 22.4}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 6", "input_tokens": 2199, "output_tokens": 3383, "reasoning_tokens": 3045, "images": 0, "seconds": 52.2}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 7", "input_tokens": 2199, "output_tokens": 4932, "reasoning_tokens": 4480, "images": 0, "seconds": 39.6}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 8", "input_tokens": 2199, "output_tokens": 3331, "reasoning_tokens": 2973, "images": 0, "seconds": 59.1}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 9", "input_tokens": 2199, "output_tokens": 5048, "reasoning_tokens": 4495, "images": 0, "seconds": 31.0}
+{"time": "2026-10-28 17:40:59", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 10", "input_tokens": 2199, "output_tokens": 4871, "reasoning_tokens": 4511, "images": 0, "seconds": 52.0}
+{"time": "2026-10-28 17:43:14", "model": "muse-wonder-1.0", "purpose": "completion", "input_tokens": 1771, "output_tokens": 5972, "reasoning_tokens": 5455, "images": 0, "seconds": 54.8}
+{"time": "2026-10-28 20:32:16", "model": "muse-wonder-1.0", "purpose": "completion (photo)", "input_tokens": 2003, "output_tokens": 2939, "reasoning_tokens": 2186, "images": 0, "seconds": 20.1}
+{"time": "2026-10-28 20:32:32", "model": "muse-wonder-1.0", "purpose": "completion (mask)", "input_tokens": 1800, "output_tokens": 2452, "reasoning_tokens": 1686, "images": 0, "seconds": 16.1}

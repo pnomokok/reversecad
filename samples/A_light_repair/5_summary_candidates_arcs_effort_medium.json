@@ -1,0 +1,1311 @@
+{
+  "iou_ceiling": 0.9742,
+  "compiled": 2,
+  "within_deviation": 0,
+  "correct_topology": 0,
+  "candidate_count": 2,
+  "distinct_shapes": 2,
+  "winner": {
+    "file": "outputs\\e2e\\A_light_repair\\repair_round_1\\repaired.py",
+    "iou": 0.988,
+    "topology_ok": true,
+    "topology_issues": [],
+    "deviation_ok": true,
+    "deviation": [
+      {
+        "dimension": "outline length",
+        "measured_mm": 79.31,
+        "candidate_mm": 79.3,
+        "deviation_mm": -0.01,
+        "limit_mm": 1.59,
+        "ok": true
+      },
+      {
+        "dimension": "outline width",
+        "measured_mm": 40.26,
+        "candidate_mm": 40.2,
+        "deviation_mm": -0.06,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 1",
+        "measured_mm": [
+          -39.57,
+          -20.12
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.02,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 2",
+        "measured_mm": [
+          -39.66,
+          20.13
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.03,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 3",
+        "measured_mm": [
+          39.66,
+          20.07
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.01,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 4",
+        "measured_mm": [
+          39.0,
+          -20.13
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.03,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "hole 1 position",
+        "measured_mm": [
+          -31.79,
+          -12.22
+        ],
+        "candidate_mm": [
+          -31.7,
+          -12.15
+        ],
+        "deviation_mm": 0.114,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 1 diameter",
+        "measured_mm": 6.01,
+        "candidate_mm": 6.04,
+        "deviation_mm": 0.03,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 2 position",
+        "measured_mm": [
+          -31.76,
+          12.08
+        ],
+        "candidate_mm": [
+          -31.7,
+          12.11
+        ],
+        "deviation_mm": 0.067,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 2 diameter",
+        "measured_mm": 6.08,
+        "candidate_mm": 6.04,
+        "deviation_mm": -0.04,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 3 position",
+        "measured_mm": [
+          31.35,
+          -12.28
+        ],
+        "candidate_mm": [
+          31.61,
+          -12.15
+        ],
+        "deviation_mm": 0.291,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 3 diameter",
+        "measured_mm": 5.98,
+        "candidate_mm": 6.04,
+        "deviation_mm": 0.06,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 4 position",
+        "measured_mm": [
+          31.71,
+          11.96
+        ],
+        "candidate_mm": [
+          31.61,
+          12.11
+        ],
+        "deviation_mm": 0.18,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 4 diameter",
+        "measured_mm": 6.05,
+        "candidate_mm": 6.03,
+        "deviation_mm": -0.02,
+        "limit_mm": 0.5,
+        "ok": true
+      }
+    ],
+    "outline_mm": [
+      79.3,
+      40.2
+    ],
+    "corners": 4,
+    "hole_count": 4,
+    "hole_diameters_mm": [
+      6.03,
+      6.04,
+      6.04,
+      6.04
+    ],
+    "hole_layout": [
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ]
+    ],
+    "parameter_count": 5,
+    "candidate": 101,
+    "label": "R1",
+    "diagnosis": "cand_1 places a left hole at u=-27.77 instead of -31.79 (about 4 mm off); cand_2 invents a fifth outline corner on the left edge, cutting off the true top-left corner by 5.61 mm. Both ignore the symmetric 4-hole pattern with a common diameter and uniform edge margin.",
+    "design_intent": {
+      "parameter_count": 5,
+      "parameters": [
+        "thickness",
+        "length",
+        "width",
+        "edge_margin",
+        "hole_diameter"
+      ],
+      "hole_diameter_parameter": [
+        "hole_diameter"
+      ],
+      "hole_diameter_linked": true,
+      "symmetry_axes": [
+        "left-right",
+        "top-bottom"
+      ],
+      "length_parameter": "length",
+      "symmetric_after_length_change": true,
+      "edge_margin_kept": true
+    }
+  },
+  "result": {
+    "file": "outputs\\e2e\\A_light_repair\\repair_round_1\\repaired.py",
+    "iou": 0.988,
+    "topology_ok": true,
+    "topology_issues": [],
+    "deviation_ok": true,
+    "deviation": [
+      {
+        "dimension": "outline length",
+        "measured_mm": 79.31,
+        "candidate_mm": 79.3,
+        "deviation_mm": -0.01,
+        "limit_mm": 1.59,
+        "ok": true
+      },
+      {
+        "dimension": "outline width",
+        "measured_mm": 40.26,
+        "candidate_mm": 40.2,
+        "deviation_mm": -0.06,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 1",
+        "measured_mm": [
+          -39.57,
+          -20.12
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.02,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 2",
+        "measured_mm": [
+          -39.66,
+          20.13
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.03,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 3",
+        "measured_mm": [
+          39.66,
+          20.07
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.01,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 4",
+        "measured_mm": [
+          39.0,
+          -20.13
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.03,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "hole 1 position",
+        "measured_mm": [
+          -31.79,
+          -12.22
+        ],
+        "candidate_mm": [
+          -31.7,
+          -12.15
+        ],
+        "deviation_mm": 0.114,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 1 diameter",
+        "measured_mm": 6.01,
+        "candidate_mm": 6.04,
+        "deviation_mm": 0.03,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 2 position",
+        "measured_mm": [
+          -31.76,
+          12.08
+        ],
+        "candidate_mm": [
+          -31.7,
+          12.11
+        ],
+        "deviation_mm": 0.067,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 2 diameter",
+        "measured_mm": 6.08,
+        "candidate_mm": 6.04,
+        "deviation_mm": -0.04,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 3 position",
+        "measured_mm": [
+          31.35,
+          -12.28
+        ],
+        "candidate_mm": [
+          31.61,
+          -12.15
+        ],
+        "deviation_mm": 0.291,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 3 diameter",
+        "measured_mm": 5.98,
+        "candidate_mm": 6.04,
+        "deviation_mm": 0.06,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 4 position",
+        "measured_mm": [
+          31.71,
+          11.96
+        ],
+        "candidate_mm": [
+          31.61,
+          12.11
+        ],
+        "deviation_mm": 0.18,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 4 diameter",
+        "measured_mm": 6.05,
+        "candidate_mm": 6.03,
+        "deviation_mm": -0.02,
+        "limit_mm": 0.5,
+        "ok": true
+      }
+    ],
+    "outline_mm": [
+      79.3,
+      40.2
+    ],
+    "corners": 4,
+    "hole_count": 4,
+    "hole_diameters_mm": [
+      6.03,
+      6.04,
+      6.04,
+      6.04
+    ],
+    "hole_layout": [
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ]
+    ],
+    "parameter_count": 5,
+    "candidate": 101,
+    "label": "R1",
+    "diagnosis": "cand_1 places a left hole at u=-27.77 instead of -31.79 (about 4 mm off); cand_2 invents a fifth outline corner on the left edge, cutting off the true top-left corner by 5.61 mm. Both ignore the symmetric 4-hole pattern with a common diameter and uniform edge margin.",
+    "design_intent": {
+      "parameter_count": 5,
+      "parameters": [
+        "thickness",
+        "length",
+        "width",
+        "edge_margin",
+        "hole_diameter"
+      ],
+      "hole_diameter_parameter": [
+        "hole_diameter"
+      ],
+      "hole_diameter_linked": true,
+      "symmetry_axes": [
+        "left-right",
+        "top-bottom"
+      ],
+      "length_parameter": "length",
+      "symmetric_after_length_change": true,
+      "edge_margin_kept": true
+    }
+  },
+  "result_source": "repair \u00b7 Muse Wonder",
+  "baseline": {
+    "file": "outputs\\e2e\\A_light_repair\\candidates_arcs_effort_medium\\baseline.py",
+    "iou": 0.9947,
+    "topology_ok": true,
+    "topology_issues": [],
+    "deviation_ok": true,
+    "deviation": [
+      {
+        "dimension": "outline length",
+        "measured_mm": 79.31,
+        "candidate_mm": 79.3,
+        "deviation_mm": -0.01,
+        "limit_mm": 1.59,
+        "ok": true
+      },
+      {
+        "dimension": "outline width",
+        "measured_mm": 40.26,
+        "candidate_mm": 40.3,
+        "deviation_mm": 0.04,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 1",
+        "measured_mm": [
+          -39.57,
+          -20.12
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.03,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 2",
+        "measured_mm": [
+          -39.66,
+          20.13
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.01,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 3",
+        "measured_mm": [
+          39.66,
+          20.07
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.02,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "corner 4",
+        "measured_mm": [
+          39.0,
+          -20.13
+        ],
+        "candidate_mm": "on outline",
+        "deviation_mm": 0.05,
+        "limit_mm": 1.0,
+        "ok": true
+      },
+      {
+        "dimension": "hole 1 position",
+        "measured_mm": [
+          -31.79,
+          -12.22
+        ],
+        "candidate_mm": [
+          -31.85,
+          12.2
+        ],
+        "deviation_mm": 0.063,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 1 diameter",
+        "measured_mm": 6.01,
+        "candidate_mm": 6.0,
+        "deviation_mm": -0.01,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 2 position",
+        "measured_mm": [
+          -31.76,
+          12.08
+        ],
+        "candidate_mm": [
+          -31.81,
+          -12.1
+        ],
+        "deviation_mm": 0.054,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 2 diameter",
+        "measured_mm": 6.08,
+        "candidate_mm": 6.08,
+        "deviation_mm": 0.0,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 3 position",
+        "measured_mm": [
+          31.35,
+          -12.28
+        ],
+        "candidate_mm": [
+          31.3,
+          12.26
+        ],
+        "deviation_mm": 0.054,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 3 diameter",
+        "measured_mm": 5.98,
+        "candidate_mm": 5.95,
+        "deviation_mm": -0.03,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 4 position",
+        "measured_mm": [
+          31.71,
+          11.96
+        ],
+        "candidate_mm": [
+          31.66,
+          -11.98
+        ],
+        "deviation_mm": 0.054,
+        "limit_mm": 0.5,
+        "ok": true
+      },
+      {
+        "dimension": "hole 4 diameter",
+        "measured_mm": 6.05,
+        "candidate_mm": 6.03,
+        "deviation_mm": -0.02,
+        "limit_mm": 0.5,
+        "ok": true
+      }
+    ],
+    "outline_mm": [
+      79.3,
+      40.3
+    ],
+    "corners": 4,
+    "hole_count": 4,
+    "hole_diameters_mm": [
+      5.95,
+      6.0,
+      6.03,
+      6.08
+    ],
+    "hole_layout": [
+      [
+        31,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ],
+      [
+        32,
+        12,
+        6
+      ]
+    ],
+    "parameter_count": 21,
+    "design_intent": {
+      "parameter_count": 21,
+      "parameters": [
+        "thickness",
+        "corner1_u",
+        "corner1_v",
+        "corner2_u",
+        "corner2_v",
+        "corner3_u",
+        "corner3_v",
+        "corner4_u",
+        "corner4_v",
+        "hole1_u",
+        "hole1_v",
+        "hole1_diameter",
+        "hole2_u",
+        "hole2_v",
+        "hole2_diameter",
+        "hole3_u",
+        "hole3_v",
+        "hole3_diameter",
+        "hole4_u",
+        "hole4_v",
+        "hole4_diameter"
+      ],
+      "hole_diameter_parameter": [
+        null
+      ],
+      "hole_diameter_linked": false,
+      "symmetry_axes": [
+        "left-right",
+        "top-bottom"
+      ],
+      "length_parameter": null,
+      "symmetric_after_length_change": false,
+      "edge_margin_kept": false
+    }
+  },
+  "candidates": [
+    {
+      "candidate": 1,
+      "file": "outputs\\e2e\\A_light_repair\\candidates_arcs_effort_medium\\cand_1.py",
+      "iou": 0.9807,
+      "topology_ok": false,
+      "topology_issues": [
+        "6 mm hole is 4.2 mm off"
+      ],
+      "deviation_ok": false,
+      "deviation": [
+        {
+          "dimension": "outline length",
+          "measured_mm": 79.31,
+          "candidate_mm": 79.3,
+          "deviation_mm": -0.01,
+          "limit_mm": 1.59,
+          "ok": true
+        },
+        {
+          "dimension": "outline width",
+          "measured_mm": 40.26,
+          "candidate_mm": 40.3,
+          "deviation_mm": 0.04,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 1",
+          "measured_mm": [
+            -39.57,
+            -20.12
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.03,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 2",
+          "measured_mm": [
+            -39.66,
+            20.13
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.01,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 3",
+          "measured_mm": [
+            39.66,
+            20.07
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.02,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 4",
+          "measured_mm": [
+            39.0,
+            -20.13
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.05,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "hole 1 position",
+          "measured_mm": [
+            -31.79,
+            -12.22
+          ],
+          "candidate_mm": [
+            -27.85,
+            12.2
+          ],
+          "deviation_mm": 3.94,
+          "limit_mm": 0.5,
+          "ok": false
+        },
+        {
+          "dimension": "hole 1 diameter",
+          "measured_mm": 6.01,
+          "candidate_mm": 6.0,
+          "deviation_mm": -0.01,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 2 position",
+          "measured_mm": [
+            -31.76,
+            12.08
+          ],
+          "candidate_mm": [
+            -31.81,
+            -12.1
+          ],
+          "deviation_mm": 0.054,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 2 diameter",
+          "measured_mm": 6.08,
+          "candidate_mm": 6.08,
+          "deviation_mm": 0.0,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 3 position",
+          "measured_mm": [
+            31.35,
+            -12.28
+          ],
+          "candidate_mm": [
+            31.3,
+            12.26
+          ],
+          "deviation_mm": 0.054,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 3 diameter",
+          "measured_mm": 5.98,
+          "candidate_mm": 5.95,
+          "deviation_mm": -0.03,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 4 position",
+          "measured_mm": [
+            31.71,
+            11.96
+          ],
+          "candidate_mm": [
+            31.66,
+            -11.98
+          ],
+          "deviation_mm": 0.054,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 4 diameter",
+          "measured_mm": 6.05,
+          "candidate_mm": 6.03,
+          "deviation_mm": -0.02,
+          "limit_mm": 0.5,
+          "ok": true
+        }
+      ],
+      "outline_mm": [
+        79.3,
+        40.3
+      ],
+      "corners": 4,
+      "hole_count": 4,
+      "hole_diameters_mm": [
+        5.95,
+        6.0,
+        6.03,
+        6.08
+      ],
+      "hole_layout": [
+        [
+          28,
+          12,
+          6
+        ],
+        [
+          31,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ]
+      ],
+      "parameter_count": 21
+    },
+    {
+      "candidate": 2,
+      "file": "outputs\\e2e\\A_light_repair\\candidates_arcs_effort_medium\\cand_2.py",
+      "iou": 0.9542,
+      "topology_ok": false,
+      "topology_issues": [
+        "outline has 5 corners, expected 4"
+      ],
+      "deviation_ok": false,
+      "deviation": [
+        {
+          "dimension": "outline length",
+          "measured_mm": 79.31,
+          "candidate_mm": 79.2,
+          "deviation_mm": -0.11,
+          "limit_mm": 1.59,
+          "ok": true
+        },
+        {
+          "dimension": "outline width",
+          "measured_mm": 40.26,
+          "candidate_mm": 40.3,
+          "deviation_mm": 0.04,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 1",
+          "measured_mm": [
+            -39.57,
+            -20.12
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.07,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 2",
+          "measured_mm": [
+            -39.66,
+            20.13
+          ],
+          "candidate_mm": "off outline",
+          "deviation_mm": 5.61,
+          "limit_mm": 1.0,
+          "ok": false
+        },
+        {
+          "dimension": "corner 3",
+          "measured_mm": [
+            39.66,
+            20.07
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.06,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 4",
+          "measured_mm": [
+            39.0,
+            -20.13
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.0,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "hole 1 position",
+          "measured_mm": [
+            -31.79,
+            -12.22
+          ],
+          "candidate_mm": [
+            -31.81,
+            12.18
+          ],
+          "deviation_mm": 0.045,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 1 diameter",
+          "measured_mm": 6.01,
+          "candidate_mm": 6.01,
+          "deviation_mm": 0.0,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 2 position",
+          "measured_mm": [
+            -31.76,
+            12.08
+          ],
+          "candidate_mm": [
+            -31.78,
+            -12.12
+          ],
+          "deviation_mm": 0.045,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 2 diameter",
+          "measured_mm": 6.08,
+          "candidate_mm": 6.06,
+          "deviation_mm": -0.02,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 3 position",
+          "measured_mm": [
+            31.35,
+            -12.28
+          ],
+          "candidate_mm": [
+            31.33,
+            12.24
+          ],
+          "deviation_mm": 0.045,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 3 diameter",
+          "measured_mm": 5.98,
+          "candidate_mm": 5.97,
+          "deviation_mm": -0.01,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 4 position",
+          "measured_mm": [
+            31.71,
+            11.96
+          ],
+          "candidate_mm": [
+            31.7,
+            -12.0
+          ],
+          "deviation_mm": 0.041,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 4 diameter",
+          "measured_mm": 6.05,
+          "candidate_mm": 6.04,
+          "deviation_mm": -0.01,
+          "limit_mm": 0.5,
+          "ok": true
+        }
+      ],
+      "outline_mm": [
+        79.2,
+        40.3
+      ],
+      "corners": 5,
+      "hole_count": 4,
+      "hole_diameters_mm": [
+        5.97,
+        6.01,
+        6.04,
+        6.06
+      ],
+      "hole_layout": [
+        [
+          31,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ]
+      ],
+      "parameter_count": 23
+    }
+  ],
+  "repair": {
+    "passed": true,
+    "rounds": [
+      {
+        "round": 1,
+        "diagnosis": "cand_1 places a left hole at u=-27.77 instead of -31.79 (about 4 mm off); cand_2 invents a fifth outline corner on the left edge, cutting off the true top-left corner by 5.61 mm. Both ignore the symmetric 4-hole pattern with a common diameter and uniform edge margin.",
+        "passed": true,
+        "iou": 0.988,
+        "reasons": [],
+        "seconds": 9.6,
+        "input_tokens": 3595,
+        "output_tokens": 1295,
+        "cost_usd": 0.040279999999999996
+      }
+    ],
+    "result": {
+      "file": "outputs\\e2e\\A_light_repair\\repair_round_1\\repaired.py",
+      "iou": 0.988,
+      "topology_ok": true,
+      "topology_issues": [],
+      "deviation_ok": true,
+      "deviation": [
+        {
+          "dimension": "outline length",
+          "measured_mm": 79.31,
+          "candidate_mm": 79.3,
+          "deviation_mm": -0.01,
+          "limit_mm": 1.59,
+          "ok": true
+        },
+        {
+          "dimension": "outline width",
+          "measured_mm": 40.26,
+          "candidate_mm": 40.2,
+          "deviation_mm": -0.06,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 1",
+          "measured_mm": [
+            -39.57,
+            -20.12
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.02,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 2",
+          "measured_mm": [
+            -39.66,
+            20.13
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.03,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 3",
+          "measured_mm": [
+            39.66,
+            20.07
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.01,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "corner 4",
+          "measured_mm": [
+            39.0,
+            -20.13
+          ],
+          "candidate_mm": "on outline",
+          "deviation_mm": 0.03,
+          "limit_mm": 1.0,
+          "ok": true
+        },
+        {
+          "dimension": "hole 1 position",
+          "measured_mm": [
+            -31.79,
+            -12.22
+          ],
+          "candidate_mm": [
+            -31.7,
+            -12.15
+          ],
+          "deviation_mm": 0.114,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 1 diameter",
+          "measured_mm": 6.01,
+          "candidate_mm": 6.04,
+          "deviation_mm": 0.03,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 2 position",
+          "measured_mm": [
+            -31.76,
+            12.08
+          ],
+          "candidate_mm": [
+            -31.7,
+            12.11
+          ],
+          "deviation_mm": 0.067,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 2 diameter",
+          "measured_mm": 6.08,
+          "candidate_mm": 6.04,
+          "deviation_mm": -0.04,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 3 position",
+          "measured_mm": [
+            31.35,
+            -12.28
+          ],
+          "candidate_mm": [
+            31.61,
+            -12.15
+          ],
+          "deviation_mm": 0.291,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 3 diameter",
+          "measured_mm": 5.98,
+          "candidate_mm": 6.04,
+          "deviation_mm": 0.06,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 4 position",
+          "measured_mm": [
+            31.71,
+            11.96
+          ],
+          "candidate_mm": [
+            31.61,
+            12.11
+          ],
+          "deviation_mm": 0.18,
+          "limit_mm": 0.5,
+          "ok": true
+        },
+        {
+          "dimension": "hole 4 diameter",
+          "measured_mm": 6.05,
+          "candidate_mm": 6.03,
+          "deviation_mm": -0.02,
+          "limit_mm": 0.5,
+          "ok": true
+        }
+      ],
+      "outline_mm": [
+        79.3,
+        40.2
+      ],
+      "corners": 4,
+      "hole_count": 4,
+      "hole_diameters_mm": [
+        6.03,
+        6.04,
+        6.04,
+        6.04
+      ],
+      "hole_layout": [
+        [
+          32,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ],
+        [
+          32,
+          12,
+          6
+        ]
+      ],
+      "parameter_count": 5,
+      "candidate": 101,
+      "label": "R1",
+      "diagnosis": "cand_1 places a left hole at u=-27.77 instead of -31.79 (about 4 mm off); cand_2 invents a fifth outline corner on the left edge, cutting off the true top-left corner by 5.61 mm. Both ignore the symmetric 4-hole pattern with a common diameter and uniform edge margin.",
+      "design_intent": {
+        "parameter_count": 5,
+        "parameters": [
+          "thickness",
+          "length",
+          "width",
+          "edge_margin",
+          "hole_diameter"
+        ],
+        "hole_diameter_parameter": [
+          "hole_diameter"
+        ],
+        "hole_diameter_linked": true,
+        "symmetry_axes": [
+          "left-right",
+          "top-bottom"
+        ],
+        "length_parameter": "length",
+        "symmetric_after_length_change": true,
+        "edge_margin_kept": true
+      }
+    }
+  },
+  "usage": {
+    "models": {
+      "muse-wonder-1.0": {
+        "calls": 1,
+        "input_tokens": 3595,
+        "output_tokens": 1295,
+        "reasoning_tokens": 1079,
+        "images": 0,
+        "seconds": 9.6,
+        "cost_usd": 0.0403,
+        "price_unverified": false
+      }
+    },
+    "known_cost_usd": 0.0403,
+    "unpriced_models": [],
+    "unverified_price_models": []
+  }
+}

@@ -26,7 +26,7 @@ from baseline_cad import baseline_code
 from break_cues import find_break_cues
 from completion import suggest_completion
 from candidates import extract_python_block, iter_candidates
-from e2e_pipeline import SamCache, check_program, find_masks, measure, save_json
+from e2e_pipeline import EARLY_STOP_AGREEING, SamCache, passed_every_check, check_program, find_masks, measure, save_json, search_settled
 from model_view import model_view
 from repair import needs_repair, repair_loop, repaired_row
 from sam_client import load_photo
@@ -100,10 +100,10 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
     round_dir.mkdir(exist_ok=True)
     emit({"type": "progress", "message": f"Asking Muse Spark Open for {count} candidates…"})
 
-    rows = []
-    for prompt, index, response in iter_candidates(model_view(table), folder / "3_part_mask_topdown.png", count,
-                                                   thickness=thickness):
-        (round_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+    rows, stopped_early = [], False
+    requests = iter_candidates(model_view(table), folder / "3_part_mask_topdown.png", count, thickness=thickness)
+    for prompt, index, response in requests:
+        (round_dir / f"cand_{index}_prompt.txt").write_text(prompt, encoding="utf-8")
         save_json(round_dir / f"cand_{index}_response.json", response)
         usage_ledger.record_response(folder, usage_ledger.SPARK_OPEN, f"candidate {index}", response)
         path = round_dir / f"cand_{index}.py"
@@ -116,15 +116,21 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
         else:
             path.write_text(code, encoding="utf-8")
             row = check_program(path, reference, None, table, render=render)
-        row = {"candidate": index, **row}
+        row = {"candidate": index, "style": response.get("style"), **row}
         rows.append(row)
         emit(replay.candidate_event(name, row))
+        if search_settled(rows) and len(rows) < count:  # decided at the consultation, 2026-10-28
+            stopped_early = True
+            requests.close()  # cancels the requests that have not started
+            emit({"type": "progress", "message": f"{EARLY_STOP_AGREEING} candidates passed with the same shape: "
+                                                 f"search stopped after {len(rows)} of {count}."})
+            break
 
     baseline_path = round_dir / "baseline.py"
     baseline_path.write_text(baseline_code(table, thickness), encoding="utf-8")
     baseline = check_program(baseline_path, reference, None, table, render=render)
-    summary = _summary(rows, baseline)
-    if needs_repair(summary):  # no candidate passed, or the best is under the IoU threshold
+    summary = {**_summary(rows, baseline), "requested": count, "stopped_early": stopped_early}
+    if needs_repair(summary):  # no candidate passed every check
         repaired = repair_loop(folder, table, reference, folder / "3_part_mask_topdown.png", rows,
                                thickness=thickness, render=render, emit=emit)
         summary["repair"] = repaired
@@ -141,7 +147,7 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
             suggest_completion(folder, program, np.load(program.with_suffix(".default.mask.npy")), builder, cues=cues)
     summary["usage"] = usage_ledger.summarize(folder)
     save_json(folder / f"5_summary_{ROUND}.json", summary)
-    emit(replay.done_event(summary, ROUND))
+    emit(replay.done_event(summary, ROUND, replay.result_note(name, summary)))
 
 
 def _summary(rows, baseline):
@@ -150,7 +156,7 @@ def _summary(rows, baseline):
         return {k: v for k, v in row.items() if not k.startswith("_")} if row else None
 
     compiled = [r for r in rows if "iou" in r]
-    eligible = [r for r in compiled if r["deviation_ok"]]
+    eligible = [r for r in compiled if passed_every_check(r)]
     best = max(eligible, key=lambda r: (round(r["iou"], 3), -r["parameter_count"])) if eligible else None
     if best is not None:
         result, source = clean(best), "candidate"

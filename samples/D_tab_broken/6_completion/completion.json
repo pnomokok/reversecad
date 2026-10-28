@@ -1,0 +1,70 @@
+{
+  "cues": [
+    {
+      "kind": "rough_edge",
+      "from": [
+        6.94,
+        -13.37
+      ],
+      "to": [
+        -7.5,
+        -13.62
+      ],
+      "length_mm": 14.44,
+      "roughness_mm": 0.167
+    }
+  ],
+  "winner": "cand_8.py",
+  "broken": true,
+  "suggestion": "Extend the snapped-off bottom tab in -Y by tab_extension, with an optional tab_hole_diameter hole in the restored tab.",
+  "rationale": "The rough_edge from [6.94,-13.37] to [-7.5,-13.62], length 14.44mm and roughness 0.167mm, spans the full 15.0mm width of the tab at its bottom edge. Such a zigzag break across the tab, leaving only a 2.22mm protrusion stub, indicates the tab was originally longer and snapped off there.",
+  "parts": [
+    {
+      "name": "tab_extension",
+      "value": 12.78,
+      "basis": "estimated",
+      "evidence": "Rough edge length 14.44mm fixes tab width near tab_width=15.0mm but no cue measures the original protrusion length",
+      "question": "How far did the original tab protrude beyond the measured 2.22mm stub?"
+    },
+    {
+      "name": "tab_hole_diameter",
+      "value": 10.05,
+      "basis": "optional",
+      "evidence": "Existing hole_diameter=10.05mm would fit the 15.0mm wide tab, but no hole is visible in the measured stub",
+      "question": "Did the snapped-off tab have a hole, for example of the same 10.05mm diameter?"
+    }
+  ],
+  "input": "mask",
+  "seconds": 16.1,
+  "usage": {
+    "completion_tokens": 2452,
+    "prompt_tokens": 1800,
+    "total_tokens": 4252,
+    "completion_tokens_details": {
+      "accepted_prediction_tokens": null,
+      "audio_tokens": null,
+      "reasoning_tokens": 1686,
+      "rejected_prediction_tokens": null,
+      "text_tokens": null
+    },
+    "prompt_tokens_details": {
+      "audio_tokens": null,
+      "cache_write_tokens": null,
+      "cached_tokens": 102,
+      "image_tokens": null,
+      "text_tokens": null
+    }
+  },
+  "error": null,
+  "program": "completed.py",
+  "check": {
+    "ok": true,
+    "reasons": [],
+    "base_volume_mm3": 3598.2,
+    "result_volume_mm3": 4173.3,
+    "added_volume_mm3": 575.1,
+    "removed_volume_mm3": 0
+  },
+  "status": "suggested",
+  "valid": true
+}

@@ -306,6 +306,17 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .break-suggestion { font-size: var(--font-size-body); color: var(--color-text-strong); line-height: 1.4; }
 .break-rationale, .break-note { font-size: var(--font-size-label-lg); color: var(--color-text-muted); line-height: 1.4; }
 .break-note:empty { display: none; }
+.break-parts { display: flex; flex-direction: column; gap: var(--space-3); }
+.break-parts:empty { display: none; }
+.parts-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.parts-group ul { margin: 0; padding-left: var(--space-5); font-size: var(--font-size-label-lg); color: var(--color-text-muted); line-height: 1.4; }
+.parts-group strong { color: var(--color-text-strong); font-weight: 600; }
+.part-question { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-label-lg); color: var(--color-text); line-height: 1.35; }
+.part-question .ask { display: flex; gap: var(--space-2); align-items: flex-start; }
+.part-input { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); }
+.part-input input[type="text"] { width: 90px; background: var(--color-lowest); border: var(--border-width) solid var(--color-highest); color: var(--color-text-strong); font-family: var(--font-mono); font-size: var(--font-size-body); padding: var(--space-1) var(--space-2); }
+.part-input input[type="text"]:focus { outline: none; border-color: var(--color-selected); }
+.part-question input[type="checkbox"] { accent-color: var(--color-selected); width: 16px; height: 16px; margin-top: 2px; }
 .break-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); }
 .break-actions button { height: 38px; display: flex; align-items: center; justify-content: center; gap: var(--space-1); font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; }
 .break-apply { background: var(--color-selected); color: var(--color-text-on-accent); }

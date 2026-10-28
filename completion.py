@@ -2,8 +2,10 @@
 
 Only runs when break_cues.py finds evidence (Wonder is not asked otherwise). Wonder sees the cues,
 the part seen from straight above (photo rectified at 0.1 mm per pixel), the winning program and its
-silhouette. It answers whether the part is broken, what to add (a parameter or a feature) and why,
-and writes the completed program, keeping the winner's parameters. The completion is a separate
+silhouette (or, with source="mask", the part's mask instead of the photo). It answers whether the
+part is broken, what to add (a parameter or a feature) and why, which added numbers are measured,
+estimated (with a question for the user) or optional (a feature nothing shows, off by default, with
+a question), and writes the completed program, keeping the winner's parameters. The completion is a separate
 candidate: it must build, and compared with the winner it may add material and cut holes but must not
 take away the measured part (checked with CadQuery booleans: what it adds and removes, in mm^3).
 Outputs go to <run>/6_completion/.
@@ -42,7 +44,7 @@ What the cues mean:
 - partial_hole: the pattern expects a hole here and the outline follows part of its circle.
 
 Images, in order:
-1. The part seen from straight above (the photo, rectified, 0.1 mm per pixel).
+1. {first_image}
 2. The program's top-view silhouette: white = part, black = background.
 
 The program:
@@ -61,13 +63,31 @@ its hole) and write the completed program:
   `import cadquery as cq`, `import partkit as pk` and `import math` only, no show_object or I/O.
 If it is not broken, answer BROKEN: no and no program.
 
+Say which numbers are measured and which are not. For every dimension or feature you add, give one
+entry in PARTS (a JSON list on one line):
+  {{"name": "<its parameter in your program>", "value": <its default>, "basis": "measured" | "estimated" | "optional",
+    "evidence": "<measured: the cue or existing parameter that gives it>", "question": "<estimated, optional: a short question to the user>"}}
+- measured: the cues or the existing parameters fix it (for example a tab's width = the rough edge's length).
+- estimated: nothing in the photo measures it (for example how far a snapped-off tab stuck out); give your best
+  value and ask for the real one.
+- optional: a feature nothing in the photo shows, but which the intact part may have had (for example a hole in a
+  snapped-off tab). Put it in the program behind a numeric parameter whose default 0 leaves it out, give the value
+  you would suggest in "value", and ask whether to add it.
+
 Reply in this format and nothing else:
 BROKEN: yes | no
 SUGGESTION: <one sentence: what to add or change, naming the parameter or feature>
 RATIONALE: <one to three sentences, grounded in the cues>
+PARTS: <the JSON list>
 ```python
 <the completed program>
 ```"""
+
+FIRST_IMAGE = {
+    "photo": "The part seen from straight above (the photo, rectified, 0.1 mm per pixel).",
+    "mask": "The part's top-down silhouette from the photo (0.1 mm per pixel): white = part, black = background.",
+}
+DEFAULT_INPUT = "mask"  # what Wonder sees of the part; the mask did as well as the photo on all 4 broken parts (compare_completion_inputs.py), so the photo stays home
 
 
 def topdown_photo(folder):
@@ -94,38 +114,59 @@ def parse_answer(text):
 
     broken = (field("BROKEN") or "").lower()
     return {"broken": broken.startswith("yes") if broken else None, "suggestion": field("SUGGESTION"),
-            "rationale": field("RATIONALE"), "code": extract_python_block(text)}
+            "rationale": field("RATIONALE"), "parts": _parts(text), "code": extract_python_block(text)}
 
 
-def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues=None):
+def _parts(text):
+    """The PARTS list: entries with a name, a numeric value and a basis of measured, estimated or optional."""
+    match = re.search(r"PARTS:\s*(\[.*?\])\s*(?:\n[A-Z]+:|```|$)", text or "", re.DOTALL)
+    try:
+        entries = json.loads(match.group(1)) if match else []
+    except json.JSONDecodeError:
+        return []
+    return [{"name": str(e["name"]), "value": float(e["value"]), "basis": e["basis"],
+             "evidence": e.get("evidence"), "question": e.get("question")}
+            for e in entries if isinstance(e, dict) and e.get("basis") in ("measured", "estimated", "optional")
+            and isinstance(e.get("value"), (int, float)) and e.get("name")]
+
+
+def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues=None, source=DEFAULT_INPUT,
+                       folder_name=FOLDER):
     """Ask Wonder for a completion of the run's result when break cues exist; check it; save and return it.
 
     winner_mask: the winner's top-view silhouette (bool array). builder: webapp.builder.Builder (compare).
-    Returns None when there are no cues (Wonder is not called).
+    source: what Wonder sees of the part, the rectified "photo" or only its "mask". Returns None when
+    there are no cues (Wonder is not called).
     """
     out = Path(out)
     table = json.loads((out / "3_measurements.json").read_text(encoding="utf-8"))["table"]
     cues = cues if cues is not None else find_break_cues(table)
     if not cues["break_likely"]:
         return None
-    folder = out / FOLDER
+    folder = out / folder_name
     folder.mkdir(exist_ok=True)
-    cv2.imwrite(str(folder / "photo_topdown.png"), cv2.cvtColor(topdown_photo(out), cv2.COLOR_RGB2BGR))
+    if source == "photo":
+        part_image = folder / "photo_topdown.png"
+        cv2.imwrite(str(part_image), cv2.cvtColor(topdown_photo(out), cv2.COLOR_RGB2BGR))
+    else:
+        part_image = folder / "mask_topdown.png"
+        cv2.imwrite(str(part_image), cv2.imread(str(out / "3_part_mask_topdown.png"), cv2.IMREAD_GRAYSCALE))
     cv2.imwrite(str(folder / "winner_silhouette.png"), winner_mask.astype(np.uint8) * 255)
     winner_code = Path(winner_path).read_text(encoding="utf-8")
-    prompt = PROMPT.format(cues=json.dumps(cues["cues"], indent=2), code=winner_code.strip())
+    prompt = PROMPT.format(cues=json.dumps(cues["cues"], indent=2), code=winner_code.strip(),
+                           first_image=FIRST_IMAGE[source])
     (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
 
     try:
-        response, seconds = ask_wonder(client or make_client(), prompt,
-                                       [folder / "photo_topdown.png", folder / "winner_silhouette.png"])
+        response, seconds = ask_wonder(client or make_client(), prompt, [part_image, folder / "winner_silhouette.png"])
     except Exception as error:
         response, seconds = {"error": f"{type(error).__name__}: {error}"}, None
     save_json(folder / "response.json", response)
-    usage_ledger.record_response(out, usage_ledger.WONDER, "completion", response, seconds)
+    usage_ledger.record_response(out, usage_ledger.WONDER, f"completion ({source})", response, seconds)
     answer = parse_answer(None if "error" in response else response["choices"][0]["message"]["content"])
     result = {"cues": cues["cues"], "winner": Path(winner_path).name, "broken": answer["broken"],
-              "suggestion": answer["suggestion"], "rationale": answer["rationale"], "seconds": seconds,
+              "suggestion": answer["suggestion"], "rationale": answer["rationale"], "parts": answer["parts"],
+              "input": source, "seconds": seconds, "usage": response.get("usage"),
               "error": response.get("error"), "program": None, "check": None, "status": "suggested"}
 
     if answer["code"]:

@@ -1,0 +1,27 @@
+{
+  "click": [
+    1483,
+    748
+  ],
+  "attempts": [
+    {
+      "object": "card",
+      "prompt": "credit card",
+      "confidences": [
+        0.531,
+        0.836
+      ]
+    },
+    {
+      "object": "part",
+      "prompt": "<0f>1<|point;x=1483;y=748;w=2048;h=1536|>",
+      "source": "click",
+      "confidences": [
+        0.992
+      ]
+    }
+  ],
+  "chosen_source": "click",
+  "chosen_prompt": "<0f>1<|point;x=1483;y=748;w=2048;h=1536|>",
+  "crop_found": true
+}
