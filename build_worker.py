@@ -3,7 +3,8 @@
 Starting a new process per slider move spent about 5.5 s of 8.7 s just importing CadQuery.
 Each job is one JSON line {"code": path, "output": path, "overrides": {...}}; the program runs
 in a fresh namespace and the part is exported (STL/STEP by extension, or a top-view silhouette
-mask for .npy, with "mm_per_pixel"). The reply is one JSON
+mask for .npy, with "mm_per_pixel"); with "features": path it also writes the bounding box and the
+top face's circular holes as JSON (for the 3D labels). The reply is one JSON
 line {"ok": true} or {"ok": false, "error": "..."}. Programs are checked (check_code) by the
 caller before they get here; webapp/builder.py restarts this process if a job hangs or it dies.
 """
@@ -33,6 +34,26 @@ def build(job):
         np.save(job["output"], render_top_silhouette(result, float(job["mm_per_pixel"])) > 0)
     else:
         cq.exporters.export(result, job["output"])
+    if job.get("features"):
+        with open(job["features"], "w", encoding="utf-8") as file:
+            json.dump(features(result), file)
+
+
+def features(result):
+    """What the 3D labels point at: the bounding box and the full circles on the top face (holes)."""
+    solid = result.findSolid()
+    box = solid.BoundingBox()  # padded by a small tolerance; the top face's height comes from the vertices
+    top = max(vertex.Z for vertex in solid.Vertices())
+    holes = []
+    for edge in solid.Edges():
+        if edge.geomType() != "CIRCLE" or not edge.IsClosed():
+            continue
+        center = edge.arcCenter()
+        if abs(center.z - top) < 1e-3:
+            holes.append({"center": [round(center.x, 3), round(center.y, 3), round(center.z, 3)],
+                          "diameter": round(2 * edge.radius(), 3)})
+    return {"box": [round(v, 3) for v in (box.xmin, box.ymin, box.zmin, box.xmax, box.ymax, box.zmax)],
+            "holes": holes}
 
 
 def main():

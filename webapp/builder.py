@@ -60,8 +60,9 @@ class Builder:
         error = self.build(code_path, mask_path, mm_per_pixel=mm_per_pixel)
         return (None, error) if error else (np.load(mask_path), None)
 
-    def build(self, code_path, output_path, overrides=None, mm_per_pixel=None):
-        """Export the program with overrides to output_path. Returns an error message or None."""
+    def build(self, code_path, output_path, overrides=None, mm_per_pixel=None, features_path=None):
+        """Export the program with overrides to output_path (and its features to features_path, if
+        given). Returns an error message or None."""
         problems = check_code(Path(code_path).read_text(encoding="utf-8"))
         if problems:
             return "rejected before running: " + "; ".join(problems)
@@ -69,7 +70,7 @@ class Builder:
             if self.process is None or self.process.poll() is not None:
                 self._start()
             job = {"code": str(Path(code_path).resolve()), "output": str(output_path), "overrides": overrides or {},
-                   "mm_per_pixel": mm_per_pixel}
+                   "mm_per_pixel": mm_per_pixel, "features": str(features_path) if features_path else None}
             self.process.stdin.write(json.dumps(job) + "\n")
             self.process.stdin.flush()
             try:

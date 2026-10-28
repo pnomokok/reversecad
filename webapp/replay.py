@@ -13,8 +13,9 @@ import cv2
 import numpy as np
 
 from design_intent import parameters
-from e2e_pipeline import CARD_PROMPTS, card_aspect_ok, pixel_to_mm_scales
-from homography import card_corners, largest_contour, to_mm
+from e2e_pipeline import CARD_PROMPTS, MM_PER_PIXEL, card_aspect_ok, pixel_to_mm_scales
+from homography import card_corners, largest_contour, rectify_image, to_mm
+from iou import _centroid_and_angle, aligned_iou
 from part_measurements import classify_hole
 from sam_client import load_photo, parse_detections
 
@@ -73,6 +74,7 @@ def _cached_card_mask(folder, image):
 
 # newest first; medium reasoning effort is the default since the effort comparison
 CANDIDATE_ROUNDS = ["candidates_arcs_effort_medium", "candidates_arcs", "candidates_kit", "candidates_intent"]
+SILHOUETTE_BGRA = (225, 226, 229, 255)  # the design's light surface color (--color-text in tokens.css)
 
 
 def candidate_round(name):
@@ -97,12 +99,23 @@ def _status(row):
     return ("rejected" if reasons else "passed"), reasons
 
 
-def candidate_event(name, row):
+def edge_error_mm(row):
+    """Largest distance (mm) from a measured outline point (corner, or a point on an arc) to the
+    candidate's outline, from the deviation check; None if the candidate was not checked."""
+    distances = [abs(d["deviation_mm"]) for d in row.get("deviation", [])
+                 if d["dimension"].startswith(("corner", "arc")) and isinstance(d.get("deviation_mm"), (int, float))]
+    return round(max(distances), 2) if distances else None
+
+
+def candidate_event(name, row, round_name=None):
     """One candidate row (as saved in a summary) as a screen-3 event; live mode sends the same."""
     status, reasons = _status(row)
+    query = f"?round={round_name}" if round_name else ""
     return {"type": "candidate", "candidate": row["candidate"], "status": status, "reasons": reasons,
             "iou": row.get("iou"), "parameters": row.get("parameter_count"),
-            "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png"
+            "edge_error_mm": edge_error_mm(row), "outline_mm": row.get("outline_mm"),
+            "hole_count": row.get("hole_count"),
+            "silhouette": f"/api/runs/{name}/candidates/{row['candidate']}/silhouette.png{query}"
             if status != "failed" else None}
 
 
@@ -114,28 +127,37 @@ def done_event(summary, round_name):
             "compiled": summary["compiled"], "candidate_count": summary["candidate_count"]}
 
 
-def candidate_events(name):
-    """The saved candidate round as a list of events, in the order they would arrive live."""
-    round_name = candidate_round(name)
+def candidate_events(name, round_name=None):
+    """A saved candidate round (default: the newest) as a list of events, in the order they would arrive live."""
+    if round_name is None:
+        round_name = candidate_round(name)
+    elif round_name not in CANDIDATE_ROUNDS or not (run_dir(name) / f"5_summary_{round_name}.json").exists():
+        raise FileNotFoundError(f"no saved round {round_name!r} for {name!r}")
     summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
-    return [candidate_event(name, row) for row in summary["candidates"]] + [done_event(summary, round_name)]
+    return [candidate_event(name, row, round_name) for row in summary["candidates"]] + [done_event(summary, round_name)]
 
 
-def silhouette_png(name, candidate):
+def silhouette_png(name, candidate, round_name=None):
     """A candidate's saved top-view silhouette (from its render), cropped, as PNG bytes.
 
     Found by file, not by summary, so live runs can show it before their round is finished.
+    With round_name, only that round's folder is searched.
     """
     folder = run_dir(name)
-    paths = [folder / round_name / f"cand_{int(candidate)}.default.mask{ext}"
-             for round_name in CANDIDATE_ROUNDS for ext in (".npy", ".png")]  # .png in compact samples
+    if round_name is not None and round_name not in CANDIDATE_ROUNDS:
+        raise FileNotFoundError(f"unknown round {round_name!r}")
+    paths = [folder / r / f"cand_{int(candidate)}.default.mask{ext}"
+             for r in ([round_name] if round_name else CANDIDATE_ROUNDS) for ext in (".npy", ".png")]  # .png in compact samples
     path = next((p for p in paths if p.exists()), None)
     if path is None:
         raise FileNotFoundError(f"no saved silhouette for candidate {candidate}")
     mask = np.load(path) if path.suffix == ".npy" else cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) > 0
     ys, xs = np.nonzero(mask)
-    crop = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    ok, data = cv2.imencode(".png", np.pad(crop, 20).astype(np.uint8) * 255)
+    crop = np.pad(mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1], 20)
+    # Light shape on a transparent background, so it sits on the card's own dark surface.
+    image = np.zeros((*crop.shape, 4), dtype=np.uint8)
+    image[crop] = SILHOUETTE_BGRA
+    ok, data = cv2.imencode(".png", image)
     return data.tobytes()
 
 
@@ -152,12 +174,64 @@ def result_program(name):
     return path, source
 
 
+def _result_row(name):
+    """The summary row of the result program (winner or baseline), or None."""
+    round_name = candidate_round(name)
+    summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
+    return summary.get("result") or summary.get("winner")
+
+
 def winner(name):
-    """Screen 4: the result program's named parameters with their defaults (read from the code, not run)."""
+    """Screen 4: the result program's named parameters with their defaults (read from the code, not run),
+    and its scores against the photo."""
     path, source = result_program(name)
     params = [{"name": p, "default": v} for p, v in parameters(path.read_text(encoding="utf-8"))
               if isinstance(v, (int, float)) and not isinstance(v, bool)]
-    return {"name": name, "program": path.name, "source": source, "parameters": params}
+    row = _result_row(name) or {}
+    return {"name": name, "program": path.name, "source": source, "parameters": params,
+            "iou": row.get("iou"), "edge_error_mm": edge_error_mm(row)}
+
+
+def capture_fit_png(name):
+    """The photo seen from straight above (as the IoU compares it) with the result's silhouette outline.
+
+    The photo is rectified like the part mask the run compared against (3_part_mask_topdown.png,
+    0.1 mm per pixel), both are turned to the IoU's canonical pose (centroid centered, main axis
+    horizontal, best of the 0/180 degree and mirrored variants), and the result's outline is drawn
+    on top. PNG bytes.
+    """
+    folder = run_dir(name)
+    measurements = json.loads((folder / "3_measurements.json").read_text(encoding="utf-8"))
+    table = measurements["table"]
+    image = load_photo(_photo(folder))
+    pixel_to_mm = pixel_to_mm_scales(_cached_card_mask(folder, image))[0][measurements["scale_used"]]
+    center = np.array(table["center_on_table_mm"])
+    half = table["outline"]["length_mm"] / 2 + 8  # the same region the pipeline rectified
+    photo, _ = rectify_image(np.asarray(image), pixel_to_mm, (*(center - half), *(center + half)), MM_PER_PIXEL)
+    reference = cv2.imread(str(folder / "3_part_mask_topdown.png"), cv2.IMREAD_GRAYSCALE) > 0
+
+    path, _ = result_program(name)
+    mask_path = next((p for p in (path.with_suffix(".default.mask.npy"), path.with_suffix(".default.mask.png"))
+                      if p.exists()), None)
+    if mask_path is None:
+        raise FileNotFoundError("no saved silhouette for the result program")
+    silhouette = np.load(mask_path) if mask_path.suffix == ".npy" else cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE) > 0
+    alignment = aligned_iou(reference, MM_PER_PIXEL, silhouette, MM_PER_PIXEL)
+
+    # The photo goes through the reference mask's canonical transform (scale 1: both at 0.1 mm/px).
+    size = alignment.reference.shape[0]
+    cx, cy, angle = _centroid_and_angle(reference)
+    linear = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
+    offset = np.array([(size - 1) / 2] * 2) - linear @ np.array([cx, cy])
+    canonical = cv2.warpAffine(photo, np.hstack([linear, offset[:, None]]), (size, size))
+
+    contours, _ = cv2.findContours(alignment.candidate.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+    view = cv2.cvtColor(canonical, cv2.COLOR_RGB2BGR)
+    cv2.drawContours(view, contours, -1, (43, 106, 255), 3, cv2.LINE_AA)  # BGR of the selected orange
+    ys, xs = np.nonzero(alignment.reference | alignment.candidate)
+    margin = 40
+    crop = view[max(ys.min() - margin, 0):ys.max() + margin, max(xs.min() - margin, 0):xs.max() + margin]
+    return cv2.imencode(".png", crop)[1].tobytes()
 
 
 def program_with_defaults(name, values):

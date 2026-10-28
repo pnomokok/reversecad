@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- ReverseCAD web app. Three screens (Capture, Search, Edit) are switched by app.js; styles live in
-     tokens.css (variables) and app.css (layout). Open with ?run=<name>&step=capture|measure|search|edit
+<!-- ReverseCAD web app. Layout adapted from the Stitch screens in design/ (capture, search, edit):
+     icon rail, top bar, a sub-bar per screen, a large stage and an inspector. Every value on screen
+     is filled in by app.js from the back end. Open with ?run=<name>&step=capture|measure|search|edit
      to jump straight to a screen of a saved run (used for screenshots and recordings). -->
 <html lang="en">
 <head>
@@ -9,7 +10,9 @@
   <title>ReverseCAD</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600&display=swap">
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block">
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <!-- three.js from a CDN, pinned to one version -->
@@ -19,94 +22,206 @@
   </script>
 </head>
 <body>
+  <!-- icon rail: the three screens -->
+  <aside class="rail">
+    <div class="rail-logo"><span class="icon">deployed_code</span></div>
+    <nav class="rail-nav" id="rail">
+      <button data-screen="capture" title="Capture"><span class="icon">photo_camera</span></button>
+      <button data-screen="search" title="Search" disabled><span class="icon">travel_explore</span></button>
+      <button data-screen="edit" title="Edit" disabled><span class="icon">architecture</span></button>
+    </nav>
+  </aside>
+
   <header class="topbar">
     <div class="brand">REVERSECAD</div>
     <nav class="steps" id="steps">
-      <button data-screen="capture">1 Capture</button>
-      <button data-screen="search" disabled>2 Search</button>
+      <button data-screen="capture">1 Capture</button><span class="dot">·</span>
+      <button data-screen="search" disabled>2 Search</button><span class="dot">·</span>
       <button data-screen="edit" disabled>3 Edit</button>
     </nav>
-    <div class="topbar-status" id="topbar-status"></div>
+    <div class="progress hidden" id="progress">
+      <div class="progress-text"><span id="progress-label"></span><span class="progress-count" id="progress-count"></span></div>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+    <div class="run-chip hidden" id="run-chip"></div>
   </header>
 
-  <div class="workspace">
-    <main class="stage">
-      <div class="stage-bar" id="stage-bar"></div>
-      <div class="stage-body">
-        <p class="stage-empty" id="stage-empty">Upload a photo of the part next to a card, or try an example.</p>
-        <canvas id="photo-canvas" class="hidden"></canvas>
-        <div class="candidate-grid hidden" id="candidate-grid"></div>
-        <div class="viewer hidden" id="viewer"></div>
+  <main class="app">
+    <!-- ================= CAPTURE ================= -->
+    <section class="screen" id="screen-capture">
+      <div class="subbar" id="capture-subbar">
+        <span class="subbar-title"><span class="pulse"></span>CAPTURE</span>
+        <span class="subbar-sep">|</span>
+        <span class="subbar-text">Reference card: ID-1, 85.60 × 53.98 mm</span>
+        <span class="subbar-right" id="capture-subbar-right"></span>
       </div>
-    </main>
+      <div class="split">
+        <div class="viewport">
+          <div class="viewport-bar">
+            <span class="chip"><span class="icon accent">photo_camera</span>TOP-DOWN PHOTO</span>
+            <span class="mono-muted" id="photo-size"></span>
+          </div>
+          <div class="canvas-stage grid-bg">
+            <p class="stage-empty" id="stage-empty">Upload a photo of the part next to a card, or try an example.</p>
+            <canvas id="photo-canvas" class="hidden"></canvas>
+            <div class="badge badge-left hidden" id="scale-badge"></div>
+            <div class="badge badge-right hidden" id="found-badge"></div>
+          </div>
+          <div class="viewport-footer" id="capture-footer">
+            <span class="footer-values" id="capture-footer-values"></span>
+            <span class="footer-hint"><span class="icon accent">touch_app</span>Click the part in the photo to select it</span>
+          </div>
+        </div>
 
-    <aside class="inspector">
-      <!-- Capture: photo, click, thickness, then the measurements -->
-      <section class="panel" id="panel-capture">
-        <h2>Capture</h2>
-        <label class="dropzone">
-          <input type="file" id="photo-upload" accept="image/*">
-          <span class="dropzone-title">Upload a photo</span>
-          <span class="hint">Part next to a bank or transit card, shot from straight above.</span>
-        </label>
-        <div class="examples">
-          <span class="label">Try an example</span>
-          <div class="example-list" id="example-list"></div>
-        </div>
-        <ol class="procedure">
-          <li id="step-card"><span class="tick"></span>Card next to the part</li>
-          <li id="step-click"><span class="tick"></span>Click the part in the photo</li>
-          <li id="step-thickness"><span class="tick"></span>Part thickness</li>
-        </ol>
-        <div class="stepper">
-          <button id="thickness-down" aria-label="thinner">−</button>
-          <input type="text" id="thickness" value="3.0" inputmode="decimal" aria-label="thickness in mm">
-          <span class="unit">mm</span>
-          <button id="thickness-up" aria-label="thicker">+</button>
-        </div>
-        <button class="primary" id="analyze" disabled>Measure</button>
-        <p class="hint" id="capture-status"></p>
-        <label class="live-only hidden field">
-          <span class="label">Candidates to ask for</span>
-          <input type="number" id="candidate-count" value="5" min="1" max="10">
-        </label>
-        <button class="primary hidden" id="to-candidates">Reconstruct →</button>
-        <div class="results hidden" id="measure-results">
-          <span class="label">Measured</span>
-          <table class="values" id="measure-table"></table>
-        </div>
-      </section>
+        <aside class="inspector">
+          <div class="inspector-main">
+            <div class="panel-head">
+              <h2>CAPTURE &amp; CALIBRATION</h2>
+              <p class="panel-sub">Scale from a card lying next to the part.</p>
+            </div>
+            <div class="source">
+              <label class="dropzone">
+                <input type="file" id="photo-upload" accept="image/*">
+                <span class="icon">upload</span>
+                <span class="dropzone-title">Upload photo</span>
+                <span class="dropzone-hint">from straight above</span>
+              </label>
+              <div class="examples">
+                <span class="label">Try an example</span>
+                <div class="example-list" id="example-list"></div>
+              </div>
+            </div>
+            <div class="section">
+              <span class="label">Guided procedure</span>
+              <ol class="procedure">
+                <li id="step-card"><span class="step-icon"><span class="icon">check</span></span>
+                  <span class="step-text"><span class="step-title">1. Place card next to part</span><span class="step-sub" id="step-card-sub">Card found when measured</span></span></li>
+                <li id="step-photo"><span class="step-icon"><span class="icon">check</span></span>
+                  <span class="step-text"><span class="step-title">2. Shoot from straight above</span><span class="step-sub" id="step-photo-sub">Checked from the card's edges</span></span></li>
+                <li id="step-click"><span class="step-icon"><span class="icon">touch_app</span></span>
+                  <span class="step-text"><span class="step-title">3. Tap the part</span><span class="step-sub" id="step-click-sub">Click the part, not a hole</span></span></li>
+              </ol>
+            </div>
+            <div class="thickness-card">
+              <div class="thickness-head"><span class="label-strong">Part thickness</span><span class="label">Z, mm</span></div>
+              <div class="stepper">
+                <button id="thickness-down" aria-label="thinner"><span class="icon">remove</span></button>
+                <div class="stepper-value"><input type="text" id="thickness" value="3.0" inputmode="decimal" aria-label="thickness in mm"><span class="unit">mm</span></div>
+                <button id="thickness-up" aria-label="thicker"><span class="icon">add</span></button>
+              </div>
+              <div class="presets" id="thickness-presets">
+                <button data-thickness="1.5">1.5 mm</button><button data-thickness="3.0">3.0 mm</button><button data-thickness="5.0">5.0 mm</button>
+              </div>
+              <label class="live-only hidden count-field">
+                <span class="label">Candidates to ask for</span>
+                <input type="number" id="candidate-count" value="5" min="1" max="10">
+              </label>
+            </div>
+            <div class="summary-card hidden" id="measure-results">
+              <table class="values" id="measure-table"></table>
+            </div>
+          </div>
+          <div class="inspector-actions">
+            <button class="cta" id="analyze" disabled><span id="analyze-label">Measure</span><span class="icon">straighten</span></button>
+            <button class="cta hidden" id="to-candidates"><span>Reconstruct</span><span class="icon">arrow_forward</span></button>
+            <p class="status-line" id="capture-status"></p>
+          </div>
+        </aside>
+      </div>
+    </section>
 
-      <!-- Search: candidates arriving, with scores and reasons -->
-      <section class="panel hidden" id="panel-search">
-        <h2>Search</h2>
-        <div class="big-number"><span id="search-count">0</span> candidates</div>
-        <p class="sub" id="search-split"></p>
-        <div class="results">
-          <span class="label">Best match</span>
-          <table class="values" id="search-best"></table>
+    <!-- ================= SEARCH ================= -->
+    <section class="screen hidden" id="screen-search">
+      <div class="subbar">
+        <span class="subbar-title">CANDIDATE SEARCH</span>
+        <span class="subbar-text" id="search-round"></span>
+        <span class="subbar-right">
+          <span class="subbar-text" id="search-target"></span>
+          <span class="subbar-status" id="search-state"></span>
+        </span>
+      </div>
+      <div class="search-layout">
+        <div class="search-main">
+          <div class="grid-head">
+            <span class="grid-title">EVALUATED CANDIDATES</span>
+            <span class="chip-muted" id="search-total"></span>
+            <span class="legend">
+              <span><i class="swatch swatch-shape"></i>Top-view silhouette</span>
+              <span><i class="swatch swatch-rejected"></i>Rejected</span>
+              <span><i class="swatch swatch-selected"></i>Selected</span>
+            </span>
+          </div>
+          <div class="candidate-grid" id="candidate-grid"></div>
         </div>
-        <p class="hint" id="search-progress"></p>
-        <button class="primary" id="to-model" disabled>Open in editor →</button>
-      </section>
+        <aside class="search-side">
+          <div class="side-card">
+            <span class="label">Search summary</span>
+            <div class="headline"><span id="search-count">0</span> candidates</div>
+            <div class="split-line" id="search-split"></div>
+            <div class="best-box">
+              <span class="label">Best edge error</span>
+              <span class="best-value" id="best-edge">–</span>
+              <span class="label-muted" id="best-edge-note"></span>
+            </div>
+            <div class="best-box">
+              <span class="label">Selected</span>
+              <span class="selected-value" id="selected-summary">–</span>
+            </div>
+            <button class="cta" id="to-model" disabled><span id="to-model-label">Open in editor</span><span class="icon">arrow_forward</span></button>
+          </div>
+          <div class="side-card stream-card">
+            <div class="stream-head"><span class="label">Verification stream</span><span class="live-dot" id="stream-dot"></span></div>
+            <div class="stream" id="stream"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
 
-      <!-- Edit: 3D result, named parameters, downloads -->
-      <section class="panel hidden" id="panel-edit">
-        <h2>Design parameters</h2>
-        <p class="hint" id="model-source"></p>
-        <div class="sliders" id="sliders"></div>
-        <p class="hint" id="model-status"></p>
-        <button id="reset-parameters">Reset values</button>
-        <span class="label">Export</span>
-        <div class="exports">
-          <button data-format="step"><strong>STEP</strong><span>solid for CAD</span></button>
-          <button data-format="stl"><strong>STL</strong><span>mesh for printing</span></button>
-          <button data-format="py"><strong>.py</strong><span>CadQuery program</span></button>
+    <!-- ================= EDIT ================= -->
+    <section class="screen hidden" id="screen-edit">
+      <div class="subbar">
+        <span class="subbar-title"><span class="dot-accent"></span>ACTIVE MODEL</span>
+        <span class="subbar-text" id="model-size"></span>
+        <span class="chip-muted" id="model-program"></span>
+        <span class="subbar-right">
+          <span class="chip-muted" id="model-source"></span>
+          <span class="chip-muted">Units: mm</span>
+        </span>
+      </div>
+      <div class="edit-layout">
+        <div class="model-viewport grid-bg-dots">
+          <div class="viewer" id="viewer"></div>
+          <div class="fit-inset">
+            <div class="fit-head"><span class="label-strong"><span class="dot-accent"></span>CAPTURE FIT</span><span class="chip-accent" id="fit-iou"></span></div>
+            <img id="fit-image" alt="top-down photo with the model's silhouette outline">
+            <div class="fit-foot"><span>Photo vs model</span><span class="mono" id="fit-error"></span></div>
+          </div>
+          <div class="view-tools">
+            <button data-view="iso" class="active" title="Isometric view"><span class="icon">deployed_code</span></button>
+            <button data-view="top" title="Top view"><span class="icon">crop_square</span></button>
+            <button data-view="fit" title="Fit to view"><span class="icon">fit_screen</span></button>
+          </div>
+          <div class="model-status" id="model-status"></div>
         </div>
-        <p class="hint" id="download-status"></p>
-      </section>
-    </aside>
-  </div>
+        <aside class="edit-panel">
+          <div class="edit-panel-head">
+            <div><h2>Design parameters</h2><span class="label">named in the program</span></div>
+            <button class="icon-button" id="reset-parameters" title="Reset to the program's values"><span class="icon">restart_alt</span></button>
+          </div>
+          <div class="sliders" id="sliders"></div>
+          <div class="exports-block">
+            <span class="label">Export</span>
+            <div class="exports">
+              <button data-format="step"><strong>STEP</strong><span>Solid for CAD</span></button>
+              <button data-format="stl"><strong>STL</strong><span>Mesh for printing</span></button>
+              <button data-format="py"><strong>.py</strong><span>CadQuery program</span></button>
+            </div>
+            <p class="status-line" id="download-status"></p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
 
   <script type="module" src="/static/app.js"></script>
 </body>

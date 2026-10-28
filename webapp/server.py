@@ -71,10 +71,13 @@ def run_analysis(name: str):
 
 
 @app.get("/api/runs/{name}/candidates/stream")
-async def candidate_stream(name: str):
-    """Screen 3: candidates as server-sent events, one by one as they would arrive live, then 'done'."""
+async def candidate_stream(name: str, round: str | None = None):
+    """Screen 3: candidates as server-sent events, one by one as they would arrive live, then 'done'.
+
+    ?round=<folder> replays an older saved round of the run instead of the newest.
+    """
     try:
-        events = replay.candidate_events(name)
+        events = replay.candidate_events(name, round)
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
 
@@ -87,9 +90,9 @@ async def candidate_stream(name: str):
 
 
 @app.get("/api/runs/{name}/candidates/{candidate}/silhouette.png")
-def candidate_silhouette(name: str, candidate: int):
+def candidate_silhouette(name: str, candidate: int, round: str | None = None):
     try:
-        return Response(replay.silhouette_png(name, candidate), media_type="image/png")
+        return Response(replay.silhouette_png(name, candidate, round), media_type="image/png")
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
 
@@ -117,17 +120,23 @@ async def _parameters(name, request):
     return overrides
 
 
-async def _export(name, overrides, suffix):
-    """Build the result program with overrides into a .stl or .step file; return its bytes."""
+async def _export(name, overrides, suffix, with_features=False):
+    """Build the result program with overrides into a .stl or .step file; return its bytes
+    (and, with_features, the model's bounding box and top-face holes)."""
     program, _ = replay.result_program(name)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     output = (MODEL_DIR / f"{name}_{uuid.uuid4().hex}{suffix}").resolve()
-    error = await asyncio.to_thread(builder.build, program, output, overrides)
+    features_path = output.with_suffix(".json") if with_features else None
+    error = await asyncio.to_thread(builder.build, program, output, overrides, None, features_path)
     if error:
         raise HTTPException(422, f"the program did not build with these values: {error.splitlines()[-1]}")
     data = output.read_bytes()
     output.unlink()
-    return data
+    if not with_features:
+        return data
+    features = features_path.read_text(encoding="utf-8")
+    features_path.unlink()
+    return data, features
 
 
 @app.post("/api/runs/{name}/model")
@@ -135,8 +144,19 @@ async def build_model(name: str, request: Request):
     """Screen 4: build with the posted parameter values; binary STL for the viewer.
 
     Body: {"parameters": {"name": value, ...}}; only the program's own numeric parameters are accepted.
+    The X-Model-Features header carries the model's bounding box and top-face holes (JSON, mm).
     """
-    return Response(await _export(name, await _parameters(name, request), ".stl"), media_type="model/stl")
+    data, features = await _export(name, await _parameters(name, request), ".stl", with_features=True)
+    return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
+
+
+@app.get("/api/runs/{name}/capture-fit.png")
+def capture_fit(name: str):
+    """Screen 4 inset: the top-down photo with the result's silhouette outline, aligned as the IoU is."""
+    try:
+        return Response(replay.capture_fit_png(name), media_type="image/png")
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
 
 
 DOWNLOADS = {  # format -> (file suffix, media type)

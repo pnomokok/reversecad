@@ -1,66 +1,89 @@
-/* Design tokens: every color, size and font the app uses (visual reference: design/DESIGN.md and the
-   Stitch screens in design/). app.css refers only to these variables. Sizes are set for screen
-   recordings: body text 16px, numbers 20-28px. */
+/* Design tokens: every color, size and font the app uses, taken from the Stitch screens in design/
+   (their Tailwind theme) and design/DESIGN.md. app.css refers only to these variables. Text sizes are
+   raised over Stitch's for screen recordings. */
 :root {
-  /* surfaces (darkest to lightest) */
-  --color-bg: #121212;
-  --color-stage: #141414;
-  --color-surface: #1c1c1c;
-  --color-surface-raised: #262626;
-  --color-border: #333333;
-  --color-border-strong: #4a4a4a;
+  /* surfaces, darkest to lightest (Stitch: surface-container-lowest ... surface-bright) */
+  --color-lowest: #0e0e0e;
+  --color-bg: #131313;
+  --color-low: #1b1b1c;
+  --color-container: #202020;
+  --color-high: #2a2a2a;
+  --color-highest: #353535;
+  --color-bright: #393939;
+  --color-canvas: #0d0f12;
+  --color-grid-minor: #1f2d3d;
+  --color-grid-major: #2c3e50;
+  --color-grid-axis: #34495e;
 
   /* text */
-  --color-text: #ededed;
-  --color-text-muted: #9a9a9a;
-  --color-text-on-light: #121212;
+  --color-text: #e5e2e1;
+  --color-text-strong: #ffffff;
+  --color-text-muted: #b5aaa6;
+  --color-text-faint: #7f736f;
+  --color-text-on-accent: #3b0a00;
 
   /* accents: orange only for what is selected or being changed; cyan for references */
   --color-selected: #ff6a2b;
-  --color-reference: #00e5ff;
+  --color-selected-soft: rgba(255, 106, 43, 0.12);
+  --color-selected-glow: rgba(255, 106, 43, 0.45);
+  --color-reference: #58d7eb;
   --color-dimension: #ffffff;
-  --color-ok: #4cd08a;
-  --color-bad: #ff5b4f;
+  --color-ok: #e5e2e1;
+  --color-bad: #ffb4ab;
+  --color-bad-container: #93000a;
+  --color-bad-on-container: #ffdad6;
 
   /* overlays on the photo */
   --color-overlay-card: #ffffff;
   --color-overlay-part: #ff6a2b;
   --color-overlay-hole: #ffffff;
   --color-overlay-click: #ff6a2b;
-  --color-callout-bg: #121212;
-  --color-silhouette-bg: #0b0b0b;
-  --color-silhouette: #e6e6e6;
+  --color-callout-bg: #0e0e0e;
+  --color-silhouette-bg: #0e0e0e;
+  --color-scrim: rgba(14, 14, 14, 0.82);
 
   /* 3D viewer */
-  --color-viewer-bg: #141414;
-  --color-model: #d9d9d9;
+  --color-viewer-bg: #0e0e0e;
+  --color-model: #e8eaed;
+  --color-model-edge: #1b1e21;
+  --color-dimension-line: #ffffff;
+  --color-extension-line: #58d7eb;
 
   /* type */
   --font-heading: "Space Grotesk", system-ui, sans-serif;
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
-  --font-size-label: 13px;
-  --font-size-body: 16px;
-  --font-size-value: 22px;
-  --font-size-value-large: 28px;
-  --font-size-title: 22px;
-  --font-size-brand: 24px;
+  --font-size-label-sm: 11px;
+  --font-size-label: 12px;
+  --font-size-label-lg: 14px;
+  --font-size-body: 15px;
+  --font-size-body-lg: 16px;
+  --font-size-value: 20px;
+  --font-size-headline: 20px;
+  --font-size-headline-lg: 28px;
+  --font-size-headline-xl: 34px;
   --callout-font-px: 20; /* dimension boxes on the photo, in screen pixels */
 
   /* spacing and shape */
   --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --radius: 0;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --radius: 2px;
   --border-width: 1px;
   --callout-border-px: 2;
   --overlay-line-width: 3;
+  --rail-width: 48px;
   --header-height: 64px;
-  --panel-width: 380px;
-  --card-min-width: 200px;
-  --card-image-height: 130px;
-  --viewer-height: calc(100vh - var(--header-height) - 72px);
+  --subbar-height: 40px;
+  --bar-height: 40px;
+  --footer-height: 36px;
+  --inspector-width: 360px;
+  --edit-panel-width: 390px;
+  --summary-width: 22%;
+  --grid-columns: 6;
+  --inset-width: 300px;
   --slider-range: 0.5; /* sliders run from default × (1 - range) to default × (1 + range) */
 }
