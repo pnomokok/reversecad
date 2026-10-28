@@ -1083,6 +1083,75 @@ $("voice-dismiss").addEventListener("click", () => {
   $("voice-note").textContent = "Dismissed.";
 });
 
+// Speech: press the mic to record, press again to stop (at most 15 s). The recording is turned into the WAV
+// Muse Voice Transcribe accepts (mono, 16-bit PCM, 24 kHz), transcribed, then interpreted like a typed command.
+const MAX_RECORDING_MS = 15000;
+const WAV_RATE = 24000;
+
+async function toWav(blob) {
+  const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * WAV_RATE), WAV_RATE);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);  // mixes down to mono and resamples to 24 kHz
+  source.start();
+  const samples = (await offline.startRendering()).getChannelData(0);
+  const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
+  const text = (offset, s) => [...s].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+  text(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); text(8, "WAVE");
+  text(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, WAV_RATE, true); view.setUint32(28, WAV_RATE * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, "data"); view.setUint32(40, samples.length * 2, true);
+  samples.forEach((s, i) => view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
+  return new Blob([view], { type: "audio/wav" });
+}
+
+async function transcribeRecording(blob) {
+  $("voice-state").textContent = "Transcribing · Muse Voice Transcribe";
+  const form = new FormData();
+  form.append("audio", await toWav(blob), "command.wav");
+  const response = await fetch(`/api/runs/${state.run}/voice/transcribe`, { method: "POST", body: form });
+  if (!response.ok) {
+    $("voice-state").textContent = "Voice edit · Muse Spark Open";
+    $("voice-note").textContent = `Not transcribed: ${(await response.json()).detail}`;
+    return;
+  }
+  const { transcript } = await response.json();
+  $("voice-input").value = transcript;
+  if (transcript) await interpretCommand(transcript);
+  else $("voice-note").textContent = "No speech was heard.";
+}
+
+$("voice-mic").addEventListener("click", async () => {
+  if (state.recorder) {  // second press: stop
+    state.recorder.stop();
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    $("voice-note").textContent = `No microphone: ${error.message}`;
+    return;
+  }
+  const chunks = [];
+  const recorder = new MediaRecorder(stream);
+  state.recorder = recorder;
+  recorder.ondataavailable = (event) => chunks.push(event.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((track) => track.stop());
+    clearTimeout(state.recordingTimer);
+    state.recorder = null;
+    $("voice-mic").classList.remove("recording");
+    await transcribeRecording(new Blob(chunks, { type: recorder.mimeType }));
+  };
+  recorder.start();
+  state.recordingTimer = setTimeout(() => recorder.state === "recording" && recorder.stop(), MAX_RECORDING_MS);
+  $("voice-mic").classList.add("recording");
+  $("voice-state").textContent = "Listening · press again to stop";
+  $("voice-note").textContent = "";
+});
+
 function applyConfig(config) {
   // Turn off, visibly and with the reason, what this server cannot do (the online demo has no API keys).
   state.config = config;
@@ -1097,6 +1166,10 @@ function applyConfig(config) {
     $("repair-again").disabled = true;
     $("repair-again").title = why;
   }
+  // The mic needs both keys (speech to text, then the command); typing needs only Muse Spark Open's.
+  $("voice-mic").disabled = !config.speech;
+  $("voice-mic").title = config.speech ? "Press to speak a command, press again to stop" : `Speech: ${why}`;
+  if (config.speech) $("voice-said").textContent = "Press the mic and say a command, or type it.";
   if (!config.voice) {
     $("voice-input").disabled = true;
     $("voice-form").querySelector("button").disabled = true;

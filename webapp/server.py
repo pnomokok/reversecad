@@ -61,7 +61,8 @@ app = FastAPI(title="ReverseCAD", lifespan=lifespan)
 def config():
     """What this server can do: the online demo replays samples only; keys decide live mode and voice editing."""
     return {"demo": DEMO, "live": not DEMO and bool(os.getenv("MODEL_API_KEY") and os.getenv("BASETEN_API_KEY")),
-            "voice": not DEMO and bool(os.getenv("BASETEN_API_KEY"))}
+            "voice": not DEMO and bool(os.getenv("BASETEN_API_KEY")),
+            "speech": not DEMO and bool(os.getenv("BASETEN_API_KEY") and os.getenv("MODEL_API_KEY"))}
 
 
 @app.get("/api/runs")
@@ -174,6 +175,26 @@ async def build_model(name: str, request: Request):
     """
     data, features = await _export(name, await _parameters(name, request), ".stl", with_features=True)
     return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
+
+
+@app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])
+async def voice_transcribe(name: str, audio: UploadFile = File(...)):
+    """A spoken command (mono 16-bit WAV, 16 or 24 kHz, at most 30 s) as text, by Muse Voice Transcribe."""
+    if not os.getenv("MODEL_API_KEY"):
+        raise HTTPException(503, "speech needs MODEL_API_KEY in .env (Muse Voice Transcribe)")
+    data = await audio.read()
+    if len(data) > 4 * 1024 * 1024:
+        raise HTTPException(413, "a command recording is at most 4 MB")
+    try:
+        keywords = [p["name"].replace("_", " ") for p in replay.winner(name)["parameters"]]
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    try:
+        return await asyncio.to_thread(voice_edit.transcribe, data, keywords, replay.run_dir(name))
+    except ValueError as error:  # not a WAV the endpoint accepts, or too long
+        raise HTTPException(400, str(error))
+    except Exception as error:
+        raise HTTPException(502, f"Muse Voice Transcribe did not answer: {str(error)[:200]}")
 
 
 @app.post("/api/runs/{name}/voice/interpret", dependencies=[Depends(_needs_keys)])

@@ -23,6 +23,7 @@ Built for the Meta Global AI Developer Hackathon with Meta's SAM 3.1, Muse Spark
 | **Muse Spark Open** (Baseten, `meta-models/muse-spark-open-1026`, reasoning effort `medium`) | Writes the candidate CadQuery programs from the measurement table and the part's silhouette; suggests SAM names for the part if the click finds nothing | `candidates.py`, `prompt_suggestions.py`, `baseten_client.py` |
 | **Muse Wonder** (Meta Model API, `muse-wonder-1.0`, reasoning effort `medium`): repair | When no candidate passes: diagnoses the failed programs from their code, difference images and rejection reasons, and writes a corrected program | `repair.py`, `repair_inputs.py` |
 | **Muse Wonder**: completion of broken parts | Only when the code finds break cues: reads the cues, the rectified photo and the winning program, and suggests the missing part (a parameter or feature) with its reason | `completion.py`, `break_cues.py` |
+| **Muse Voice Transcribe** (Meta Model API, `muse-voice-transcribe-1.0`) and **Muse Spark Open**: voice editing | A short spoken command ("make the holes 2 mm bigger") becomes text, then a proposed change of the named parameters (hole_diameter 6.0 → 8.0), shown on the sliders and applied only on Apply; commands can also be typed | `voice_edit.py` |
 
 ## Online demo
 
@@ -54,7 +55,7 @@ copy .env.example .env      # then write your keys into .env
 
 | Variable | What for |
 |---|---|
-| `MODEL_API_KEY` | Meta Model API (SAM 3.1, Muse Wonder) |
+| `MODEL_API_KEY` | Meta Model API (SAM 3.1, Muse Wonder, Muse Voice Transcribe) |
 | `BASETEN_API_KEY` | Baseten (Muse Spark Open, model `meta-models/muse-spark-open-1026`) |
 
 `.env` is in `.gitignore` and never committed. Check the setup with `.venv\Scripts\python.exe check_env.py` (it reports keys as set or missing, never their values).
@@ -62,6 +63,7 @@ copy .env.example .env      # then write your keys into .env
 **What leaves your machine:**
 - The photo goes to SAM (Meta).
 - The candidate requests (Muse Spark Open) send only the part's black-and-white top-down mask, never the photo. Only if your click finds nothing is the photo also sent to Muse Spark Open, to suggest names for the part.
+- Voice editing sends the recorded command (as a WAV) to Muse Voice Transcribe (Meta), and its text with the parameter names and values to Muse Spark Open.
 - A repair (Muse Wonder) sends the mask, the failed programs' code and their black, white, red and blue difference images; no photo.
 - A completion (Muse Wonder) sends the part's top-down mask, the winning program and its silhouette; no photo (the mask gave the same results as the photo on all four test parts). It only runs when the code finds signs of a break.
 

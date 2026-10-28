@@ -67,6 +67,17 @@ From the user's summary of Meta's docs plus one trial call (2026-10-28).
 - Response fields: the answer is in `choices[0].message.content`. **No reasoning text is returned** (no `reasoning_content`, unlike Spark on Baseten), but reasoning is counted: `usage.completion_tokens_details.reasoning_tokens` (727 of 806 completion tokens at `low`). `usage.prompt_tokens` was 237 for the two small images and the question; `prompt_tokens_details.image_tokens` comes back empty.
 - Price (project document): $4 per million input tokens, $20 per million output tokens; completion tokens include the reasoning tokens. The trial call cost about $0.017.
 
+## How to call Muse Voice Transcribe
+
+From Meta's "Speech to text" docs (the user's copy, 2026-10-29) and a first call.
+
+- Model `muse-voice-transcribe-1.0`. Two endpoints, same model: `wss://api.meta.ai/v1/asr/realtime` (live audio; auth in the handshake frame) and `POST https://api.meta.ai/v1/asr/transcribe` (a recording; `Authorization: Bearer MODEL_API_KEY`). We use the file endpoint (`voice_edit.transcribe`).
+- Multipart with two parts: `request` (JSON: `mode`, `model`, `audioEncoding: "WAV"`, optional `languageBias` as a list of language names and `keywords`) and `audio` (the file). Modes: `PUSH_TO_TALK` (default; the user marks the turn, our mic button), `ENDPOINTING`, `DIARIZATION`.
+- **Audio must be a RIFF/WAVE, mono, 16-bit integer PCM at 16 or 24 kHz** (24 kHz is native). The browser's MediaRecorder gives WebM/Opus, so the page decodes it and writes a 24 kHz mono WAV itself (`toWav` in app.js); the server checks the WAV before sending (`check_wav`, at most 30 s).
+- Response JSON: `transcript` (always), `audioDurationMs`, `turns` (empty in PUSH_TO_TALK). Limits: 32 MB, 10 minutes; 429 on rate limits.
+- Price $0.18 per hour of audio, billed in whole seconds; failed and 429 requests are not billed.
+- First call: a 2.7 s synthesized WAV ("make the holes two millimeters bigger") came back exactly in 3.0 s; Muse Spark Open turned it into hole_diameter 6.0 -> 8.0 in 2.2 s. In the browser (Edge with a fake microphone playing that file) the whole chain worked: record, WAV, transcript, proposal on the slider and the 3D label, Apply.
+
 ## How to call SAM 3.1
 
 Summary of Meta's docs. Source: Meta Model API docs, "Segment Anything Model" pages.
@@ -307,4 +318,4 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
 
   Fixed during the run: a candidate that builds an empty part crashed the scoring (3 parts, re-run after the fix); it is now a failed candidate ("the program built an empty part").
   Main gaps: break cues miss a third of the broken parts on real-pipeline masks (vs 23% on clean renders), mostly small chipped corners; repair rarely rescues a part that 5 candidates could not solve (1 of 6).
-- [x] **Online demo on Modal** (`modal_app.py`, deployed 2026-10-29): https://zeynepsdklc--reversecad-demo-web.us-east.modal.run . REVERSECAD_DEMO=1: only `samples/` (A_light, A_light_repair, A_torn_fallback, D_tab_broken); live mode, repair and voice editing return 403 and the page says why. The image holds the code and samples only (.env, .venv, outputs/, data/, .git ignored; `/.env` returns 404). Checked after deploy: model build 2.8 s cold, PDF and drawing work. Redeploy: `.venv\Scripts\python.exe -m modal deploy modal_app.py`. Voice editing: typed commands work locally (Muse Spark Open, about 1.5 s); speech to text (Muse Voice Transcribe) waits for its request format from the docs.
+- [x] **Online demo on Modal** (`modal_app.py`, deployed 2026-10-29): https://zeynepsdklc--reversecad-demo-web.us-east.modal.run . REVERSECAD_DEMO=1: only `samples/` (A_light, A_light_repair, A_torn_fallback, D_tab_broken); live mode, repair and voice editing return 403 and the page says why. The image holds the code and samples only (.env, .venv, outputs/, data/, .git ignored; `/.env` returns 404). Checked after deploy: model build 2.8 s cold, PDF and drawing work. Redeploy: `.venv\Scripts\python.exe -m modal deploy modal_app.py`. Voice editing: typed commands work locally (Muse Spark Open, about 1.5 s); speech to text (Muse Voice Transcribe) works locally too (see How to call Muse Voice Transcribe); both are off in the demo.
