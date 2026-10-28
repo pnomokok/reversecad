@@ -843,7 +843,7 @@ async function showModel() {
   w.parameters.forEach((p) => sliders.appendChild(slider(p)));
   await rebuild();
   state.voiceChanges = [];
-  $("voice-proposal").classList.add("hidden");
+  $("voice-proposal")?.classList.add("hidden");
   await showCompletion();
 }
 $("to-model").addEventListener("click", showModel);
@@ -998,7 +998,7 @@ function sliderRow(name) {
 
 function clearVoicePreview() {
   state.voiceChanges = [];
-  $("voice-proposal").classList.add("hidden");
+  $("voice-proposal")?.classList.add("hidden");
   document.querySelectorAll("#sliders .slider.pending").forEach((row) => {
     row.classList.remove("pending");
     const input = row.querySelector("input");
@@ -1152,28 +1152,34 @@ $("voice-mic").addEventListener("click", async () => {
   $("voice-note").textContent = "";
 });
 
+const SETUP_URL = "https://github.com/pnomokok/reversecad#live-mode-your-own-photos";  // README: keys and live mode
+
+function offNote(element, feature, plural = false) {
+  // Replace a control this server cannot run with one calm line and a link to the setup steps.
+  const s = plural ? "" : "s";
+  const where = state.config.demo ? `work${s} in the local app with API keys` : `need${s} API keys in .env`;
+  const note = document.createElement("p");
+  note.className = "off-note";
+  note.innerHTML = `${feature} ${where} · <a href="${SETUP_URL}" target="_blank" rel="noopener">Setup</a>`;
+  element.replaceWith(note);
+}
+
 function applyConfig(config) {
-  // Turn off, visibly and with the reason, what this server cannot do (the online demo has no API keys).
+  // What this server cannot do (the online demo has no API keys) is not shown at all, only a note.
   state.config = config;
-  const why = config.demo ? "Off in this online demo (it replays saved examples; run it locally with API keys)."
-    : "Needs API keys in .env (see the README).";
   if (!config.live) {
-    const zone = document.querySelector(".dropzone");
-    zone.classList.add("disabled");
-    zone.querySelector("input").disabled = true;
-    zone.querySelector(".dropzone-hint").textContent = config.demo ? "off in this demo" : "needs API keys";
-    zone.title = why;
-    $("repair-again").disabled = true;
-    $("repair-again").title = why;
+    offNote(document.querySelector(".dropzone"), "Your own photos", true);
+    offNote($("repair-again"), "Repair");
   }
-  // The mic needs both keys (speech to text, then the command); typing needs only Muse Spark Open's.
-  $("voice-mic").disabled = !config.speech;
-  $("voice-mic").title = config.speech ? "Press to speak a command, press again to stop" : `Speech: ${why}`;
-  if (config.speech) $("voice-said").textContent = "Press the mic and say a command, or type it.";
   if (!config.voice) {
-    $("voice-input").disabled = true;
-    $("voice-form").querySelector("button").disabled = true;
-    $("voice-said").textContent = `Voice editing: ${why}`;
+    offNote($("voice-card"), "Voice editing");
+  } else if (!config.speech) {  // typing works; speaking also needs MODEL_API_KEY
+    $("voice-mic").remove();
+    $("voice-said").textContent = "Type a command, for example \"make the holes 2 mm bigger\".";
+  } else {
+    $("voice-mic").disabled = false;
+    $("voice-mic").title = "Press to speak a command, press again to stop";
+    $("voice-said").textContent = "Press the mic and say a command, or type it and press Enter.";
   }
 }
 

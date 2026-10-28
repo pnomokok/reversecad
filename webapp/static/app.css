@@ -421,4 +421,9 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .slider .voice-tag { font-family: var(--font-mono); font-size: var(--font-size-label-sm); color: var(--color-text-muted); letter-spacing: 0.05em; }
 .slider.pending output { color: var(--color-selected); }
 .slider.pending .range .default { color: var(--color-selected); }
-.dropzone.disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* a feature this server cannot run (no API keys): one calm line instead of its controls */
+.off-note { margin: 0; padding: var(--space-2) 0; font-size: var(--font-size-label-lg); color: var(--color-text-muted); line-height: 1.4; }
+.off-note a { color: var(--color-text-strong); text-decoration: underline; text-underline-offset: 2px; }
+.source .off-note { grid-column: 1 / -1; order: 2; }
+.source:has(.off-note) { grid-template-columns: 1fr; }
