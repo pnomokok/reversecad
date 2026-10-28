@@ -105,17 +105,37 @@ The tests never call an API. A few need runs saved under `outputs/` and are skip
 
 ## Results so far
 
+Real photos and synthetic tests are kept apart: on real photos only a ruler gives the truth (about ±0.5 mm), while synthetic scenes are rendered from parts whose true size is known exactly.
+
+### Real photos (compared with a ruler)
+
+| Photo | Ruler | Measured | Error |
+|---|---|---|---|
+| Brass key next to a card | 57 × 22.5 mm, elliptical hole 12 × 6 mm | outline 56.6 × 23.2 mm, hole 11.8 × 6.2 mm (an ellipse) | length −0.7%, **width +3.1%**; hole −1.9% / +3.0% |
+| Hand-cut cardboard, part far from a small card | 188 × 91 mm, holes 20 × 8 and 13 × 7 mm | 191.6 × 93.7 mm, holes 19.7 × 8.5 and 13.4 × 7.2 mm | length +1.9%, **width +3.0%** |
+| Blister pack (rests on its domes, above the card's plane) | 70.5 × 52 mm | 72.8 × 55.4 mm | length +3.3%, **width +6.5%** |
+| A second ID-1 card measured with the first as the scale (3 photos, both directions) | 85.60 × 53.98 mm | | mean error 0.48% (max 1.44%) |
+
+**Systematic width error on real photos.** On all three real parts the width (the shorter side) came out **3% to 6.5% too large**, while the lengths were between −0.7% and +3.3%. The synthetic scenes do not show this (width error median 0.57%, maximum 1.33% over 219 parts), so it comes from something real photos have and the renders do not, such as edge shadows, blur or the part not lying in the card's plane. It is not explained yet; the measurement code is frozen until it is examined on new real parts.
+
+On the real cardboard no candidate passed, and the Muse Wonder repair missed the limits twice by 0.6-0.8 mm; the result was the measured shape.
+
+### Synthetic tests (true size known)
+
 | What | Result |
 |---|---|
-| Scale: a second ID-1 card measured with the first as reference | mean error 0.48% (max 1.44%) |
-| Holes on synthetic scenes (color method) | diameter within 0.15 mm, centers within 0.7 mm |
-| Real photo: brass key next to a card (ruler: 57 × 22.5 mm, elliptical hole 12 × 6 mm) | outline 56.6 × 23.2 mm (−0.7% / +2.9%), hole measured as an ellipse 11.8 × 6.2 mm (−1.9% / +3.0%) |
-| Candidates on synthetic parts A-D (plate, asymmetric plate, L plate, tabbed part), 10 each | 100% compiled with correct topology, IoU 0.98-0.99 |
-| Selected model vs ground truth, synthetic plate `A_light` (true 80 × 40 mm, 4 × Ø6 mm) | 79.30 × 40.20 mm (−0.9% / +0.5%), hole diameters within 0.02 mm; fit to measurements 0.03 mm |
-| Repair with Muse Wonder: 6 deliberately broken candidates on the **synthetic** parts A, C and D (a hole moved 4 mm, a corner cut 8 mm) and one **real** photo (hand-cut cardboard, no candidate returned code) | 6 of 7 cases repaired, all 6 synthetic ones in the first round, each diagnosis naming the injected fault; the cardboard failed twice by 0.6-0.8 mm; $0.04-0.08 and 9-25 s per synthetic repair, $0.61 in total |
-| Completion with Muse Wonder on 4 **synthetic** broken parts with a known design (A with a chipped corner, A broken through a hole, A with a hole never drilled, D with its tab snapped off) | 4/4 suggestions valid and closer to the true design (IoU 0.78-0.97 before, 0.87-0.98 after; the three A parts reach about 0.98). D is partly right: the tab is restored 3 mm too long, and the 6 mm hole that was in the lost tab is not invented, since nothing in the photo shows it. The card asks for both; answered with the true values, D reaches IoU 0.974 with both holes |
-| **300 random synthetic parts** (plates, L's, tabbed bodies, 77 broken), whole pipeline, against their true design | design found for 295 (98.3%); intact parts: right topology 220/223, length and width errors at most 1.33% (median 0.73% / 0.57%), hole diameters within 0.27 mm (median 0.05 mm); broken parts: break cues found 48/77, and 43 of the 46 with an applied completion end with the right topology; $25.29 in total, about $0.08 and 2 minutes per part |
+| **300 random parts** (plates, L's, tabbed bodies, 77 of them broken), whole pipeline, against their true design | design found for 295 (98.3%); intact parts: right topology 220/223, length and width errors at most 1.33% (median 0.73% / 0.57%), hole diameters within 0.27 mm (median 0.05 mm); broken parts: break cues found 48/77, and 43 of the 46 with an applied completion end with the right topology; $25.29 in total, about $0.08 and 2 minutes per part |
+| Selected model vs ground truth, plate `A_light` (true 80 × 40 mm, 4 × Ø6 mm) | 79.30 × 40.20 mm (−0.9% / +0.5%), hole diameters within 0.02 mm; fit to measurements 0.03 mm |
+| Holes (color method) | diameter within 0.15 mm, centers within 0.7 mm |
+| Candidates on parts A-D (plate, asymmetric plate, L plate, tabbed part), 10 each | 100% compiled with correct topology, IoU 0.98-0.99 |
+| Repair with Muse Wonder: 6 deliberately broken candidates on parts A, C and D (a hole moved 4 mm, a corner cut 8 mm) | 6/6 repaired in the first round, each diagnosis naming the injected fault; $0.04-0.08 and 9-25 s per repair |
+| Completion with Muse Wonder on 4 broken parts with a known design (A with a chipped corner, A broken through a hole, A with a hole never drilled, D with its tab snapped off) | 4/4 suggestions valid and closer to the true design (IoU 0.78-0.97 before, 0.87-0.98 after; the three A parts reach about 0.98). D is partly right: the tab is restored 3 mm too long, and the 6 mm hole that was in the lost tab is not invented, since nothing in the photo shows it. The card asks for both; answered with the true values, D reaches IoU 0.974 with both holes |
 | Design intent of the winner vs the baseline | 5-8 named parameters instead of 15-23; shared hole diameter, symmetry and edge margins kept when a dimension changes |
+
+### Other measurements
+
+| What | Result |
+|---|---|
 | Reasoning effort | `medium` (the default here) keeps the default level's quality at 3-6× fewer tokens |
 | Live run, end to end (3 candidates) | about 45 s |
 
@@ -131,7 +151,7 @@ Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the
 - **Repair and completion are tested mostly on synthetic parts**: the only real case so far (the cardboard) was not repaired, and completion has not been tried on a real broken part.
 - **A completion can only restore what the photo hints at**: features lost with the broken piece (such as a hole in a snapped-off tab) are not suggested.
 - The scale rule is temporary: the homography is used only when the card looks tilted (opposite edges differ by more than 2%), otherwise the simple card scale.
-- **On real photos the width comes out 3-5% too large** (key +3.1%, cardboard +3.0%); lengths are within −0.7% to +3.3%. Not yet explained; to be checked on more real parts.
+- **On real photos the width comes out 3-6.5% too large** (key +3.1%, cardboard +3.0%, blister +6.5%); lengths are within −0.7% to +3.3%. Not yet explained (see Results).
 
 ## Project layout
 
