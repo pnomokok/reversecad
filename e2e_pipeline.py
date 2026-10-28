@@ -367,6 +367,8 @@ def check_program(path, reference, truth=None, measured_table=None, render=None)
     mask, error = (render or run_candidate)(path, MM_PER_PIXEL)
     if error:
         return {"file": str(path), "error": error}
+    if not mask.any():  # it ran but built nothing (seen once in the 300-part test)
+        return {"file": str(path), "error": "EmptyPart: the program built an empty part"}
     alignment = aligned_iou(reference, MM_PER_PIXEL, mask, MM_PER_PIXEL)
     table = measure_part(mask, SCALE)
     ok, issues = check_topology(table, truth) if truth else (None, [])
@@ -386,18 +388,20 @@ def check_program(path, reference, truth=None, measured_table=None, render=None)
 
 
 def validate(out, folder_name, entries, baseline_path, reference, truth=None, truth_workplane=None,
-             measured_table=None, repair=True):
+             measured_table=None, repair=True, checked_rows=None, render=None, design_intent=True):
     """Score all candidates and the baseline. Truth and the true part are optional (real photos).
 
     Candidates whose dimensions stray too far from measured_table are rejected (deviation_check.py).
-    If none passes, or the best IoU is under the threshold, Muse Wonder repairs (repair.py; repair=False skips it).
+    If none passes every check, Muse Wonder repairs (repair.py; repair=False skips it). checked_rows: rows
+    already checked as the candidates arrived (then entries are not built again); render: the builder
+    (default run_candidate, a local process; modal_render.render builds on Modal).
     """
     ceiling = aligned_iou(reference, MM_PER_PIXEL, render_top_silhouette(truth_workplane, MM_PER_PIXEL) > 0,
                           MM_PER_PIXEL).iou if truth_workplane is not None else float("nan")
-    rows = []
-    for i, (path, error) in enumerate(entries, 1):
+    rows = list(checked_rows or [])
+    for i, (path, error) in enumerate([] if checked_rows is not None else entries, 1):
         row = {"file": str(path), "error": error} if error else check_program(path, reference, truth,
-                                                                               measured_table)
+                                                                               measured_table, render=render)
         rows.append({"candidate": i, **row})
 
     compiled = [r for r in rows if "iou" in r]
@@ -428,13 +432,14 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
 
         if needs_repair({"winner": best}):
             print("    no candidate good enough -> repair with Muse Wonder")
-            repaired = repair_loop(out, measured_table, reference, out / "3_part_mask_topdown.png", rows, truth=truth)
+            repaired = repair_loop(out, measured_table, reference, out / "3_part_mask_topdown.png", rows, truth=truth,
+                                   render=render)
             for entry in repaired["rounds"]:
                 print(f"    repair round {entry['round']}: {'passed' if entry['passed'] else 'failed'}, "
                       f"IoU {entry['iou']}, {entry['seconds']} s; diagnosis: {entry['diagnosis']}")
             if repaired["passed"]:
                 best = repaired_row(repaired)
-    baseline = check_program(baseline_path, reference, truth, measured_table)
+    baseline = check_program(baseline_path, reference, truth, measured_table, render=render)
     if best and best["deviation"]:
         print(f"    winner {Path(best['file']).name}: measured vs chosen")
         for d in best["deviation"]:
@@ -446,7 +451,8 @@ def validate(out, folder_name, entries, baseline_path, reference, truth=None, tr
         if not row or "iou" not in row:
             continue
         # The design-intent test needs the true part (repeated holes, symmetry); without it only count parameters.
-        intent = evaluate_design_intent(row["file"], truth) if truth else {"parameter_count": row["parameter_count"]}
+        intent = (evaluate_design_intent(row["file"], truth) if truth and design_intent
+                  else {"parameter_count": row["parameter_count"]})
         row["design_intent"] = intent
         print(f"    {label:8s} {Path(row['file']).name:12s} IoU {row['iou']:.4f}  "
               f"topology {({True: 'ok', None: 'n/a'}).get(row['topology_ok'], 'WRONG')}  "

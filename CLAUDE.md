@@ -291,3 +291,19 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   5. Repair runs only when no candidate passes every check (the IoU < 0.90 trigger is gone). The winner is chosen only among candidates that passed every check (deviation limits and, when the truth is known, topology).
   6. `samples/` holds `A_light_repair` (A_light with only two deliberately broken candidates; Muse Wonder repaired them in round 1: IoU 0.988, 5 parameters, $0.04) and `D_tab_broken` (completion card). Synthetic, JPEG without EXIF (checked), 0.7 MB each.
   7. Completion from the mask only vs the photo (`compare_completion_inputs.py`): same validity and identical IoU against the true design on all 4 broken parts (difference 0.000), similar cost ($0.05-0.07 per call). **The mask is now the default**; the photo no longer goes to Muse Wonder.
+- [x] **Large synthetic test: 300 random parts** (`parts/random_parts.py`, `run_random_parts.py`, report `outputs/random_test/report.json`; 2026-10-28/29). Plates, flat L's and tabbed bodies (≤ 100 mm) with random hole layouts, 77 of them broken (42 chipped corners, 9 snapped tabs, 26 holes never drilled); each through the whole pipeline: synthetic photo, SAM, measurements, up to 5 Spark candidates (3 at a time, stopping once 3 passing candidates agree), checks, Muse Wonder repair when none passes, completion when break cues exist, final model against the true design. Built locally on 16 cores (8 parts at once); Modal was set up (`modal_render.py`) but the token approval timed out.
+
+  | | Result |
+  |---|---|
+  | Design found | 295/300 (98.3%); 1 of them by repair; 5 fell back to the measured shape (repair tried twice and failed on all 5; 4 of them tabbed bodies) |
+  | Early stop | 258/300; mean 3.42 candidate requests (of 5) |
+  | Topology against the design | intact parts 220/223; broken parts 44/77 after completion (43/46 where a valid completion was applied) |
+  | Errors against the design, intact parts with a found design (219) | length median 0.73%, p90 0.96%, max 1.22%; width median 0.57%, p90 0.81%, max 1.33%; none over 2%; hole diameters median 0.05 mm, p90 0.11 mm, max 0.27 mm; IoU p10 0.970 |
+  | Break cues (from the pipeline's SAM masks) | broken parts flagged 48/77 (chipped corners 26/42, snapped tabs 5/9, missing holes 17/26); intact parts flagged 2/223 |
+  | Completion | 50 suggested, 48 valid; broken parts with a valid completion end with the right topology 43/46. The two false alarms hurt when applied automatically (as this test does; in the app they wait for Apply): R249, an intact L, had a "rough edge" and Wonder filled its inner corner (IoU vs design 0.62); R048 got an extra hole |
+  | Snapped tabs | the weak spot: median IoU vs design 0.915; restored tab lengths are guesses (+9 to +11% overall where the tab came back), 4 of 9 had no cue at all |
+  | Cost | $25.29 in total (Spark Open $17.42 at its unverified price, Muse Wonder $5.63, SAM $2.25); per part median $0.064, mean $0.084, p90 $0.158, max $0.71 (a fallback with two repair rounds) |
+  | Time | 108 s per part, 8 parts at once (about 70 min for 300) |
+
+  Fixed during the run: a candidate that builds an empty part crashed the scoring (3 parts, re-run after the fix); it is now a failed candidate ("the program built an empty part").
+  Main gaps: break cues miss a third of the broken parts on real-pipeline masks (vs 23% on clean renders), mostly small chipped corners; repair rarely rescues a part that 5 candidates could not solve (1 of 6).

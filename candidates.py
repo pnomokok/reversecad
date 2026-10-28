@@ -185,17 +185,19 @@ def _request_one(client, prompt, image_url, reasoning_effort=None):
     return result
 
 
-def iter_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT, thickness=3.0):
+def iter_candidates(view, mask_image_path, count, reasoning_effort=DEFAULT_REASONING_EFFORT, thickness=3.0,
+                    max_parallel=MAX_PARALLEL_REQUESTS):
     """Yield (prompt, index from 1, response) as each request finishes (live mode streams these).
 
     Candidate i is asked with the approach style_for(i); the response records it as "style". A failed
     request yields {"error": message} so the other candidates still arrive. Closing the generator
-    early (the caller stops the search) cancels the requests that have not started.
+    early (the caller stops the search) cancels the requests that have not started; a max_parallel under
+    count is what makes stopping early save requests.
     """
     client = make_client()
     image_url = image_data_url(mask_image_path)
     prompts = {i: build_prompt(view, thickness, style_for(i)) for i in range(1, count + 1)}
-    pool = ThreadPoolExecutor(max_workers=min(count, MAX_PARALLEL_REQUESTS))
+    pool = ThreadPoolExecutor(max_workers=min(count, max_parallel))
     try:
         futures = {pool.submit(_request_one, client, prompts[i], image_url, reasoning_effort): i
                    for i in range(1, count + 1)}

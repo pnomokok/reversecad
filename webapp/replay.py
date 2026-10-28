@@ -112,6 +112,8 @@ def plain_reason(reason):
         return "the request to the model failed"
     if text.startswith("rejected before running"):
         return "the code used something that is not allowed"
+    if text.startswith("emptypart"):
+        return "the program built an empty part"
     if "timed out" in text:
         return "the program took too long to build"
     if ": off by" in text:

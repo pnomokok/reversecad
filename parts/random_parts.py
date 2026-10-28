@@ -1,6 +1,7 @@
 """Random flat parts for the large synthetic test, each with its true design (and, for broken ones, the damage).
 
-Families: a plate, a flat L and a body with a tab. Hole layouts: none, one, a symmetric pair, four corners,
+Families: a plate, a flat L and a body with a tab, at most 100 mm long (they must fit next to the card
+in the synthetic photo). Hole layouts: none, one, a symmetric pair, four corners,
 a 2 x 3 grid, sometimes a slot or a rectangular hole. A share of the parts is broken: a chipped corner,
 a snapped-off tab or a hole that was never drilled (parts/broken_parts.jagged_line for break edges).
 A part is a spec like template_parts.SPECS ({"outline", "holes"}, mm from the bottom-left corner);
@@ -18,7 +19,7 @@ EDGE_CLEARANCE_MM = 2.5  # wall left between a hole and an edge or another hole
 
 
 def _plate(rng):
-    length, width = rng.uniform(40, 120), rng.uniform(20, 70)
+    length, width = rng.uniform(40, 100), rng.uniform(20, 70)
     if width > length:
         length, width = width, length
     return {"outline": [(0, 0), (length, 0), (length, width), (0, width)], "box": (length, width),
@@ -26,14 +27,14 @@ def _plate(rng):
 
 
 def _l_shape(rng):
-    length, width = rng.uniform(50, 110), rng.uniform(35, 80)
+    length, width = rng.uniform(50, 100), rng.uniform(35, 80)
     arm_x, arm_y = rng.uniform(15, width * 0.6), rng.uniform(15, length * 0.45)
     return {"outline": [(0, 0), (length, 0), (length, arm_x), (arm_y, arm_x), (arm_y, width), (0, width)],
             "box": (length, width), "regions": [(0, 0, length, arm_x), (0, 0, arm_y, width)]}
 
 
 def _tab(rng):
-    length, width = rng.uniform(40, 100), rng.uniform(20, 50)
+    length, width = rng.uniform(40, 90), rng.uniform(20, 50)
     tab_w, tab_h = rng.uniform(10, min(30, length * 0.5)), rng.uniform(8, 18)
     left = (length - tab_w) / 2
     return {"outline": [(0, 0), (length, 0), (length, width), (left + tab_w, width), (left + tab_w, width + tab_h),
