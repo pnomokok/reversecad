@@ -10,17 +10,21 @@ then open http://127.0.0.1:8000
 """
 import asyncio
 import json
+import os
 import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from webapp import live, replay
 from webapp.builder import Builder
+
+load_dotenv()  # API keys from .env (never printed); live mode and repair need them
 
 STATIC = Path(__file__).parent / "static"
 MODEL_DIR = Path("outputs") / "web"  # temporary model files (git-ignored)
@@ -148,6 +152,27 @@ async def build_model(name: str, request: Request):
     """
     data, features = await _export(name, await _parameters(name, request), ".stl", with_features=True)
     return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
+
+
+@app.get("/api/runs/{name}/irregularities")
+def run_irregularities(name: str):
+    """The break cues summed up for the "no design found" panel (rough edges, missing material, holes)."""
+    try:
+        return replay.irregularities(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+
+
+@app.get("/api/runs/{name}/repair/stream")
+async def repair_again(name: str):
+    """Run the Muse Wonder repair again on a saved run where no candidate passed (needs MODEL_API_KEY)."""
+    try:
+        replay.run_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    if not os.getenv("MODEL_API_KEY"):
+        raise HTTPException(503, "repair needs MODEL_API_KEY in .env (Muse Wonder)")
+    return job_stream(lambda emit: live.repair_again_job(name, builder, emit))
 
 
 @app.get("/api/runs/{name}/completion")

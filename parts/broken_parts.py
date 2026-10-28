@@ -6,6 +6,7 @@ Each broken part is the template's design with damage: material removed behind a
   A_chipped:      A with its top-right corner broken off (the hole near it stays whole).
   A_half_hole:    A with its top-right corner broken off through the hole there (half of it remains).
   A_missing_hole: A with its bottom-right hole never drilled (no break, a gap in the pattern).
+  A_torn:         A with its top and right edges torn along their whole length (irregular, nothing missing).
   D_tab_broken:   D with the tab snapped off 2 mm above the body (its 6 mm hole is lost with it).
 
 Coordinates are in mm from the part's bottom-left corner, as in template_parts.SPECS.
@@ -55,6 +56,12 @@ BROKEN = {
         "damage": "the hole at (72, 8) was never drilled",
         "outline": SPECS["A"]["outline"],
         "holes": [hole for hole in SPECS["A"]["holes"] if hole[0] != (72, 8)],
+    },
+    "A_torn": {
+        "design": "A",
+        "damage": "top and right edges torn along their whole length (hand-cut or torn, nothing broken off)",
+        "outline": [(0, 0), *jagged_line((80, 0), (80, 40), seed=4)[:-1], *jagged_line((80, 40), (0, 40), seed=5)],
+        "holes": SPECS["A"]["holes"],
     },
     "D_tab_broken": {
         "design": "D",

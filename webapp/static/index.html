@@ -158,7 +158,19 @@
             <span class="label">Search summary</span>
             <div class="headline"><span id="search-count">0</span> candidates</div>
             <div class="split-line" id="search-split"></div>
-            <div class="best-box">
+            <div class="nodesign hidden" id="nodesign">
+              <span class="nodesign-flag"><span class="icon">warning</span>No design found · showing the measured shape</span>
+              <span class="nodesign-title" id="nodesign-title"></span>
+              <p class="nodesign-text" id="nodesign-text"></p>
+              <button class="ghost-accent" id="repair-again"><span class="icon">refresh</span>Try repair again</button>
+              <button class="cta cta-small" id="use-measured">Use the measured shape</button>
+              <p class="status-line" id="repair-status"></p>
+            </div>
+            <div class="irregular hidden" id="irregular">
+              <span class="label">Detected irregularities</span>
+              <div class="irregular-rows" id="irregular-rows"></div>
+            </div>
+            <div class="best-box" id="pick-box">
               <span class="label" id="pick-label">Selected</span>
               <span class="selected-value" id="pick-name">–</span>
               <span class="best-value" id="pick-iou"></span>
@@ -193,7 +205,7 @@
         <div class="model-viewport grid-bg-dots">
           <div class="viewer" id="viewer"></div>
           <div class="fit-inset">
-            <div class="fit-head"><span class="label-strong"><span class="dot-accent"></span>CAPTURE FIT</span><span class="chip-accent" id="fit-iou"></span></div>
+            <div class="fit-head"><span class="label-strong"><span class="dot-accent"></span><span id="fit-title">CAPTURE FIT</span></span><span class="chip-accent" id="fit-iou"></span></div>
             <img id="fit-image" alt="top-down photo with the model's silhouette outline">
             <table class="values" id="fit-table"></table>
           </div>
@@ -210,10 +222,10 @@
             <button class="icon-button" id="reset-parameters" title="Reset to the program's values"><span class="icon">restart_alt</span></button>
           </div>
           <div class="break-card hidden" id="break-card">
-            <div class="break-head"><span class="icon accent">healing</span><span>Possible break detected · suggested by Muse Wonder</span></div>
+            <div class="break-head"><span class="break-title"><span class="icon accent">warning</span>Possible break detected</span><span class="chip-muted chip-small">Muse Wonder</span></div>
             <p class="break-suggestion" id="break-suggestion"></p>
-            <p class="break-rationale" id="break-rationale"></p>
             <div class="break-parts" id="break-parts"></div>
+            <details class="break-why"><summary>Why</summary><p class="break-rationale" id="break-rationale"></p></details>
             <p class="break-note" id="break-note"></p>
             <div class="break-actions">
               <button class="break-apply" id="break-apply"><span class="icon">check</span>Apply</button>

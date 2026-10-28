@@ -156,20 +156,38 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     color: css("--color-selected"), transparent: true, opacity: 0.55, metalness: 0, roughness: 0.6, depthWrite: false,
   });
 
-  function showSuggestion(stlBuffer) {
-    // Material a completion suggestion would add, drawn in its own (orange, see-through) tone; null hides it.
+  function showSuggestion(stlBuffer, labelText = null) {
+    // Material a completion suggestion would add, drawn in its own (orange, see-through) tone, with an
+    // optional label on a leader above it; null hides it.
     if (suggestion) {
       scene.remove(suggestion);
-      suggestion.traverse((o) => o.geometry && o.geometry.dispose());
+      suggestion.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.isCSS2DObject) o.element.remove();
+      });
       suggestion = null;
     }
     if (!stlBuffer) return;
     const geometry = new STLLoader().parse(stlBuffer);
     geometry.computeVertexNormals();
+    const orange = new THREE.LineBasicMaterial({ color: css("--color-selected") });
     suggestion = new THREE.Group();
     suggestion.add(new THREE.Mesh(geometry, suggestionMaterial));
-    suggestion.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25),
-      new THREE.LineBasicMaterial({ color: css("--color-selected") })));
+    suggestion.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), orange));
+    if (labelText) {
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
+      const center = box.getCenter(new THREE.Vector3());
+      const lift = Math.max(box.getSize(new THREE.Vector3()).length(), 8);
+      const end = center.clone().add(new THREE.Vector3(-lift * 0.6, -lift * 0.2, lift * 0.9));
+      suggestion.add(line([[center.x, center.y, box.max.z], [end.x, end.y, end.z]], orange));
+      const element = document.createElement("div");
+      element.className = "dim-label suggestion-label";
+      element.textContent = labelText;
+      const tag = new CSS2DObject(element);
+      tag.position.copy(end);
+      suggestion.add(tag);
+    }
     scene.add(suggestion);
   }
 

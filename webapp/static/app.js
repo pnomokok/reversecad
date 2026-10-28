@@ -590,7 +590,8 @@ function layoutGrid() {
   const [width, height] = [grid.clientWidth || 1000, grid.clientHeight || 700];
   let best = null;
   for (let columns = 2; columns <= 8; columns++) {
-    const rows = Math.ceil(cells / columns);
+    // The measured-shape panel (no candidate passed) spans the full width and two rows.
+    const rows = Math.ceil((cells + (grid.querySelector(".fallback-card") ? 2 * columns - 1 : 0)) / columns);
     const size = Math.min(width / columns / 1.15, height / rows);  // the card height its cell allows
     if (!best || size > best.size) best = { columns, rows, size };
   }
@@ -643,6 +644,7 @@ function streamCandidates() {
     grid.innerHTML = "";
     $("stream").innerHTML = "";
     $("search-round").textContent = "";
+    showNoDesign(false);
     enableSteps();
     $("to-model").disabled = true;
     layoutGrid();
@@ -683,6 +685,8 @@ function streamCandidates() {
         streamItem("BEST", "tag-best", chosen.label ? `repaired program ${chosen.label} selected (Muse Wonder)` : `candidate ${idOf(chosen)} selected: correct shape, best IoU, fewest parameters`);
       } else {
         streamItem("FALLBACK", "tag-bad", state.done.note || `no candidate passed: ${state.done.result_source}`);
+        if (state.done.fallback) grid.prepend(fallbackCard(state.done.fallback));
+        showNoDesign(true);
       }
       $("to-model").disabled = !state.done.result_source || state.done.result_source.startsWith("none");
       layoutGrid();
@@ -698,6 +702,65 @@ function streamCandidates() {
   });
 }
 $("to-candidates").addEventListener("click", streamCandidates);
+
+function fallbackCard(fallback) {
+  // No candidate passed: the measured shape (the baseline built straight from the measurements), full width.
+  const card = document.createElement("div");
+  card.className = "candidate-card fallback-card";
+  const length = fallback.outline_mm ? `<div class="dimension"><span class="line" style="left:14%;right:14%"></span>`
+    + `<span>${mm(fallback.outline_mm[0])}</span></div>` : "";
+  const fit = fallback.fit_mm == null ? "" : `<span>Fit <strong>${mm(fallback.fit_mm)}</strong></span>`;
+  card.innerHTML = `<div class="fallback-head"><span class="fallback-title">Measured shape</span>`
+    + `<span class="fallback-chip">Fallback</span><span class="fallback-scores"><span>IoU <strong>${fallback.iou.toFixed(4)}</strong></span>${fit}</span></div>`
+    + `<div class="shape">${length}<img src="${fallback.silhouette}" alt="the measured shape"></div>`
+    + `<span class="fallback-foot">Built straight from the measurements: every corner and hole is its own parameter (${fallback.parameters}); no design intent.</span>`;
+  return card;
+}
+
+async function showNoDesign(show) {
+  // The side panel when no candidate passed: why, what to do, and what the break cues measured.
+  $("nodesign").classList.toggle("hidden", !show);
+  $("irregular").classList.toggle("hidden", !show);
+  $("pick-box").classList.toggle("hidden", show);
+  $("to-model").classList.toggle("hidden", show);
+  if (!show) return;
+  const note = state.done.note || "No candidate passed every check; the measured shape is shown.";
+  $("nodesign-title").textContent = note.split(";")[0].replace(/^The /, "").replace(/^./, (c) => c.toUpperCase());
+  const r = await getJSON(`/api/runs/${state.run}/irregularities`);
+  const rejected = state.seen.filter((e) => e.status !== "passed").length;
+  $("nodesign-text").textContent = (r.rough_edges
+    ? `Rough edges make up ${Math.round(100 * r.rough_share)}% of the outline (worst ${r.worst_roughness_mm} mm from a straight or round edge; designed edges stay under ${r.roughness_limit_mm} mm). `
+    : "") + `None of the ${state.seen.length} candidates stayed within the measurement limits (${rejected} rejected or failed), so the shape built straight from the measurements is shown.`;
+  const rows = [
+    ["Rough edges", r.rough_edges ? `${r.rough_length_mm} of ${r.perimeter_mm} mm` : "none", r.rough_share || 0],
+    ["Missing material vs mirror image", r.missing_material_mm2 ? `${r.missing_material_mm2} mm²` : "none", null],
+    ["Holes found", `${r.holes}${r.pattern_gaps ? `, ${r.pattern_gaps} gaps in a pattern` : ""}`, null],
+  ];
+  $("irregular-rows").innerHTML = rows.map(([label, value, share]) => `<div class="irregular-row"><div class="row-head">`
+    + `<span>${label}</span><span class="row-value">${value}</span></div>`
+    + (share !== null ? `<div class="bar"><span style="width:${Math.min(100, 100 * share).toFixed(0)}%"></span></div>` : "") + `</div>`).join("");
+}
+
+$("use-measured").addEventListener("click", showModel);
+$("repair-again").addEventListener("click", () => {
+  // Muse Wonder repairs the saved candidates again; a passing repair becomes the result.
+  const status = $("repair-status");
+  status.textContent = "Starting the repair…";
+  $("repair-again").disabled = true;
+  const stream = new EventSource(`/api/runs/${state.run}/repair/stream`);
+  stream.addEventListener("progress", (m) => { status.textContent = JSON.parse(m.data).message; });
+  stream.addEventListener("repair", (m) => {
+    const r = JSON.parse(m.data);
+    streamItem(r.passed ? "REPAIRED" : "REPAIR", r.passed ? "tag-best" : "tag-bad",
+      `repair round ${r.round} · Muse Wonder: ${r.passed ? "passed" : "not passed"}. ${r.diagnosis || ""}`, r.reasons.join(" | "));
+  });
+  stream.addEventListener("done", () => { stream.close(); $("repair-again").disabled = false; streamCandidates(); });
+  stream.addEventListener("error", (m) => {
+    stream.close();
+    $("repair-again").disabled = false;
+    status.textContent = m.data ? `Not repaired: ${JSON.parse(m.data).message}` : "The repair needs MODEL_API_KEY in .env (Muse Wonder).";
+  });
+});
 
 // ---------- edit ----------
 const LABEL_FOR = [[/diam|hole|bore/, "hole"], [/thick|height|depth/, "thickness"], [/width/, "width"], [/length/, "length"]];
@@ -788,6 +851,7 @@ async function showCompletion() {
   const c = data.available ? data : null;
   state.completion = c;
   state.viewer.showSuggestion(null);
+  $("fit-title").textContent = "CAPTURE FIT";
   const hidden = !c || c.broken === false || c.decision === "ignore";
   $("break-card").classList.toggle("hidden", hidden);
   if (hidden) return;
@@ -797,42 +861,65 @@ async function showCompletion() {
   $("break-rationale").textContent = c.rationale || "";
   $("break-parts").innerHTML = partsHTML(c.parts || [], c.answers || {}, applied);
   $("break-note").textContent = !c.valid ? `Not offered: ${(check.reasons || ["no program returned"]).join("; ")}`
-    : applied ? "Applied: the parameters above belong to the completed program."
+    : applied ? "Applied: the parameters below belong to the completed program."
     : [check.added_volume_mm3 > 0 ? `adds ${check.added_volume_mm3.toFixed(0)} mm³ (orange in the 3D view)` : "",
        check.removed_volume_mm3 > 0 ? `cuts ${check.removed_volume_mm3.toFixed(0)} mm³` : ""].filter(Boolean).join(", ");
+  // The inset becomes the fracture view: the cues found, and how much material the suggestion adds.
+  $("fit-title").textContent = "FRACTURE BOUNDARY";
+  $("fit-iou").textContent = `${(c.cues || []).length} BREAK CUES`;
+  const share = check.base_volume_mm3 ? (100 * ((check.added_volume_mm3 || 0) - (check.removed_volume_mm3 || 0)) / check.base_volume_mm3) : null;
+  if (share !== null) {
+    $("fit-table").innerHTML += tableHTML([["Added material", `${share >= 0 ? "+" : "−"}${Math.abs(share).toFixed(1)}% vol.`]]);
+  }
   $("break-apply").disabled = !c.valid;
   $("break-apply").innerHTML = applied ? "Undo" : `<span class="icon">check</span>Apply`;
   $("break-ignore").classList.toggle("hidden", applied);
-  if (!applied && c.valid && c.added_stl) state.viewer.showSuggestion(await (await fetch(c.added_stl)).arrayBuffer());
+  if (!applied && c.valid && c.added_stl) {
+    state.viewer.showSuggestion(await (await fetch(c.added_stl)).arrayBuffer(),
+      `SUGGESTED FEATURE · +${(check.added_volume_mm3 || 0).toFixed(0)} mm³`);
+  }
 }
 
 function partsHTML(parts, answers, locked) {
-  // What the suggestion adds, split into measured (with its evidence), estimated (a question with the
-  // suggested value) and optional (a feature nothing in the photo shows; off unless ticked).
+  // What the suggestion adds: a measured | estimated summary, then one question per estimated number
+  // (with the suggested value in a stepper) and per optional feature (off unless ticked).
   const escape = (text) => escapeAttribute(text || "");
-  const value = (p) => (answers[p.name] ?? p.value);
-  const input = (p) => `<span class="part-input"><input type="text" inputmode="decimal" data-part="${escape(p.name)}" `
-    + `value="${value(p) || p.value}" ${locked ? "disabled" : ""}>mm</span>`;
-  const groups = [];
+  const isFlag = (p) => /^(add|restore)_/.test(p.name) && (p.value === 0 || p.value === 1);
+  const item = (p) => escape(prettyName(p.name)) + (isFlag(p) ? "" : ` ${p.value}`);
   const measured = parts.filter((p) => p.basis === "measured");
-  if (measured.length) {
-    groups.push(`<div class="parts-group"><span class="label">Measured</span><ul>${measured.map((p) =>
-      `<li><strong>${escape(prettyName(p.name))}</strong>: ${escape(p.evidence)}</li>`).join("")}</ul></div>`);
+  const asked = parts.filter((p) => p.basis !== "measured");
+  const value = (p) => answers[p.name] || p.value;
+  const stepper = (p) => `<span class="mini-stepper"><button data-step="-1" data-for="${escape(p.name)}" ${locked ? "disabled" : ""}>−</button>`
+    + `<input type="text" inputmode="decimal" data-part="${escape(p.name)}" value="${value(p)}" ${locked ? "disabled" : ""}>`
+    + `<span class="unit">mm</span><button data-step="1" data-for="${escape(p.name)}" ${locked ? "disabled" : ""}>+</button></span>`;
+  const html = [];
+  if (parts.length) {
+    html.push(`<div class="break-basis"><div><span class="basis-label">Measured</span>`
+      + `<span class="basis-items">${measured.map(item).join(", ") || "–"}</span></div>`
+      + `<div><span class="basis-label estimated">Estimated</span>`
+      + `<span class="basis-items">${asked.map((p) => escape(prettyName(p.name))).join(", ") || "–"}</span></div></div>`);
   }
-  const estimated = parts.filter((p) => p.basis === "estimated");
-  if (estimated.length) {
-    groups.push(`<div class="parts-group"><span class="label">Estimated · please check</span>${estimated.map((p) =>
-      `<label class="part-question"><span>${escape(p.question || prettyName(p.name))}</span>${input(p)}</label>`).join("")}</div>`);
+  for (const p of asked) {
+    const optional = p.basis === "optional";
+    const label = optional
+      ? `<label class="question-label"><input type="checkbox" data-optional="${escape(p.name)}" ${answers[p.name] > 0 ? "checked" : ""} ${locked ? "disabled" : ""}>${escape(prettyName(p.name))}?</label>`
+      : `<span class="question-label">${escape(prettyName(p.name))}?</span>`;
+    // Short on the card (the parameter as a question); Wonder's full question on hover.
+    const sub = optional ? `suggested ${p.value} mm · not visible, off unless ticked` : `suggested ${p.value} mm`;
+    html.push(`<div class="question" title="${escape(p.question)}"><span class="question-text">${label}`
+      + `<span class="question-sub">${sub}</span></span>${stepper(p)}</div>`);
   }
-  const optional = parts.filter((p) => p.basis === "optional");
-  if (optional.length) {
-    groups.push(`<div class="parts-group"><span class="label">Optional · not visible in the photo</span>${optional.map((p) =>
-      `<label class="part-question"><span class="ask"><input type="checkbox" data-optional="${escape(p.name)}" `
-      + `${answers[p.name] > 0 ? "checked" : ""} ${locked ? "disabled" : ""}><span>${escape(p.question || prettyName(p.name))}</span></span>`
-      + `${input(p)}</label>`).join("")}</div>`);
-  }
-  return groups.join("");
+  return html.join("");
 }
+
+document.addEventListener("click", (event) => {
+  // The card's small steppers: ±0.5 mm.
+  const button = event.target.closest(".mini-stepper button");
+  if (!button) return;
+  const input = document.querySelector(`#break-parts input[data-part="${button.dataset.for}"]`);
+  const number = Number(String(input.value).replace(",", ".")) || 0;
+  input.value = Math.max(0, number + 0.5 * Number(button.dataset.step)).toFixed(2).replace(/\.?0+$/, "");
+});
 
 function partAnswers() {
   // The user's answers: estimated values as typed; optional features their value if ticked, else 0 (left out).

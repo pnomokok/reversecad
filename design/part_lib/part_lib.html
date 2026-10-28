@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"tertiary-container":"#00a9bc","outline-variant":"#59413a","surface-tint":"#ffb59f","on-tertiary-container":"#00373f","error":"#ffb4ab","primary":"#ffb59f","on-surface":"#e5e2e1","on-background":"#e5e2e1","secondary":"#bdf4ff","inverse-surface":"#e5e2e1","on-primary-fixed-variant":"#862200","on-secondary":"#00363d","primary-container":"#ff6a3d","tertiary-fixed-dim":"#58d7eb","on-tertiary":"#00363d","on-primary-container":"#611600","secondary-container":"#00e3fd","secondary-fixed-dim":"#00daf3","surface-dim":"#131313","inverse-on-surface":"#303030","on-secondary-fixed":"#001f24","on-primary":"#5f1500","on-secondary-container":"#00616d","inverse-primary":"#ae3104","surface-container-highest":"#353535","on-tertiary-fixed-variant":"#004f58","on-error-container":"#ffdad6","surface-container-low":"#1b1b1c","surface-bright":"#393939","on-tertiary-fixed":"#001f24","error-container":"#93000a","tertiary-fixed":"#9af0ff","primary-fixed":"#ffdbd1","outline":"#a98a81","tertiary":"#58d7eb","on-secondary-fixed-variant":"#004f58","background":"#131313","surface-variant":"#353535","surface-container-lowest":"#0e0e0e","primary-fixed-dim":"#ffb59f","on-error":"#690005","secondary-fixed":"#9cf0ff","on-primary-fixed":"#3b0a00","surface":"#131313","surface-container-high":"#2a2a2a","on-surface-variant":"#e1bfb6","surface-container":"#202020"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-md":"0.5rem","space-xl":"1rem","space-lg":"0.75rem","space-sm":"0.375rem","space-xs":"0.25rem","margin":"0.75rem","gutter":"0.5rem"},"fontFamily":{"body-lg":["Inter"],"dimension-callout":["JetBrains Mono"],"label-md":["JetBrains Mono"],"label-lg":["JetBrains Mono"],"headline-md":["Space Grotesk"],"body-sm":["Inter"],"label-sm":["JetBrains Mono"],"headline-lg":["Space Grotesk"],"body-md":["Inter"],"headline-xl":["Space Grotesk"]},"fontSize":{"body-lg":["15px",{"lineHeight":"22px","fontWeight":"400"}],"dimension-callout":["10px",{"lineHeight":"12px","letterSpacing":"0.04em","fontWeight":"700"}],"label-md":["11px",{"lineHeight":"14px","letterSpacing":"0.03em","fontWeight":"500"}],"label-lg":["13px",{"lineHeight":"16px","letterSpacing":"0.02em","fontWeight":"500"}],"headline-md":["18px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"500"}],"body-sm":["11px",{"lineHeight":"16px","fontWeight":"400"}],"label-sm":["9px",{"lineHeight":"12px","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["24px",{"lineHeight":"32px","letterSpacing":"-0.015em","fontWeight":"600"}],"body-md":["13px",{"lineHeight":"18px","fontWeight":"400"}],"headline-xl":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"600"}]}}}};</script></head><body class="bg-surface font-body-md text-body-md text-on-surface"><aside class="fixed left-0 top-0 h-full w-12 bg-surface-container-lowest z-50 flex flex-col justify-between py-space-md"><div class="flex flex-col items-center gap-space-xs"><div class="w-9 h-9 flex items-center justify-center bg-surface-container-low text-primary-container mb-space-sm"><span class="material-symbols-outlined text-[20px]">deployed_code</span></div><nav class="w-full flex flex-col items-center gap-space-xs" data-active-classes="bg-surface-container text-primary-container border-l-2 border-primary-container"><a class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="search-candidates" href="#" title="Search Candidates"><span class="material-symbols-outlined text-[18px]">travel_explore</span></a><a class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="vector-workspace" href="#" title="Vector Drafting Canvas"><span class="material-symbols-outlined text-[18px]">architecture</span></a><a class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="metrology-inspection" href="#" title="Tolerance Inspection"><span class="material-symbols-outlined text-[18px]">straighten</span></a><a class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="model-telemetry" href="#" title="Pipeline Models &amp; Telemetry"><span class="material-symbols-outlined text-[18px]">neurology</span></a><a class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="export-cad" href="#" title="Export STEP / DXF"><span class="material-symbols-outlined text-[18px]">output</span></a></nav></div><div class="flex flex-col items-center gap-space-xs"><button class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" title="Canvas Snapping HUD"><span class="material-symbols-outlined text-[18px]">grid_4x4</span></button><button class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" title="Hardware Engine Configuration"><span class="material-symbols-outlined text-[18px]">tune</span></button></div></aside><div class="pl-12"><header class="fixed top-0 left-12 right-0 z-40 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 w-full px-gutter flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-xl flex-shrink-0"><div class="flex items-center gap-space-xs"><span class="font-headline-md text-headline-md tracking-tight text-on-surface uppercase">ReverseCAD</span><span class="font-label-sm text-label-sm uppercase bg-surface-container-high text-on-surface-variant px-space-xs py-0.5">v3.1</span></div><nav class="hidden lg:flex items-center bg-surface-container-lowest px-space-xs py-0.5 gap-space-md" data-active-classes="bg-surface-container text-on-surface font-semibold"><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="capture-workbench" href="#">1 Capture</a><span class="text-outline-variant font-label-sm text-label-sm">·</span><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="search-candidates" href="#"><span class="w-1.5 h-1.5 bg-primary-container"></span>2 Search</a><span class="text-outline-variant font-label-sm text-label-sm">·</span><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="vector-workspace" href="#">3 Edit</a></nav></div><div class="flex-1 max-w-2xl hidden md:flex flex-col gap-1"><div class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm"><div class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 bg-tertiary"></span><span class="text-on-surface">Generating with Muse Spark</span><span class="text-outline-variant">·</span><span>Verifying with SAM 3.1</span></div><div class="flex items-center gap-space-xs"><span class="text-primary-container font-dimension-callout text-dimension-callout">76.6%</span><span class="text-outline-variant">|</span><span class="font-dimension-callout text-dimension-callout text-on-surface">23 / 30</span></div></div><div class="w-full h-1 bg-surface-container-highest relative overflow-hidden"><div class="h-full bg-primary-container w-[76.6%]"></div></div></div><div class="flex items-center gap-space-md flex-shrink-0"><div class="hidden xl:flex items-center gap-space-xs px-space-sm py-1 bg-surface-container-low"><span class="font-dimension-callout text-dimension-callout text-on-surface-variant">GPU_LATENCY</span><span class="font-dimension-callout text-dimension-callout text-tertiary">14.2ms</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-16 w-full bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- Sub-Header & Telemetry Ribbon -->
+<div class="w-full bg-surface-container-lowest px-gutter py-space-md flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-xl">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-md text-headline-md uppercase text-on-surface tracking-tight">Parts Library</span>
+<span class="bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm px-space-xs py-0.5">8 VERIFIED MODELS</span>
+</div>
+<div class="hidden sm:flex items-center gap-space-sm font-label-md text-label-md text-on-surface-variant">
+<span class="text-tertiary">SYSTEM // REVERSECAD</span>
+<span class="text-outline-variant">/</span>
+<span>CATALOG.DB</span>
+<span class="text-outline-variant">/</span>
+<span class="text-on-surface">MM-GRID: 10.0</span>
+</div>
+</div>
+<!-- Filter & Sort Strip -->
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center bg-surface-container-low p-0.5" id="categoryFilter">
+<button class="px-space-md py-1 bg-surface-container text-primary-container font-label-md text-label-md">All Parts (8)</button>
+<button class="px-space-md py-1 text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">Plates</button>
+<button class="px-space-md py-1 text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">Brackets</button>
+<button class="px-space-md py-1 text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">Clips</button>
+</div>
+<div class="h-6 w-px bg-surface-container-highest"></div>
+<div class="flex items-center gap-space-xs bg-surface-container-low px-space-md py-1 text-on-surface-variant font-label-md text-label-md">
+<span class="material-symbols-outlined text-[16px]">swap_vert</span>
+<span class="text-on-surface">Sort: Recent</span>
+</div>
+</div>
+</div>
+<!-- Main Split Workstation -->
+<div class="w-full flex flex-col lg:flex-row min-h-[calc(100vh-7rem)] bg-surface">
+<!-- Left & Center: Parts Grid -->
+<section class="flex-1 p-gutter xl:p-margin overflow-y-auto">
+<div class="mb-space-md flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Component Archive &amp; Vector Profiles</span>
+<span class="font-label-sm text-label-sm text-outline">WORKSPACE UNITS: METRIC [MM]</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-gutter xl:gap-space-md">
+<!-- Card 1: Mounting Plate 80x40 (ACTIVE SELECTION) -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md cursor-pointer transition-colors shadow-sm outline outline-1 outline-primary-container" data-part-id="part-1">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-primary-container text-on-primary-container font-label-sm text-label-sm px-1.5 py-0.5 font-bold uppercase tracking-wider">ACTIVE SELECTION</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 24, 2024</span>
+</div>
+<!-- Isometric Vector Graphic -->
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-primary" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern height="16" id="grid-dots-1" patternunits="userSpaceOnUse" width="16">
+<circle cx="2" cy="2" fill="#353535" r="0.75"></circle>
+</pattern>
+</defs>
+<rect fill="url(#grid-dots-1)" height="160" width="240"></rect>
+<!-- Top Face -->
+<polygon fill="#202020" points="40,75 140,25 200,55 100,105" stroke="#ffb59f" stroke-width="1.5"></polygon>
+<!-- Right Side -->
+<polygon fill="#1b1b1c" points="100,105 200,55 200,68 100,118" stroke="#ff6a3d" stroke-width="1.5"></polygon>
+<!-- Left Side -->
+<polygon fill="#131313" points="40,75 100,105 100,118 40,88" stroke="#ff6a3d" stroke-width="1.5"></polygon>
+<!-- 4 Corner Holes (Top surface ellipses) -->
+<ellipse cx="68" cy="74" fill="#0e0e0e" rx="7" ry="3.5" stroke="#58d7eb" stroke-width="1.25" transform="rotate(-15 68 74)"></ellipse>
+<ellipse cx="125" cy="46" fill="#0e0e0e" rx="7" ry="3.5" stroke="#58d7eb" stroke-width="1.25" transform="rotate(-15 125 46)"></ellipse>
+<ellipse cx="172" cy="70" fill="#0e0e0e" rx="7" ry="3.5" stroke="#58d7eb" stroke-width="1.25" transform="rotate(-15 172 70)"></ellipse>
+<ellipse cx="115" cy="97" fill="#0e0e0e" rx="7" ry="3.5" stroke="#58d7eb" stroke-width="1.25" transform="rotate(-15 115 97)"></ellipse>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-tertiary">#P-0881</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Mounting Plate 80×40</h3>
+<div class="font-label-lg text-label-lg text-primary-container font-mono tracking-tight">80.0 × 40.0 × 3.0 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>AL6061-T6</span>
+<span class="text-tertiary">4× M6 BORES</span>
+</div>
+</div>
+</div>
+<!-- Card 2: L-Bracket 60x30 -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-2">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">STANDARDIZED</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 22, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Vertical leg -->
+<polygon fill="#2a2a2a" points="50,45 80,30 110,45 80,60" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#202020" points="50,45 50,110 80,125 80,60" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Horizontal leg -->
+<polygon fill="#2a2a2a" points="80,125 180,75 195,83 95,133" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#1b1b1c" points="95,133 195,83 195,95 95,145" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#131313" points="50,110 95,133 95,145 50,122" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Bores -->
+<ellipse cx="65" cy="80" fill="#0e0e0e" rx="4" ry="7" stroke="#58d7eb" stroke-width="1"></ellipse>
+<ellipse cx="140" cy="103" fill="#0e0e0e" rx="7" ry="3.5" stroke="#58d7eb" stroke-width="1" transform="rotate(-20 140 103)"></ellipse>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0880</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">L-Bracket 60×30</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">60.0 × 30.0 × 4.0 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>SUS304</span>
+<span>ANGLE 90.0°</span>
+</div>
+</div>
+</div>
+<!-- Card 3: Tabbed Retaining Clip -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-3">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">SHEET METAL</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 20, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Profile with step & slot -->
+<path d="M50,90 L90,70 L140,95 L180,75 L190,80 L145,103 L95,78 L55,98 Z" fill="#2a2a2a" stroke="#e5e2e1" stroke-width="1.25"></path>
+<path d="M50,90 L50,95 L95,83 L145,108 L190,85 L190,80" stroke="#e5e2e1" stroke-width="1"></path>
+<!-- Internal Slotted cut -->
+<path d="M105,82 L130,70 L134,74 L109,86 Z" fill="#0e0e0e" stroke="#58d7eb" stroke-width="1"></path>
+<!-- Tab bend indicator -->
+<line stroke="#ff6a3d" stroke-dasharray="2 2" stroke-width="1.2" x1="85" x2="95" y1="72" y2="78"></line>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0879</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Tabbed Retaining Clip</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">45.0 × 18.0 × 1.5 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>SPRING STEEL</span>
+<span>1 BEND AXIS</span>
+</div>
+</div>
+</div>
+<!-- Card 4: Adapter Flange 70x70 -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-4">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">SYMMETRIC</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 18, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Square Isometric Extrusion -->
+<polygon fill="#262626" points="60,70 120,40 180,70 120,100" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#1a1a1a" points="60,70 60,82 120,112 120,100" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#202020" points="120,100 120,112 180,82 180,70" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Central Big Bore -->
+<ellipse cx="120" cy="70" fill="#0e0e0e" rx="22" ry="12" stroke="#ff6a3d" stroke-width="1.5"></ellipse>
+<!-- 4 Perimeter Holes -->
+<ellipse cx="90" cy="62" fill="#0e0e0e" rx="4" ry="2.2" stroke="#58d7eb" stroke-width="1"></ellipse>
+<ellipse cx="120" cy="48" fill="#0e0e0e" rx="4" ry="2.2" stroke="#58d7eb" stroke-width="1"></ellipse>
+<ellipse cx="150" cy="62" fill="#0e0e0e" rx="4" ry="2.2" stroke="#58d7eb" stroke-width="1"></ellipse>
+<ellipse cx="120" cy="88" fill="#0e0e0e" rx="4" ry="2.2" stroke="#58d7eb" stroke-width="1"></ellipse>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0878</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Adapter Flange 70×70</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">70.0 × 70.0 × 5.0 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>AL7075</span>
+<span>Ø32.0 CENTER BORE</span>
+</div>
+</div>
+</div>
+<!-- Card 5: Hinge Leaf 50x25 -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-5">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">ASSEMBLY READY</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 15, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Knuckle Cylinders along top edge -->
+<ellipse cx="70" cy="50" fill="#2d2d2d" rx="6" ry="10" stroke="#e5e2e1" stroke-width="1.2"></ellipse>
+<ellipse cx="105" cy="38" fill="#2d2d2d" rx="6" ry="10" stroke="#e5e2e1" stroke-width="1.2"></ellipse>
+<ellipse cx="140" cy="26" fill="#2d2d2d" rx="6" ry="10" stroke="#e5e2e1" stroke-width="1.2"></ellipse>
+<!-- Hinge leaf plate -->
+<polygon fill="#222222" points="68,58 142,32 188,78 114,104" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#181818" points="114,104 188,78 188,86 114,112" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Knuckle Pin Axis -->
+<line stroke="#ff6a3d" stroke-dasharray="3 2" stroke-width="1.2" x1="55" x2="155" y1="56" y2="21"></line>
+<!-- Fastener countersinks -->
+<ellipse cx="120" cy="80" fill="#0e0e0e" rx="5" ry="3" stroke="#58d7eb" stroke-width="1"></ellipse>
+<ellipse cx="150" cy="70" fill="#0e0e0e" rx="5" ry="3" stroke="#58d7eb" stroke-width="1"></ellipse>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0877</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Hinge Leaf 50×25</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">50.0 × 25.0 × 2.0 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>BRASS CZ108</span>
+<span>KNUCKLE BARRELS</span>
+</div>
+</div>
+</div>
+<!-- Card 6: Spacer Shim 40x20 -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-6">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">PRECISION SHIM</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 12, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Flat thin shim outline -->
+<polygon fill="#202020" points="50,85 130,45 190,75 110,115" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#161616" points="110,115 190,75 190,79 110,119" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Slotted U-notch -->
+<path d="M125,75 L150,62 L158,66 L133,79 Z" fill="#0e0e0e" stroke="#58d7eb" stroke-width="1.2"></path>
+<!-- Micrometer gauge indicator -->
+<text class="font-dimension-callout text-[9px]" fill="#58d7eb" x="60" y="70">T: 1.000</text>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0876</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Spacer Shim 40×20</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">40.0 × 20.0 × 1.0 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>STAINLESS 316</span>
+<span>U-SLOT ENTRY</span>
+</div>
+</div>
+</div>
+<!-- Card 7: Corner Gusset 55x55 -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-7">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">STRUCTURAL</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 09, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Triangular Gusset Plate -->
+<polygon fill="#242424" points="60,110 60,40 180,100" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#181818" points="60,110 180,100 180,108 60,118" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Lightening Hole (Triangle offset or circle) -->
+<ellipse cx="100" cy="85" fill="#0e0e0e" rx="14" ry="10" stroke="#58d7eb" stroke-width="1.2" transform="rotate(15 100 85)"></ellipse>
+<!-- Stiffener chamfer note -->
+<line stroke="#ff6a3d" stroke-dasharray="3 2" stroke-width="1" x1="60" x2="180" y1="40" y2="100"></line>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0875</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Corner Gusset 55×55</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">55.0 × 55.0 × 3.0 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>S235JR STEEL</span>
+<span>WEIGHT RELIEF BORE</span>
+</div>
+</div>
+</div>
+<!-- Card 8: Sensor Mount Plate -->
+<div class="group relative flex flex-col bg-surface-container-low p-space-md hover:bg-surface-container transition-colors shadow-sm" data-part-id="part-8">
+<div class="flex items-center justify-between mb-space-sm">
+<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">BRACKET</span>
+<span class="font-label-sm text-label-sm text-outline">Oct 04, 2024</span>
+</div>
+<div class="w-full aspect-[4/3] bg-surface-container-lowest flex items-center justify-center relative overflow-hidden mb-space-md p-space-xs">
+<svg class="w-full h-full text-on-surface" fill="none" viewbox="0 0 240 160" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#0e0e0e" height="160" width="240"></rect>
+<!-- Stepped plate with sensor cutout -->
+<polygon fill="#242424" points="50,75 130,35 190,65 110,105" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<polygon fill="#181818" points="110,105 190,65 190,73 110,113" stroke="#e5e2e1" stroke-width="1.25"></polygon>
+<!-- Dual oblong slots -->
+<rect fill="#0e0e0e" height="6" rx="3" stroke="#58d7eb" stroke-width="1" transform="rotate(-26 80 65)" width="28" x="80" y="65"></rect>
+<rect fill="#0e0e0e" height="6" rx="3" stroke="#58d7eb" stroke-width="1" transform="rotate(-26 120 68)" width="28" x="120" y="68"></rect>
+<!-- Edge wiring relief notch -->
+<polygon fill="#0e0e0e" points="180,68 185,65 188,71 183,73" stroke="#ff6a3d" stroke-width="1"></polygon>
+</svg>
+<div class="absolute bottom-1.5 right-2 font-label-sm text-label-sm text-on-surface-variant">#P-0874</div>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Sensor Mount Plate</h3>
+<div class="font-label-lg text-label-lg text-on-surface font-mono tracking-tight">65.0 × 35.0 × 2.5 mm</div>
+<div class="mt-2 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span>POM-C BLACK</span>
+<span>DUAL GUIDE CHANNELS</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Side Panel: Fixed Inspection & Parameter Deck -->
+<aside class="w-full lg:w-[420px] xl:w-[460px] bg-surface-container-low flex flex-col justify-between shadow-xl flex-shrink-0">
+<div class="p-gutter xl:p-margin flex flex-col gap-space-lg overflow-y-auto">
+<!-- Header Info -->
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider uppercase">SELECTED PART INSPECTION</span>
+<span class="bg-surface-container-high text-tertiary font-label-sm text-label-sm px-2 py-0.5 font-mono">MANIFOLD · VERIFIED</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface font-semibold" id="selectedPartTitle">Mounting Plate 80×40</h2>
+<div class="flex items-center gap-space-md text-on-surface-variant font-label-sm text-label-sm">
+<span>MODEL UID: REV-2024-0881</span>
+<span class="text-outline-variant">·</span>
+<span class="text-primary-container">ACTIVE VIEWPORT</span>
+</div>
+</div>
+<!-- Enlarged 3D CAD Preview with Live Dimension Callouts -->
+<div class="w-full aspect-[16/11] bg-surface-container-lowest relative overflow-hidden flex items-center justify-center p-2 shadow-inner">
+<svg class="w-full h-full" fill="none" viewbox="0 0 400 280" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern height="20" id="grid-pattern-detail" patternunits="userSpaceOnUse" width="20">
+<circle cx="2" cy="2" fill="#282828" r="0.75"></circle>
+</pattern>
+</defs>
+<rect fill="url(#grid-pattern-detail)" height="280" width="400"></rect>
+<!-- Central Isometric Plate Geometry -->
+<!-- Top surface -->
+<polygon fill="#242424" points="70,135 240,45 350,105 180,195" stroke="#ffb59f" stroke-width="1.8"></polygon>
+<!-- Right Edge -->
+<polygon fill="#1a1a1a" points="180,195 350,105 350,122 180,212" stroke="#ff6a3d" stroke-width="1.8"></polygon>
+<!-- Front/Left Edge -->
+<polygon fill="#131313" points="70,135 180,195 180,212 70,152" stroke="#ff6a3d" stroke-width="1.8"></polygon>
+<!-- 4 Corner Bores -->
+<!-- Hole 1 -->
+<ellipse cx="115" cy="138" fill="#0e0e0e" rx="12" ry="6" stroke="#58d7eb" stroke-width="1.5" transform="rotate(-15 115 138)"></ellipse>
+<!-- Hole 2 -->
+<ellipse cx="218" cy="85" fill="#0e0e0e" rx="12" ry="6" stroke="#58d7eb" stroke-width="1.5" transform="rotate(-15 218 85)"></ellipse>
+<!-- Hole 3 -->
+<ellipse cx="305" cy="132" fill="#0e0e0e" rx="12" ry="6" stroke="#58d7eb" stroke-width="1.5" transform="rotate(-15 305 132)"></ellipse>
+<!-- Hole 4 -->
+<ellipse cx="202" cy="184" fill="#0e0e0e" rx="12" ry="6" stroke="#58d7eb" stroke-width="1.5" transform="rotate(-15 202 184)"></ellipse>
+<!-- Pitch Lines on Plate -->
+<line stroke="#59413a" stroke-dasharray="3 3" stroke-width="1" x1="115" x2="218" y1="138" y2="85"></line>
+<line stroke="#59413a" stroke-dasharray="3 3" stroke-width="1" x1="218" x2="305" y1="85" y2="132"></line>
+<line stroke="#59413a" stroke-dasharray="3 3" stroke-width="1" x1="305" x2="202" y1="132" y2="184"></line>
+<line stroke="#59413a" stroke-dasharray="3 3" stroke-width="1" x1="202" x2="115" y1="184" y2="138"></line>
+<!-- Live Dimension Callout: Length (80.0 mm along front edge) -->
+<line stroke="#ffffff" stroke-width="1" x1="60" x2="170" y1="145" y2="205"></line>
+<line stroke="#ffffff" stroke-width="1" x1="60" x2="60" y1="140" y2="150"></line>
+<line stroke="#ffffff" stroke-width="1" x1="170" x2="170" y1="200" y2="210"></line>
+<!-- Live Dimension Callout: Width (40.0 mm along right edge) -->
+<line stroke="#ffffff" stroke-width="1" x1="190" x2="360" y1="218" y2="128"></line>
+<line stroke="#ffffff" stroke-width="1" x1="190" x2="190" y1="213" y2="223"></line>
+<line stroke="#ffffff" stroke-width="1" x1="360" x2="360" y1="123" y2="133"></line>
+<!-- Live Dimension Callout: Thickness (3.0 mm) -->
+<line stroke="#ff6a3d" stroke-width="1.2" x1="58" x2="58" y1="135" y2="152"></line>
+<line stroke="#ff6a3d" stroke-width="1" x1="54" x2="62" y1="135" y2="135"></line>
+<line stroke="#ff6a3d" stroke-width="1" x1="54" x2="62" y1="152" y2="152"></line>
+<!-- Hole Leader Arrow -->
+<path d="M202,184 L160,250 L110,250" stroke="#58d7eb" stroke-width="1.2"></path>
+<circle cx="202" cy="184" fill="#58d7eb" r="2.5"></circle>
+</svg>
+<!-- Floating Monospace Dimension Badges (High Contrast Boxed Labels) -->
+<div class="absolute bottom-10 left-16 bg-surface-container-lowest px-2 py-0.5 text-on-surface font-dimension-callout text-dimension-callout shadow-sm">
+            80.0 mm
+          </div>
+<div class="absolute bottom-12 right-12 bg-surface-container-lowest px-2 py-0.5 text-on-surface font-dimension-callout text-dimension-callout shadow-sm">
+            40.0 mm
+          </div>
+<div class="absolute top-28 left-4 bg-surface-container-lowest px-2 py-0.5 text-primary-container font-dimension-callout text-dimension-callout shadow-sm">
+            THK 3.0 mm
+          </div>
+<div class="absolute bottom-2 left-6 bg-surface-container-lowest px-2 py-0.5 text-tertiary font-dimension-callout text-dimension-callout shadow-sm">
+            4× Ø6.0 mm THRU
+          </div>
+</div>
+<!-- Named Parameters Section -->
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between pb-space-xs">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Named Parameters</span>
+<span class="font-label-sm text-label-sm text-outline">TOL: ±0.05 MM</span>
+</div>
+<div class="flex flex-col bg-surface-container-lowest divide-y divide-surface-container">
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Length</span>
+<span class="font-label-lg text-label-lg text-on-surface font-mono font-semibold">80.0 mm</span>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Width</span>
+<span class="font-label-lg text-label-lg text-on-surface font-mono font-semibold">40.0 mm</span>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Thickness</span>
+<span class="font-label-lg text-label-lg text-primary-container font-mono font-semibold">3.0 mm</span>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Hole Diameter</span>
+<span class="font-label-lg text-label-lg text-tertiary font-mono font-semibold">6.0 mm (4×)</span>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Edge Margin</span>
+<span class="font-label-lg text-label-lg text-on-surface font-mono font-semibold">8.0 mm</span>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Hole Pitch X</span>
+<span class="font-label-lg text-label-lg text-on-surface font-mono font-semibold">64.0 mm</span>
+</div>
+<div class="flex items-center justify-between px-space-md py-space-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Hole Pitch Y</span>
+<span class="font-label-lg text-label-lg text-on-surface font-mono font-semibold">24.0 mm</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Footer Strip -->
+<div class="p-gutter xl:p-margin bg-surface-container flex flex-col gap-space-sm">
+<button class="w-full bg-primary-container text-on-primary-container hover:bg-surface-tint active:bg-inverse-primary px-space-xl py-3 flex items-center justify-center gap-space-md font-label-lg text-label-lg font-bold uppercase transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[20px]">architecture</span>
+<span>Open in editor</span>
+</button>
+<button class="w-full bg-surface-container-high hover:bg-surface-bright text-on-surface active:bg-surface-container px-space-xl py-3 flex items-center justify-center gap-space-md font-label-lg text-label-lg font-medium uppercase transition-colors">
+<span class="material-symbols-outlined text-[20px]">content_copy</span>
+<span>Make a matching part</span>
+</button>
+<div class="mt-space-xs flex items-center justify-between pt-space-xs text-on-surface-variant font-label-sm text-label-sm">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 bg-primary-container"></span>
+<span>STEP · STL · DXF READY</span>
+</div>
+<span class="text-outline">REVISION: REV.C</span>
+</div>
+</div>
+</aside>
+</div>
+</div>
+<script>
+  // Simple card selection micro-interaction
+  document.querySelectorAll('[data-part-id]').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('[data-part-id]').forEach(c => {
+        c.classList.remove('outline', 'outline-1', 'outline-primary-container');
+        const badge = c.querySelector('.font-bold');
+        if (badge && badge.textContent.includes('ACTIVE SELECTION')) {
+          badge.outerHTML = '<span class="bg-surface-container-high text-on-surface font-label-sm text-label-sm px-1.5 py-0.5">STANDARDIZED</span>';
+        }
+      });
+      card.classList.add('outline', 'outline-1', 'outline-primary-container');
+      const headerSpan = card.querySelector('div:first-child > span:first-child');
+      if (headerSpan) {
+        headerSpan.outerHTML = '<span class="bg-primary-container text-on-primary-container font-label-sm text-label-sm px-1.5 py-0.5 font-bold uppercase tracking-wider">ACTIVE SELECTION</span>';
+      }
+      const title = card.querySelector('h3');
+      if (title) {
+        document.getElementById('selectedPartTitle').textContent = title.textContent;
+      }
+    });
+  });
+</script></main></div></body></html>

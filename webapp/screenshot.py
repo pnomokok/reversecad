@@ -23,9 +23,10 @@ def shot_path(run, step):
     return OUT / f"{run}_{step.split('&')[0]}{'_changed' if '&set=' in step else ''}.png"
 
 
-def side_by_side(app_path, step):
+def side_by_side(app_path, step, design_name=None):
     """The app's screenshot next to the design reference, both scaled to the same height."""
-    design = Image.open(Path("design") / DESIGN[step.split("&")[0]] / f"{DESIGN[step.split('&')[0]]}.png").convert("RGB")
+    design_name = design_name or DESIGN[step.split("&")[0]]
+    design = Image.open(Path("design") / design_name / f"{design_name}.png").convert("RGB")
     app = Image.open(app_path).convert("RGB")
     height = 900
     design = design.resize((round(design.width * height / design.height), height))
@@ -43,7 +44,8 @@ def side_by_side(app_path, step):
 
 def main(arguments):
     compare = "--compare" in arguments
-    arguments = [a for a in arguments if a != "--compare"]
+    design_name = next((a.split("=", 1)[1] for a in arguments if a.startswith("--design=")), None)
+    arguments = [a for a in arguments if not a.startswith("--")]
     run, *steps = arguments or ["A_light", "capture"]
     OUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
@@ -57,7 +59,7 @@ def main(arguments):
             page.screenshot(path=str(path))
             print(path)
             if compare:
-                print(side_by_side(path, step))
+                print(side_by_side(path, step, design_name))
         browser.close()
 
 

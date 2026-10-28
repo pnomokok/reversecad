@@ -147,7 +147,7 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
             suggest_completion(folder, program, np.load(program.with_suffix(".default.mask.npy")), builder, cues=cues)
     summary["usage"] = usage_ledger.summarize(folder)
     save_json(folder / f"5_summary_{ROUND}.json", summary)
-    emit(replay.done_event(summary, ROUND, replay.result_note(name, summary)))
+    emit(replay.done_event(summary, ROUND, replay.result_note(name, summary), name))
 
 
 def _summary(rows, baseline):
@@ -167,3 +167,30 @@ def _summary(rows, baseline):
     return {"compiled": len(compiled), "within_deviation": len(eligible), "candidate_count": len(rows),
             "winner": clean(best), "result": result, "result_source": source, "baseline": clean(baseline),
             "candidates": [clean(r) for r in sorted(rows, key=lambda r: r["candidate"])]}
+
+
+def repair_again_job(name, builder, emit):
+    """"Try repair again" on a saved run where no candidate passed: rebuild the failed candidates (for their
+    difference images), run the Muse Wonder repair loop, and save the result into the run's summary."""
+    round_name = replay.candidate_round(name)
+    folder = replay.run_dir(name)
+    summary_path = folder / f"5_summary_{round_name}.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    table = json.loads((folder / "3_measurements.json").read_text(encoding="utf-8"))["table"]
+    reference = cv2.imread(str(folder / "3_part_mask_topdown.png"), cv2.IMREAD_GRAYSCALE) > 0
+    emit({"type": "progress", "message": "Rebuilding the failed candidates for Muse Wonder…"})
+    rows = []
+    for row in summary["candidates"]:
+        program = replay._program_path(name, round_name, row["file"])
+        rows.append({**row, **check_program(program, reference, None, table, render=builder.silhouette)}
+                    if program.exists() and "error" not in row else row)
+    repaired = repair_loop(folder, table, reference, folder / "3_part_mask_topdown.png", rows,
+                           render=builder.silhouette, emit=emit)
+    summary["repair"] = repaired
+    if repaired["passed"]:
+        row = repaired_row(repaired)
+        emit(replay.candidate_event(name, row))
+        summary.update({"winner": row, "result": row, "result_source": "repair · Muse Wonder"})
+    summary["usage"] = usage_ledger.summarize(folder)
+    save_json(summary_path, summary)
+    emit(replay.done_event(summary, round_name, replay.result_note(name, summary), name))

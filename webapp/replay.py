@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from break_cues import find_break_cues
+from break_cues import ROUGH_RMS_MM, find_break_cues
 from completion import topdown_photo
 from repair import REPAIR_NUMBER
 from design_intent import parameters
@@ -171,6 +171,25 @@ def candidate_event(name, row, round_name=None):
             if status != "failed" else None}
 
 
+def irregularities(name):
+    """What the break cues found, for the "no design found" panel: rough edges (share of the outline and the
+    worst roughness), material missing against the mirror image, gaps in hole patterns, holes found."""
+    table = json.loads((run_dir(name) / "3_measurements.json").read_text(encoding="utf-8"))["table"]
+    cues = find_break_cues(table)["cues"]
+    contour = np.array(table["outline"].get("contour_mm") or [], float)
+    perimeter = float(np.linalg.norm(np.diff(np.vstack([contour, contour[:1]]), axis=0), axis=1).sum()) if len(contour) else 0
+    rough = [c for c in cues if c["kind"] == "rough_edge"]
+    missing = [c for c in cues if c["kind"] == "missing_material"]
+    gaps = [c for c in cues if c["kind"] in ("missing_hole", "partial_hole")]
+    return {"rough_edges": len(rough), "rough_length_mm": round(sum(c["length_mm"] for c in rough), 1),
+            "perimeter_mm": round(perimeter, 1),
+            "rough_share": round(sum(c["length_mm"] for c in rough) / perimeter, 3) if perimeter else None,
+            "worst_roughness_mm": max((c["roughness_mm"] for c in rough), default=None),
+            "roughness_limit_mm": ROUGH_RMS_MM,
+            "missing_material_mm2": round(sum(c["area_mm2"] for c in missing), 1), "pattern_gaps": len(gaps),
+            "holes": table["hole_count"]}
+
+
 def result_note(name, summary):
     """Why the result is the measured shape, in plain words, when no program passed; else None."""
     if not (summary.get("result_source") or "").startswith("fallback"):
@@ -181,10 +200,16 @@ def result_note(name, summary):
     return "No candidate passed every check; the measured shape is shown."
 
 
-def done_event(summary, round_name, note=None):
+def done_event(summary, round_name, note=None, name=None):
     """The end of a candidate round: the winner (or the fallback), counts, and why if it fell back."""
     winner = (summary.get("winner") or {}).get("candidate")
-    return {"type": "done", "round": round_name, "winner": winner, "note": note,
+    fallback = None
+    baseline = summary.get("baseline") or {}
+    if (summary.get("result_source") or "").startswith("fallback") and "iou" in baseline:
+        fallback = {"iou": baseline["iou"], "fit_mm": fit_to_measurements_mm(baseline),
+                    "outline_mm": baseline.get("outline_mm"), "parameters": baseline.get("parameter_count"),
+                    "silhouette": f"/api/runs/{name}/candidates/0/silhouette.png?round={round_name}" if name else None}
+    return {"type": "done", "round": round_name, "winner": winner, "note": note, "fallback": fallback,
             "result_source": summary.get("result_source", "candidate" if winner else None),
             "compiled": summary["compiled"], "candidate_count": summary["candidate_count"],
             "usage": summary.get("usage")}  # model calls, tokens and cost; runs before the ledger have none
@@ -202,7 +227,7 @@ def candidate_events(name, round_name=None):
     events += [{"type": "repair", **entry} for entry in repaired.get("rounds", [])]
     if repaired.get("passed"):
         events.append(candidate_event(name, repaired["result"]))
-    return events + [done_event(summary, round_name, result_note(name, summary))]
+    return events + [done_event(summary, round_name, result_note(name, summary), name)]
 
 
 def _program_path(name, round_name, file):
@@ -221,7 +246,10 @@ def silhouette_png(name, candidate, round_name=None):
     folder = run_dir(name)
     if round_name is not None and round_name not in CANDIDATE_ROUNDS:
         raise FileNotFoundError(f"unknown round {round_name!r}")
-    if int(candidate) > REPAIR_NUMBER:  # a repaired program (repair.py numbers them 101, 102)
+    if int(candidate) == 0:  # the baseline (the measured shape), shown when no candidate passed
+        paths = [folder / r / f"baseline.default.mask{ext}" for r in ([round_name] if round_name else CANDIDATE_ROUNDS)
+                 for ext in (".npy", ".png")]
+    elif int(candidate) > REPAIR_NUMBER:  # a repaired program (repair.py numbers them 101, 102)
         repair = folder / f"repair_round_{int(candidate) - REPAIR_NUMBER}"
         paths = [repair / "repaired.default.mask.npy", repair / "repaired.default.mask.png"]
     else:
