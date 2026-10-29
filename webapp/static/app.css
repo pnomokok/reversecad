@@ -161,6 +161,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .count-field { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
 .count-field input { width: 64px; background: var(--color-lowest); border: none; color: var(--color-text-strong); font-family: var(--font-mono); font-size: var(--font-size-body); padding: var(--space-2); text-align: center; }
 .summary-card { padding: var(--space-3) var(--space-4); background: var(--color-lowest); }
+.res-warning { display: flex; align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-3); font-size: var(--font-size-body); line-height: 1.45; color: var(--color-text-muted); }
 table.values { width: 100%; border-collapse: collapse; }
 table.values td { padding: 3px 0; font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); text-transform: uppercase; vertical-align: top; }
 table.values td.number { text-align: right; color: var(--color-text-strong); text-transform: none; font-size: var(--font-size-label-lg); }

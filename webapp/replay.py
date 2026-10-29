@@ -15,6 +15,7 @@ import numpy as np
 from break_cues import ROUGH_RMS_MM, find_break_cues
 from completion import topdown_photo
 from repair import REPAIR_NUMBER
+from resolution import card_long_edge_px, resolution_warning
 from design_intent import parameters
 from e2e_pipeline import CARD_PROMPTS, MM_PER_PIXEL, card_aspect_ok, pixel_to_mm_scales
 from homography import card_corners, largest_contour, to_mm
@@ -449,6 +450,7 @@ def analysis(name):
     attempts = json.loads((folder / "2_sam_attempts.json").read_text(encoding="utf-8"))
     image = load_photo(_photo(folder))
     card_mask = _cached_card_mask(folder, image)
+    card_long_px = card_long_edge_px(card_mask)
     scales, scale_used, differences = pixel_to_mm_scales(card_mask)
     pixel_to_mm = scales[scale_used]
 
@@ -478,6 +480,8 @@ def analysis(name):
         "card_edge_differences_pct": [round(float(d) * 100, 2) for d in differences],
         "scale_used": scale_used,
         "card_mm_per_pixel": round(float(scales["simple"][0, 0]), 5),  # mean card scale
+        "card_long_px": round(card_long_px, 1),
+        "resolution_warning": resolution_warning(card_long_px),
         "hole_method": method,
         "outline_px": _pixels(contours[outer].reshape(-1, 2)),
         "outline_mm": {"length": table["outline"]["length_mm"], "width": table["outline"]["width_mm"],

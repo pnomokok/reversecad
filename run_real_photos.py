@@ -22,11 +22,11 @@ import numpy as np
 
 from e2e_pipeline import pixel_to_mm_scales, run_photo
 from homography import largest_contour, to_mm
-from measure import card_scale
+from resolution import MIN_CARD_PX, card_long_edge_px
 
 PHOTO_DIR = Path("data") / "private"
 OUT = Path("outputs") / "real"
-MIN_CARD_PX = 900  # below this the card's own edge is uncertain by up to ~1% (width bias diagnosis)
+
 MEDIAN_RASTER_MM = 0.1  # raster step for the median extents
 MEDIAN_SPAN = 0.8  # medians over the middle 80% of the part, away from rounded ends
 MIN_FILL_FOR_MEDIAN = 0.85  # below this outline/rectangle area ratio (a key: 0.53) the medians say little
@@ -92,7 +92,7 @@ def extra_measurements(out, hole_method):
     """Card length in pixels and the part's median extents, from the masks the pipeline saved."""
     card_mask = cv2.imread(str(out / "3_mask_card.png"), cv2.IMREAD_GRAYSCALE) > 0
     part_mask = cv2.imread(str(out / f"3_mask_{hole_method}.png"), cv2.IMREAD_GRAYSCALE) > 0
-    card_px = max(card_scale(card_mask).rect[1])
+    card_px = card_long_edge_px(card_mask)
     scales, scale_used, _ = pixel_to_mm_scales(card_mask)
     return card_px, median_extents(part_mask, scales[scale_used])
 
@@ -106,7 +106,7 @@ def compare(name, measured, table, card_px, medians):
     ref_length, ref_width = measured["length"], measured["width"]
     median_length, median_width = medians
     print(f"\n[{measured['tool']}] {name}: card {card_px:.0f} px long"
-          f"{f'  WARNING: under {MIN_CARD_PX} px, scale uncertain by up to ~1%' if card_px < MIN_CARD_PX else ''}")
+          f"{f'  WARNING: under {MIN_CARD_PX} px, small holes and edges lose precision' if card_px < MIN_CARD_PX else ''}")
     print(f"        outline max    {length:.1f} x {width:.1f} mm vs {ref_length} x {ref_width} "
           f"({percent(length, ref_length)} / {percent(width, ref_width)})")
     print(f"        outline median {median_length:.1f} x {median_width:.1f} mm vs {ref_length} x {ref_width} "

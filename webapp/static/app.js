@@ -357,6 +357,9 @@ function showSummary(a) {
                 ["Corners", a.outline_mm.corners], [`Holes (${a.holes.length})`, sizes || "none"],
                 ["Scale", `1 px = ${a.card_mm_per_pixel} mm`]];
   $("measure-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td class="number">${v}</td></tr>`).join("");
+  const warning = a.resolution_warning;
+  $("resolution-warning").classList.toggle("hidden", !warning);
+  if (warning) $("resolution-warning-text").textContent = warning;
   $("measure-results").classList.remove("hidden");
 }
 
@@ -377,6 +380,7 @@ function resetResults() {
   state.done = null;
   state.winner = null;
   $("measure-results").classList.add("hidden");
+  $("resolution-warning").classList.add("hidden");
   $("to-candidates").classList.add("hidden");
   $("analyze").classList.remove("hidden");
   $("capture-status").textContent = "";
