@@ -162,7 +162,8 @@ def test_every_sample_builds_with_the_original_holes(run, kind):
 @pytest.mark.parametrize("run", SAMPLES)
 def test_downloads_work_as_for_the_original(run):
     body = {"parameters": {"thickness": 2.0, "outline_offset": 1.0}, "base": {}}
-    for format, start in (("stl", None), ("step", b"ISO-10303"), ("dxf", None), ("pdf", b"%PDF"), ("py", b'"""Spacer')):
+    for format, start in (("stl", None), ("step", b"ISO-10303"), ("dxf", None), ("pdf", b"%PDF"),
+                          ("py", f'"""{run}_spacer.py: Spacer / gasket of the original part.'.encode())):
         response = client.post(f"/api/runs/{run}/download?format={format}&match=spacer", json=body)
         assert response.status_code == 200, format
         assert f"reversecad_{run}_spacer" in response.headers["Content-Disposition"]
@@ -225,6 +226,11 @@ def test_split_refusal_is_the_same_in_the_demo(monkeypatch):
     body = {"parameters": {"outline_offset": -8.0}, "base": {}}
     answer = client.post("/api/runs/D_tab_broken/download?format=stl&match=spacer", json=body)
     assert answer.status_code == 422 and "splits into 2 pieces" in answer.json()["detail"]
+
+
+def test_matching_docstring_uses_the_display_name():
+    source = matching_part.matching_source(PROFILE, "cover", "A_light_cover.py")
+    assert source.startswith('"""A_light_cover.py: Cover of the original part.')
 
 
 def test_bad_requests_are_refused():

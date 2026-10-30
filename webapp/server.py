@@ -49,7 +49,8 @@ def _needs_keys():
 STATIC = Path(__file__).parent / "static"
 MODEL_DIR = Path("outputs") / "web"  # temporary model files (git-ignored)
 MATCHING_DIR = MODEL_DIR / "matching"  # generated matching programs, named by what they were made from
-_ADAPTER_KEY_VERSION = 2  # bump when the adapter fallback or search changes (older cache files are orphaned)
+_ADAPTER_KEY_VERSION = 3  # bump when the adapter fallback or search changes (older cache files are orphaned)
+_MATCHING_KEY_VERSION = 2  # same for cover/spacer programs
 REPLAY_DELAY_S = 0.4  # pause between replayed candidate events
 builder = Builder()  # one long-running build process (CadQuery loads once)
 
@@ -174,7 +175,8 @@ async def _matching(name, kind, base):
         raise HTTPException(400, f"a matching part is one of: {', '.join(matching_part.KINDS)}")
     overrides = _checked(base, _result_names(name))
     original, _ = replay.result_program(name)
-    made_from = json.dumps([kind, original.read_text(encoding="utf-8"), overrides], sort_keys=True)
+    made_from = json.dumps([kind, _MATCHING_KEY_VERSION, original.read_text(encoding="utf-8"), overrides],
+                           sort_keys=True)
     key = hashlib.sha256(made_from.encode("utf-8")).hexdigest()[:24]
     program, profile_path = MATCHING_DIR / f"{key}.py", MATCHING_DIR / f"{key}.json"
     if not program.exists():
@@ -182,7 +184,7 @@ async def _matching(name, kind, base):
         MATCHING_DIR.mkdir(parents=True, exist_ok=True)
         # Each file appears whole: another request for the same part may be reading it.
         for path, text in ((profile_path, json.dumps(profile)),
-                           (program, matching_part.matching_source(profile, kind, original.name))):
+                           (program, matching_part.matching_source(profile, kind, f"{name}_{kind}.py"))):
             temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
             temporary.write_text(text, encoding="utf-8")
             temporary.replace(path)
@@ -403,7 +405,7 @@ async def adapter_outline_program(name: str, request: Request):
     margin_default = adapter_place.default_margin(profile)
     if mode == "fallback" or DEMO or not os.getenv("BASETEN_API_KEY"):
         source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
-                                                 pattern["label"], margin_default, original.name)
+                                                 pattern["label"], margin_default, f"{name}_adapter.py")
         outline_source, rows, winner = "fallback", [], None
     else:
         rows = await asyncio.to_thread(adapter_outline.search_adapter_outlines, holes_a, holes_b,
@@ -424,7 +426,7 @@ async def adapter_outline_program(name: str, request: Request):
                 winner = repaired["result"]
         if winner is None:
             source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
-                                                     pattern["label"], margin_default, original.name)
+                                                     pattern["label"], margin_default, f"{name}_adapter.py")
             outline_source = "fallback"
         elif str(winner.get("label", "")).startswith("R"):
             source = Path(winner["file"]).read_text(encoding="utf-8")

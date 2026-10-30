@@ -80,7 +80,7 @@ def _rounded_rect_points(x0, y0, x1, y1, radius, steps=12):
     return points
 
 
-def fallback_source(holes_a, holes_b, thickness, label_b, margin_default, source_program="the original"):
+def fallback_source(holes_a, holes_b, thickness, label_b, margin_default, display_name="matching part"):
     """The fallback adapter program (text): a rounded rectangle with margin around every hole.
 
     holes_a are the original's top-face holes (circles and fixed polygons, as measured); holes_b
@@ -124,7 +124,7 @@ def fallback_source(holes_a, holes_b, thickness, label_b, margin_default, source
         data += ["SHAPED_HOLES_A = [", *[f"    [{', '.join(map(_point, points))}]," for points in shaped], "]", ""]
         body += ["    for corners in SHAPED_HOLES_A:", "        part = pk.cut_polygon(part, corners)"]
     return "\n".join([
-        f'"""Adapter plate matching {source_program}: pattern A plus pattern B ({label_b}).',
+        f'"""{display_name}: Adapter plate, pattern A plus pattern B ({label_b}).',
         "Fallback outline by adapter_outline.py: a rounded rectangle with margin around every hole.\"\"\"",
         "import partkit as pk",
         "",

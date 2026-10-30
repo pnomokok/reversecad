@@ -276,6 +276,11 @@ def test_search_and_repair_enforce_the_margin_default(tmp_path):
     assert result["passed"] is False
 
 
+def test_fallback_docstring_uses_the_display_name():
+    source = fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 2.0, "A_light_adapter.py")
+    assert source.startswith('"""A_light_adapter.py: Adapter plate, pattern A plus pattern B (pair).')
+
+
 def test_winner_is_the_passing_outline_with_the_fewest_parameters():
     rows = [{"candidate": 1, "ok": False, "reasons": ["x"]},
             {"candidate": 2, "ok": True, "parameter_count": 5},
