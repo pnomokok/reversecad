@@ -18,6 +18,11 @@ MAX_THICKNESS_MM = 10.0  # or twice the default, if that is more
 ALIGNED_WITHIN_MM = 0.05  # a hole counts as aligned when its center is this close to the original's
 
 
+def split_warning(pieces):
+    """Warning when a gasket outline_offset splits the part into computed `pieces` pieces."""
+    return f"Gasket splits into {pieces} pieces at this offset — try a smaller offset."
+
+
 def _point(point):
     return f"({point[0]!r}, {point[1]!r})"
 

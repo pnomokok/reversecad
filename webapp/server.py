@@ -318,7 +318,10 @@ async def matching_check(name: str, kind: str, request: Request):
     program, overrides, _ = await _target(name, request, kind)
     _, original = await _matching(name, kind, (await request.json()).get("base"))
     matching = await _profile(program, overrides)
-    return {"original": original, "matching": matching, "alignment": matching_part.hole_alignment(original, matching)}
+    pieces = matching.get("solid_count", 1)
+    warning = matching_part.split_warning(pieces) if kind == "spacer" and pieces > 1 else None
+    return {"original": original, "matching": matching, "alignment": matching_part.hole_alignment(original, matching),
+            "pieces": pieces, "warning": warning}
 
 
 @app.get("/api/adapter/presets")
@@ -577,8 +580,11 @@ async def drawing(name: str, request: Request, match: str | None = None):
     """Screen 5: the part's top-face profile and thickness for the technical drawing (mm)."""
     program, overrides, _ = await _target(name, request, match)
     about = replay.winner(name) if match is None else _matching_info(name, match, program)
+    profile = await _profile(program, overrides)
+    if match == "spacer" and profile.get("solid_count", 1) > 1:
+        raise HTTPException(422, matching_part.split_warning(profile["solid_count"]))
     return {"name": about["name"], "program": about["program"], "source": about["source"],
-            "profile": await _profile(program, overrides)}
+            "profile": profile}
 
 
 @app.post("/api/runs/{name}/download")
@@ -589,28 +595,34 @@ async def download(name: str, request: Request, format: str = "stl", match: str 
         raise HTTPException(400, f"format must be one of {', '.join(DOWNLOADS)}")
     program, overrides, label = await _target(name, request, match)
     suffix, media_type = DOWNLOADS[format]
+    profile = None
+    if match == "spacer":  # a split gasket's outline, DXF and PDF would show only one piece: refuse, don't mislead
+        profile = await _profile(program, overrides)
+        pieces = profile.get("solid_count", 1)
+        if pieces > 1:
+            raise HTTPException(422, matching_part.split_warning(pieces))
     try:
-        data = await _download_data(program, overrides, format, label)
+        data = await _download_data(program, overrides, format, label, profile)
     except ValueError as error:  # e.g. the part does not fit on an A3 page
         raise HTTPException(422, str(error))
     filename = f"reversecad_{label}{suffix}"
     return Response(data, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-async def _download_data(program, overrides, format, label):
+async def _download_data(program, overrides, format, label, profile=None):
     if format == "py":  # the parametric program itself, with the slider values as its new defaults
         return replay.replace_defaults(program.read_text(encoding="utf-8"), overrides).encode("utf-8")
     if format == "dxf":
-        return drawing_export.dxf_bytes(await _profile(program, overrides), label)
+        return drawing_export.dxf_bytes(profile or await _profile(program, overrides), label)
     if format == "pdf":
-        return drawing_export.template_pdf(await _profile(program, overrides), label)
+        return drawing_export.template_pdf(profile or await _profile(program, overrides), label)
     if format == "zip":  # every format at once
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
             for part in ("step", "stl", "dxf", "py", "pdf"):
                 try:
                     archive.writestr(f"reversecad_{label}{DOWNLOADS[part][0]}",
-                                     await _download_data(program, overrides, part, label))
+                                     await _download_data(program, overrides, part, label, profile))
                 except ValueError:  # too large for the template: the other files still go in
                     continue
         return stream.getvalue()

@@ -12,6 +12,7 @@ const state = {
   screen: "capture", run: null, live: false, image: null, click: null, analysis: null,
   stream: null, viewer: null, winner: null, done: null, seen: [], expected: null,
   matching: null,  // the matching part on screen: {kind, base: the original's slider values}; winner then describes it
+  splitWarning: null,  // gasket split warning text while a spacer offset breaks the part in pieces
   builds: 0,  // counts model builds; see rebuild
 };
 const $ = (id) => document.getElementById(id);
@@ -380,6 +381,8 @@ function updateCaptureBars() {
 
 function resetResults() {
   state.analysis = null;
+  state.splitWarning = null;
+  updateSplitButtons();
   state.done = null;
   state.winner = null;
   $("measure-results").classList.add("hidden");
@@ -865,6 +868,8 @@ async function showModel(sliderValues = {}) {
   state.viewer.reset();
   $("model-status").textContent = "Building…";
   state.matching = null;
+  state.splitWarning = null;
+  updateSplitButtons();
   setMatchingLayout(null);
   state.viewer.showCompanion(null);
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
@@ -931,6 +936,16 @@ async function showMatching(kind) {
   await rebuild();
 }
 
+function updateSplitButtons() {
+  // A split gasket cannot be downloaded (its outline, DXF and 1:1 PDF would show only one piece):
+  // buttons stay visible but disabled, with the warning as tooltip.
+  document.querySelectorAll("button[data-format]").forEach((b) => {
+    b.disabled = !!state.splitWarning;
+    if (state.splitWarning) b.title = state.splitWarning;
+    else b.removeAttribute("title");
+  });
+}
+
 async function showAlignment(build) {
   // The computed check: both parts as built, drawn on top of each other, and their hole centers compared.
   const check = $("fit-check");
@@ -939,10 +954,20 @@ async function showAlignment(build) {
   if (build !== state.builds) return;
   if (!response.ok) {
     check.textContent = `Not checked: ${answer.detail}`;
+    state.splitWarning = null;  // unknown pieces: let downloads try (the server refuses a split gasket)
+    updateSplitButtons();
     check.classList.add("bad");
     return;
   }
   const { original, matching, alignment: a } = answer;
+  state.splitWarning = (state.matching.kind === "spacer" && answer.warning) || null;
+  updateSplitButtons();
+  if (state.splitWarning) {  // hide the gasket overlay: one piece must not pose as the whole gasket
+    check.textContent = state.splitWarning;
+    check.classList.add("bad");
+    drawOverlay(original, null);
+    return;
+  }
   drawOverlay(original, matching, answer.holes_b, answer.label_b);
   const breakouts = a.breakouts === 1 ? "1 hole breaks through the edge" : `${a.breakouts} holes break through the edge`;
   check.innerHTML = !a.total ? "No holes to align"
@@ -957,6 +982,8 @@ function drawOverlay(original, matching, holesB, labelB) {
   const closed = (points) => `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z`;
   const circle = ([x, y], d) => `M${x - d / 2},${-y}a${d / 2},${d / 2} 0 1,0 ${d},0a${d / 2},${d / 2} 0 1,0 ${-d},0Z`;
   const shape = (p) => closed(p.outline) + p.holes.map((h) => (h.type === "circle" ? circle(h.center, h.diameter) : closed(h.points))).join("");
+  const split = !matching;  // a split gasket hides its overlay: one piece must not pose as the whole
+  matching = matching || { outline: [], holes: [], box: original.box };
   const x0 = Math.min(original.box[0], matching.box[0]);
   const y0 = Math.min(original.box[1], matching.box[1]);
   const x1 = Math.max(original.box[2], matching.box[2]);
@@ -969,6 +996,7 @@ function drawOverlay(original, matching, holesB, labelB) {
   view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/>${bLabel}`;
   $("overlay-b-item").classList.toggle("hidden", !holesB?.length);
   if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB}`;
+  $("overlay-matching-item").classList.toggle("hidden", split);
 }
 
 $("matching-open").addEventListener("click", () => $("matching-choices").classList.toggle("hidden"));
@@ -1251,6 +1279,10 @@ document.querySelectorAll(".view-tools button").forEach((b) => b.addEventListene
 }));
 
 async function downloadFile(format, status = $("download-status")) {
+  if (state.splitWarning && state.matching?.kind === "spacer") {
+    status.textContent = `Not built: ${state.splitWarning}`;
+    return;
+  }
   status.textContent = `Preparing ${format.toUpperCase()}…`;
   const response = await postJSON(`/api/runs/${state.run}/download?format=${format}${matchQuery("&")}`, modelBody());
   if (!response.ok) {
@@ -1468,6 +1500,7 @@ function applyConfig(config) {
 // ---------- export: technical drawing and packages ----------
 async function showExport() {
   if (!state.winner) await showModel();
+  updateSplitButtons();
   setScreen("export");
   const response = await postJSON(`/api/runs/${state.run}/drawing${matchQuery()}`, modelBody());
   if (!response.ok) {

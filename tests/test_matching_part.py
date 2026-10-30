@@ -195,6 +195,38 @@ def test_a_hole_slider_stays_on_the_original_centers():
     assert {h["diameter"] for h in check["matching"]["holes"]} == {4.0}
 
 
+def test_split_warning_names_the_computed_count():
+    assert matching_part.split_warning(2) == "Gasket splits into 2 pieces at this offset — try a smaller offset."
+    assert matching_part.split_warning(3).startswith("Gasket splits into 3 pieces")
+
+
+def test_d_tab_broken_splits_at_minus_8():
+    split = _post("D_tab_broken", "spacer", {"outline_offset": -8.0}, path="/check").json()
+    assert split["pieces"] == 2
+    assert split["warning"] == "Gasket splits into 2 pieces at this offset — try a smaller offset."
+    whole = _post("D_tab_broken", "spacer", {"outline_offset": 0.0}, path="/check").json()
+    assert whole["pieces"] == 1 and whole["warning"] is None
+
+
+def test_split_gasket_downloads_and_drawing_are_refused():
+    body = {"parameters": {"outline_offset": -8.0}, "base": {}}
+    for format in ("stl", "step", "dxf", "py", "pdf", "zip"):
+        answer = client.post(f"/api/runs/D_tab_broken/download?format={format}&match=spacer", json=body)
+        assert answer.status_code == 422, format
+        assert answer.json()["detail"] == matching_part.split_warning(2)
+    assert client.post("/api/runs/D_tab_broken/drawing?match=spacer", json=body).status_code == 422
+    whole = {"parameters": {"outline_offset": 0.0}, "base": {}}
+    assert client.post("/api/runs/D_tab_broken/download?format=stl&match=spacer", json=whole).status_code == 200
+    assert client.post("/api/runs/D_tab_broken/drawing?match=spacer", json=whole).status_code == 200
+
+
+def test_split_refusal_is_the_same_in_the_demo(monkeypatch):
+    monkeypatch.setattr("webapp.server.DEMO", True)
+    body = {"parameters": {"outline_offset": -8.0}, "base": {}}
+    answer = client.post("/api/runs/D_tab_broken/download?format=stl&match=spacer", json=body)
+    assert answer.status_code == 422 and "splits into 2 pieces" in answer.json()["detail"]
+
+
 def test_bad_requests_are_refused():
     assert _post("A_light", "lid").status_code == 400
     assert _post("A_light", "cover", {"length": 5.0}, path="/check").status_code == 400
