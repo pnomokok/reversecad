@@ -12,6 +12,7 @@ const state = {
   screen: "capture", run: null, live: false, image: null, click: null, analysis: null,
   stream: null, viewer: null, winner: null, done: null, seen: [], expected: null,
   matching: null,  // the matching part on screen: {kind, base: the original's slider values}; winner then describes it
+  builds: 0,  // counts model builds; see rebuild
 };
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -794,24 +795,30 @@ const matchQuery = (separator = "?") => (state.matching ? `${separator}match=${s
 const modelBody = () => ({ parameters: currentValues(), base: state.matching?.base });
 
 async function rebuild() {
+  // Only the newest build may touch the screen: an older answer can arrive after it on a slow connection.
+  const build = ++state.builds;
   const status = $("model-status");
   status.textContent = "Building…";
   const started = performance.now();
   const response = await postJSON(`/api/runs/${state.run}/model${matchQuery()}`, modelBody());
+  if (build !== state.builds) return;
   if (!response.ok) {
     status.textContent = `Not built: ${(await response.json()).detail}`;
     $("fit-check").textContent = "";
     return;
   }
   const features = JSON.parse(response.headers.get("X-Model-Features") || "null");
-  state.viewer.show(await response.arrayBuffer(), features);
+  const model = await response.arrayBuffer();
+  if (build !== state.builds) return;
+  state.viewer.show(model, features);
   state.viewer.setChanged(changedLabels());
   if (features) {
     const [x0, y0, z0, x1, y1, z1] = features.box;
     $("model-size").innerHTML = `<strong>${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${(z1 - z0).toFixed(2)} mm</strong>`
       + ` · ${features.holes.length} round holes`;
   }
-  if (state.matching) await showAlignment();
+  if (state.matching) await showAlignment(build);
+  if (build !== state.builds) return;
   status.textContent = `Built in ${((performance.now() - started) / 1000).toFixed(1)} s`;
 }
 
@@ -853,6 +860,7 @@ async function showModel(sliderValues = {}) {
   if (!state.viewer) state.viewer = createViewer($("viewer"), { shiftRight: 140 });  // clear of the capture-fit inset
   state.viewer.resize();
   state.viewer.reset();
+  $("model-status").textContent = "Building…";
   state.matching = null;
   setMatchingLayout(null);
   state.viewer.showCompanion(null);
@@ -895,7 +903,11 @@ function setMatchingLayout(info) {
 
 async function showMatching(kind) {
   const base = currentValues();
-  const failed = async (response) => { $("matching-status").textContent = `Not built: ${(await response.json()).detail}`; };
+  $("model-status").textContent = "Building…";
+  const failed = async (response) => {
+    $("model-status").textContent = "";
+    $("matching-status").textContent = `Not built: ${(await response.json()).detail}`;
+  };
   const info = await postJSON(`/api/runs/${state.run}/matching/${kind}`, { base });
   if (!info.ok) return failed(info);
   const original = await postJSON(`/api/runs/${state.run}/model`, { parameters: base });
@@ -916,16 +928,18 @@ async function showMatching(kind) {
   await rebuild();
 }
 
-async function showAlignment() {
+async function showAlignment(build) {
   // The computed check: both parts as built, drawn on top of each other, and their hole centers compared.
   const check = $("fit-check");
   const response = await postJSON(`/api/runs/${state.run}/matching/${state.matching.kind}/check`, modelBody());
+  const answer = await response.json();
+  if (build !== state.builds) return;
   if (!response.ok) {
-    check.textContent = `Not checked: ${(await response.json()).detail}`;
+    check.textContent = `Not checked: ${answer.detail}`;
     check.classList.add("bad");
     return;
   }
-  const { original, matching, alignment: a } = await response.json();
+  const { original, matching, alignment: a } = answer;
   drawOverlay(original, matching);
   check.textContent = !a.total ? "No holes to align"
     : `Holes aligned: ${a.aligned}/${a.total}${a.max_offset_mm === null ? "" : `, max offset ${a.max_offset_mm.toFixed(3)} mm`}`;
