@@ -85,6 +85,7 @@ Every model call is logged per run with its tokens and estimated cost (`usage.js
 3. **Candidates**: programs arrive one by one with their silhouette, IoU, parameter count and, if rejected, why.
 4. **Model**: the result in 3D; one slider per named parameter rebuilds the part when released (about 0.3 s).
 5. **Download**: STL (mesh), STEP (solid) or the CadQuery program (`.py`) with the slider values as its defaults.
+6. **Make a matching part** (on the model screen, no model call, no API key): a **cover** (same outline and holes, own thickness) or a **spacer / gasket** (same holes, outline offset, 1 mm thick). It gets its own named parameters and every export above; the original stays next to it, and a top-view overlay and a computed line ("Holes aligned: 4/4, max offset 0.000 mm") show that the holes line up.
 
 ## Command-line scripts
 
@@ -168,6 +169,7 @@ Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the
 | `model_view.py`, `candidates.py`, `partkit.py`, `prompt_suggestions.py` | What the model sees, the prompt, and the helper library the programs use |
 | `run_candidate.py`, `candidate_runner.py`, `build_worker.py` | Screened execution of generated programs in separate processes |
 | `iou.py`, `deviation_check.py`, `design_intent.py`, `baseline_cad.py` | Scoring, limits, design-intent test and the no-model baseline |
+| `matching_part.py` | Covers and spacers generated from a built part, and the hole alignment check |
 | `e2e_pipeline.py` | The whole pipeline for one scene or photo |
 | `repair.py`, `repair_inputs.py`, `break_cues.py`, `completion.py` | Muse Wonder: repair of failed candidates, break cues and completion suggestions |
 | `sam_decode.py`, `usage_ledger.py` | Fast SAM mask decoding (identical to the library's), per-run model usage and cost |

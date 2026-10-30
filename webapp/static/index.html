@@ -196,7 +196,7 @@
     <!-- ================= EDIT ================= -->
     <section class="screen hidden" id="screen-edit">
       <div class="subbar">
-        <span class="subbar-title"><span class="dot-accent"></span>ACTIVE MODEL</span>
+        <span class="subbar-title"><span class="dot-accent"></span><span id="model-title">ACTIVE MODEL</span></span>
         <span class="subbar-text" id="model-size"></span>
         <span class="chip-muted" id="model-program"></span>
         <span class="subbar-right">
@@ -211,6 +211,12 @@
             <div class="fit-head"><span class="label-strong"><span class="dot-accent"></span><span id="fit-title">CAPTURE FIT</span></span><span class="chip-accent" id="fit-iou"></span></div>
             <img id="fit-image" alt="top-down photo with the model's silhouette outline">
             <table class="values" id="fit-table"></table>
+            <svg class="overlay-view hidden" id="overlay-view" role="img" aria-label="top view of the matching part over the original"></svg>
+            <div class="overlay-legend hidden" id="overlay-legend">
+              <span><i class="swatch swatch-original"></i>Original</span>
+              <span><i class="swatch swatch-matching"></i><span id="overlay-name"></span></span>
+            </div>
+            <p class="fit-check hidden" id="fit-check"></p>
           </div>
           <div class="view-tools">
             <button data-view="iso" class="active" title="Isometric view"><span class="icon">deployed_code</span></button>
@@ -219,7 +225,11 @@
           </div>
           <div class="model-status" id="model-status"></div>
         </div>
-        <aside class="edit-panel">
+        <aside class="edit-panel" id="edit-panel">
+          <div class="matching-bar hidden" id="matching-bar">
+            <span class="matching-name" id="matching-name"></span>
+            <button id="matching-back"><span class="icon">arrow_back</span>Back to original</button>
+          </div>
           <div class="edit-panel-head">
             <div><h2>Design parameters</h2><span class="label">named in the program</span></div>
             <button class="icon-button" id="reset-parameters" title="Reset to the program's values"><span class="icon">restart_alt</span></button>
@@ -236,6 +246,14 @@
             </div>
           </div>
           <div class="sliders" id="sliders"></div>
+          <div class="matching-block" id="matching-block">
+            <button class="matching-open" id="matching-open"><span class="icon">layers</span>Make a matching part</button>
+            <div class="matching-choices hidden" id="matching-choices">
+              <button data-kind="cover"><strong>Cover</strong><span>Same outline and holes, own thickness</span></button>
+              <button data-kind="spacer"><strong>Spacer / gasket</strong><span>Same holes, outline offset, 1 mm thick</span></button>
+            </div>
+            <p class="status-line" id="matching-status"></p>
+          </div>
           <div class="voice-card" id="voice-card">
             <div class="voice-top">
               <button class="mic" id="voice-mic" title="Speak a command (Muse Voice Transcribe)" disabled><span class="icon">mic</span></button>

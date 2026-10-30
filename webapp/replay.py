@@ -398,12 +398,6 @@ def capture_fit_png(name):
     return cv2.imencode(".png", crop)[1].tobytes()
 
 
-def program_with_defaults(name, values):
-    """The result program's source with build_part's defaults replaced by `values` (name -> number)."""
-    path, _ = result_program(name)
-    return replace_defaults(path.read_text(encoding="utf-8"), values)
-
-
 def replace_defaults(source, values):
     """A program's source with build_part's defaults replaced by `values` (name -> number).
 

@@ -37,6 +37,17 @@ def outline_from_points(points, thickness):
     return cq.Workplane("XY").polyline([tuple(map(float, p)) for p in points]).close().extrude(thickness)
 
 
+def offset_outline(points, distance, thickness):
+    """Extrude the closed outline moved outward by distance (negative = inward); corners stay sharp.
+
+    Not in __all__: that list is the model's prompt, and matching parts are made without a model.
+    """
+    if distance == 0:
+        return outline_from_points(points, thickness)
+    outline = cq.Workplane("XY").polyline([tuple(map(float, p)) for p in points]).close()
+    return outline.offset2D(distance, "intersection").extrude(thickness)
+
+
 def symmetric_points(spacing_x, spacing_y=0.0, center=(0.0, 0.0)):
     """Points placed symmetrically about center: the corners of a spacing_x by spacing_y rectangle
     (2 points if one spacing is 0, 1 point if both are)."""

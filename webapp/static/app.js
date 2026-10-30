@@ -4,12 +4,14 @@
 //   Edit:    the result in 3D with dimension labels, a slider per named parameter, and downloads.
 // Every number shown comes from the back end or from the built model; nothing is made up for display.
 // ?run=<name>&step=capture|measure|search|edit opens a saved run on that screen (screenshots, videos);
-// with step=edit, &set=<parameter>:<value>,... also moves sliders.
+// with step=edit, &set=<parameter>:<value>,... also moves sliders; with step=edit or export, &match=cover|spacer
+// opens that matching part first.
 import { createViewer } from "./viewer.js";
 
 const state = {
   screen: "capture", run: null, live: false, image: null, click: null, analysis: null,
   stream: null, viewer: null, winner: null, done: null, seen: [], expected: null,
+  matching: null,  // the matching part on screen: {kind, base: the original's slider values}; winner then describes it
 };
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -746,7 +748,7 @@ async function showNoDesign(show) {
     + (share !== null ? `<div class="bar"><span style="width:${Math.min(100, 100 * share).toFixed(0)}%"></span></div>` : "") + `</div>`).join("");
 }
 
-$("use-measured").addEventListener("click", showModel);
+$("use-measured").addEventListener("click", () => showModel());
 $("repair-again").addEventListener("click", () => {
   // Muse Wonder repairs the saved candidates again; a passing repair becomes the result.
   const status = $("repair-status");
@@ -783,16 +785,22 @@ function changedLabels() {
   return [...document.querySelectorAll("#sliders .slider.changed input")].map((i) => labelKey(i.name)).filter(Boolean);
 }
 
+function postJSON(url, body) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+// What the model, drawing and download requests add for a matching part (nothing for the original).
+const matchQuery = (separator = "?") => (state.matching ? `${separator}match=${state.matching.kind}` : "");
+const modelBody = () => ({ parameters: currentValues(), base: state.matching?.base });
+
 async function rebuild() {
   const status = $("model-status");
   status.textContent = "Building…";
   const started = performance.now();
-  const response = await fetch(`/api/runs/${state.run}/model`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parameters: currentValues() }),
-  });
+  const response = await postJSON(`/api/runs/${state.run}/model${matchQuery()}`, modelBody());
   if (!response.ok) {
     status.textContent = `Not built: ${(await response.json()).detail}`;
+    $("fit-check").textContent = "";
     return;
   }
   const features = JSON.parse(response.headers.get("X-Model-Features") || "null");
@@ -803,6 +811,7 @@ async function rebuild() {
     $("model-size").innerHTML = `<strong>${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${(z1 - z0).toFixed(2)} mm</strong>`
       + ` · ${features.holes.length} round holes`;
   }
+  if (state.matching) await showAlignment();
   status.textContent = `Built in ${((performance.now() - started) / 1000).toFixed(1)} s`;
 }
 
@@ -813,8 +822,8 @@ function slider(parameter) {
   const row = document.createElement("label");
   row.className = "slider";
   // A step of 0.01 keeps the program's own value exact (with 0.1 the browser snapped 40.26 to 40.3).
-  const min = (value - span).toFixed(2);
-  const max = (value + span).toFixed(2);
+  const min = (parameter.min ?? value - span).toFixed(2);
+  const max = (parameter.max ?? value + span).toFixed(2);
   row.innerHTML = `<span class="slider-head"><span class="name">${prettyName(parameter.name)}</span><output>${value}${unit}</output></span>
     <input type="range" name="${parameter.name}" min="${min}" max="${max}" step="0.01" value="${value}">
     <span class="range"><span>${min}</span><span class="default">PROGRAM: ${value}</span><span>${max}</span></span>`;
@@ -829,11 +838,24 @@ function slider(parameter) {
   return row;
 }
 
-async function showModel() {
+function setSliders(values) {
+  // Move sliders as a user would.
+  for (const [name, value] of Object.entries(values)) {
+    const input = document.querySelector(`#sliders input[name="${name}"]`);
+    if (!input) continue;
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+  }
+}
+
+async function showModel(sliderValues = {}) {
   setScreen("edit");
   if (!state.viewer) state.viewer = createViewer($("viewer"), { shiftRight: 140 });  // clear of the capture-fit inset
   state.viewer.resize();
   state.viewer.reset();
+  state.matching = null;
+  setMatchingLayout(null);
+  state.viewer.showCompanion(null);
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
   $("model-program").textContent = `Program ${w.program}`;
@@ -845,12 +867,89 @@ async function showModel() {
   const sliders = $("sliders");
   sliders.innerHTML = "";
   w.parameters.forEach((p) => sliders.appendChild(slider(p)));
+  setSliders(sliderValues);
   await rebuild();
   state.voiceChanges = [];
   $("voice-proposal")?.classList.add("hidden");
   await showCompletion();
 }
-$("to-model").addEventListener("click", showModel);
+$("to-model").addEventListener("click", () => showModel());
+
+// ---------- matching part: a cover or spacer made from the built original, no model involved ----------
+function setMatchingLayout(info) {
+  // The Edit screen for a matching part (info) or the original (null).
+  $("edit-panel").classList.toggle("matching-mode", !!info);
+  $("matching-bar").classList.toggle("hidden", !info);
+  $("matching-choices").classList.add("hidden");
+  $("matching-status").textContent = "";
+  $("model-title").textContent = info ? `MATCHING · ${info.title}` : "ACTIVE MODEL";
+  $("matching-name").textContent = info ? info.title : "";
+  $("overlay-name").textContent = info ? info.title : "";
+  ["overlay-view", "overlay-legend", "fit-check"].forEach((id) => $(id).classList.toggle("hidden", !info));
+  ["fit-image", "fit-table"].forEach((id) => $(id).classList.toggle("hidden", !!info));
+  if (info) {
+    $("fit-title").textContent = "TOP VIEW OVERLAY";
+    $("fit-iou").textContent = "";
+  }
+}
+
+async function showMatching(kind) {
+  const base = currentValues();
+  const failed = async (response) => { $("matching-status").textContent = `Not built: ${(await response.json()).detail}`; };
+  const info = await postJSON(`/api/runs/${state.run}/matching/${kind}`, { base });
+  if (!info.ok) return failed(info);
+  const original = await postJSON(`/api/runs/${state.run}/model`, { parameters: base });
+  if (!original.ok) return failed(original);
+  clearVoicePreview();
+  state.winner = await info.json();
+  state.matching = { kind, base };
+  const w = state.winner;
+  setMatchingLayout(w);
+  $("model-program").textContent = `Program ${w.program}`;
+  $("model-source").textContent = `Source: ${w.source}`;
+  $("sliders").innerHTML = "";
+  w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
+  state.viewer.showSuggestion(null);
+  state.viewer.showCompanion(await original.arrayBuffer(), "ORIGINAL");
+  state.viewer.reset();  // frame both parts
+  document.querySelectorAll(".view-tools button").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
+  await rebuild();
+}
+
+async function showAlignment() {
+  // The computed check: both parts as built, drawn on top of each other, and their hole centers compared.
+  const check = $("fit-check");
+  const response = await postJSON(`/api/runs/${state.run}/matching/${state.matching.kind}/check`, modelBody());
+  if (!response.ok) {
+    check.textContent = `Not checked: ${(await response.json()).detail}`;
+    check.classList.add("bad");
+    return;
+  }
+  const { original, matching, alignment: a } = await response.json();
+  drawOverlay(original, matching);
+  check.textContent = !a.total ? "No holes to align"
+    : `Holes aligned: ${a.aligned}/${a.total}${a.max_offset_mm === null ? "" : `, max offset ${a.max_offset_mm.toFixed(3)} mm`}`;
+  check.classList.toggle("bad", a.aligned < a.total);
+}
+
+function drawOverlay(original, matching) {
+  // Top view in mm (SVG's y runs down, so y is negated): the original see-through, the matching part as a line.
+  const closed = (points) => `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z`;
+  const circle = ([x, y], d) => `M${x - d / 2},${-y}a${d / 2},${d / 2} 0 1,0 ${d},0a${d / 2},${d / 2} 0 1,0 ${-d},0Z`;
+  const shape = (p) => closed(p.outline) + p.holes.map((h) => (h.type === "circle" ? circle(h.center, h.diameter) : closed(h.points))).join("");
+  const x0 = Math.min(original.box[0], matching.box[0]);
+  const y0 = Math.min(original.box[1], matching.box[1]);
+  const x1 = Math.max(original.box[2], matching.box[2]);
+  const y1 = Math.max(original.box[3], matching.box[3]);
+  const margin = 0.04 * Math.max(x1 - x0, y1 - y0);
+  const view = $("overlay-view");
+  view.setAttribute("viewBox", `${x0 - margin} ${-y1 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`);
+  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/>`;
+}
+
+$("matching-open").addEventListener("click", () => $("matching-choices").classList.toggle("hidden"));
+document.querySelectorAll("#matching-choices button").forEach((b) => b.addEventListener("click", () => showMatching(b.dataset.kind)));
+$("matching-back").addEventListener("click", () => showModel(state.matching.base));
 
 async function showCompletion() {
   // The "possible break" card: shown when Muse Wonder suggested a completion and it was not ignored.
@@ -975,10 +1074,7 @@ document.querySelectorAll(".view-tools button").forEach((b) => b.addEventListene
 
 async function downloadFile(format, status = $("download-status")) {
   status.textContent = `Preparing ${format.toUpperCase()}…`;
-  const response = await fetch(`/api/runs/${state.run}/download?format=${format}`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parameters: currentValues() }),
-  });
+  const response = await postJSON(`/api/runs/${state.run}/download?format=${format}${matchQuery("&")}`, modelBody());
   if (!response.ok) {
     status.textContent = `Not built: ${(await response.json()).detail}`;
     return;
@@ -1191,8 +1287,7 @@ function applyConfig(config) {
 async function showExport() {
   if (!state.winner) await showModel();
   setScreen("export");
-  const body = JSON.stringify({ parameters: currentValues() });
-  const response = await fetch(`/api/runs/${state.run}/drawing`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  const response = await postJSON(`/api/runs/${state.run}/drawing${matchQuery()}`, modelBody());
   if (!response.ok) {
     $("export-status").textContent = `Not built: ${(await response.json()).detail}`;
     return;
@@ -1206,7 +1301,7 @@ async function showExport() {
   $("drawing").innerHTML = drawingSVG(data);
   $("fact-stl").textContent = state.viewer ? `${state.viewer.triangleCount().toLocaleString("en-US")} triangles` : "";
   $("fact-dxf").textContent = `${1 + p.holes.length} closed contours`;
-  const program = await fetch(`/api/runs/${state.run}/download?format=py`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  const program = await postJSON(`/api/runs/${state.run}/download?format=py${matchQuery("&")}`, modelBody());
   const source = await program.text();
   $("code-preview").textContent = source.split("\n").filter((line) => line.trim()).slice(0, 8).join("\n");
   $("fact-py").textContent = `${state.winner.parameters.length} named parameters`;
@@ -1363,18 +1458,14 @@ async function openDeepLink(run, params) {
   await streamCandidates();
   if (step !== "edit" && step !== "export") return;
   await showModel();
+  if (params.get("match")) await showMatching(params.get("match"));
   if (step === "export") {
     await showExport();
     return;
   }
   // &set=length:95,hole_diameter:7 moves sliders as a user would (to show a changed state).
   const changes = (params.get("set") || "").split(",").filter(Boolean).map((pair) => pair.split(":"));
-  for (const [name, value] of changes) {
-    const input = document.querySelector(`#sliders input[name="${name}"]`);
-    if (!input) continue;
-    input.value = value;
-    input.dispatchEvent(new Event("input"));
-  }
+  setSliders(Object.fromEntries(changes));
   if (changes.length) await rebuild();
   // &say=make the holes 2 mm bigger types a voice command (shows the proposal, not applied).
   if (params.get("say")) {

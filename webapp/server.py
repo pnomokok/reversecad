@@ -9,6 +9,7 @@ Run from the repository root:
 then open http://127.0.0.1:8000
 """
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -24,6 +25,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import drawing_export
+import matching_part
 import voice_edit
 from webapp import live, replay
 from webapp.builder import Builder
@@ -43,6 +45,7 @@ def _needs_keys():
 
 STATIC = Path(__file__).parent / "static"
 MODEL_DIR = Path("outputs") / "web"  # temporary model files (git-ignored)
+MATCHING_DIR = MODEL_DIR / "matching"  # generated matching programs, named by what they were made from
 REPLAY_DELAY_S = 0.4  # pause between replayed candidate events
 builder = Builder()  # one long-running build process (CadQuery loads once)
 
@@ -133,26 +136,75 @@ def run_winner(name: str):
         raise HTTPException(404, str(error))
 
 
-async def _parameters(name, request):
-    """The posted {"parameters": {...}}, checked: only the program's own numeric parameters."""
-    try:
-        allowed = {p["name"] for p in replay.winner(name)["parameters"]}
-    except FileNotFoundError as error:
-        raise HTTPException(404, str(error))
+def _checked(values, allowed):
+    """Posted parameter values, checked: only the program's own numeric parameters."""
     overrides = {}
-    for key, value in ((await request.json()).get("parameters") or {}).items():
+    for key, value in (values or {}).items():
         if key not in allowed or not isinstance(value, (int, float)) or isinstance(value, bool):
             raise HTTPException(400, f"unknown or non-numeric parameter: {key}")
         overrides[key] = float(value)
     return overrides
 
 
-async def _export(name, overrides, suffix, with_features=False):
-    """Build the result program with overrides into a .stl or .step file; return its bytes
+def _result_names(name):
+    """The names of the run's result program's parameters."""
+    try:
+        return {p["name"] for p in replay.winner(name)["parameters"]}
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+
+
+async def _parameters(name, request):
+    """The posted {"parameters": {...}}, checked against the run's result program."""
+    return _checked((await request.json()).get("parameters"), _result_names(name))
+
+
+async def _matching(name, kind, base):
+    """(program path, the original's top-face profile) for a matching part of the run's result built
+    with the `base` values.
+
+    The request carries everything needed, so no server keeps a session; the files only save rebuilding
+    the original on every slider move. Their name is a hash of what they were made from.
+    """
+    if kind not in matching_part.KINDS:
+        raise HTTPException(400, f"a matching part is one of: {', '.join(matching_part.KINDS)}")
+    overrides = _checked(base, _result_names(name))
+    original, _ = replay.result_program(name)
+    made_from = json.dumps([kind, original.read_text(encoding="utf-8"), overrides], sort_keys=True)
+    key = hashlib.sha256(made_from.encode("utf-8")).hexdigest()[:24]
+    program, profile_path = MATCHING_DIR / f"{key}.py", MATCHING_DIR / f"{key}.json"
+    if not program.exists():
+        profile = await _profile(original, overrides)
+        MATCHING_DIR.mkdir(parents=True, exist_ok=True)
+        # Each file appears whole: another request for the same part may be reading it.
+        for path, text in ((profile_path, json.dumps(profile)),
+                           (program, matching_part.matching_source(profile, kind, original.name))):
+            temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            temporary.write_text(text, encoding="utf-8")
+            temporary.replace(path)
+    return program, json.loads(profile_path.read_text(encoding="utf-8"))
+
+
+async def _target(name, request, match):
+    """What a model, drawing or download request builds: (program path, overrides, name for its files).
+
+    Without `match`, the run's result. With it ("cover", "spacer"), the matching part of the result built
+    with the posted "base" values; "parameters" are then the matching program's own.
+    """
+    if match is None:
+        overrides = await _parameters(name, request)
+        return replay.result_program(name)[0], overrides, name
+    body = await request.json()
+    program, _ = await _matching(name, match, body.get("base"))
+    allowed = {p["name"] for p in matching_part.slider_parameters(program.read_text(encoding="utf-8"))}
+    return program, _checked(body.get("parameters"), allowed), f"{name}_{match}"
+
+
+async def _export(program, overrides, suffix, with_features=False):
+    """Build a program with overrides into a .stl or .step file; return its bytes
     (and, with_features, the model's bounding box and top-face holes)."""
-    program, _ = replay.result_program(name)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    output = (MODEL_DIR / f"{name}_{uuid.uuid4().hex}{suffix}").resolve()
+    output = (MODEL_DIR / f"{uuid.uuid4().hex}{suffix}").resolve()
     features_path = output.with_suffix(".json") if with_features else None
     error = await asyncio.to_thread(builder.build, program, output, overrides, None, features_path)
     if error:
@@ -167,14 +219,43 @@ async def _export(name, overrides, suffix, with_features=False):
 
 
 @app.post("/api/runs/{name}/model")
-async def build_model(name: str, request: Request):
+async def build_model(name: str, request: Request, match: str | None = None):
     """Screen 4: build with the posted parameter values; binary STL for the viewer.
 
     Body: {"parameters": {"name": value, ...}}; only the program's own numeric parameters are accepted.
+    ?match=cover|spacer builds a matching part instead (see _target).
     The X-Model-Features header carries the model's bounding box and top-face holes (JSON, mm).
     """
-    data, features = await _export(name, await _parameters(name, request), ".stl", with_features=True)
+    program, overrides, _ = await _target(name, request, match)
+    data, features = await _export(program, overrides, ".stl", with_features=True)
     return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
+
+
+def _matching_info(name, kind):
+    """How a matching part is named on screen and in its files."""
+    label = f"{name}_{kind}"
+    return {"name": label, "program": f"{label}.py", "kind": kind, "title": matching_part.KINDS[kind],
+            "source": "built part, no model"}
+
+
+@app.post("/api/runs/{name}/matching/{kind}")
+async def matching_program(name: str, kind: str, request: Request):
+    """A matching part of the result built with {"base": {...}}: its program and named parameters."""
+    program, _ = await _matching(name, kind, (await request.json()).get("base"))
+    return {**_matching_info(name, kind),
+            "parameters": matching_part.slider_parameters(program.read_text(encoding="utf-8"))}
+
+
+@app.post("/api/runs/{name}/matching/{kind}/check")
+async def matching_check(name: str, kind: str, request: Request):
+    """The original's and the matching part's top faces as built, and how their holes line up.
+
+    Body: {"base": original's values, "parameters": matching part's values}.
+    """
+    program, overrides, _ = await _target(name, request, kind)
+    _, original = await _matching(name, kind, (await request.json()).get("base"))
+    matching = await _profile(program, overrides)
+    return {"original": original, "matching": matching, "alignment": matching_part.hole_alignment(original, matching)}
 
 
 @app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])
@@ -298,11 +379,10 @@ DOWNLOADS = {  # format -> (file suffix, media type)
 }
 
 
-async def _profile(name, overrides):
+async def _profile(program, overrides):
     """The built part's top face (outline, holes, thickness) for drawings, DXF and the 1:1 template."""
-    program, _ = replay.result_program(name)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    output = (MODEL_DIR / f"{name}_{uuid.uuid4().hex}.profile.json").resolve()
+    output = (MODEL_DIR / f"{uuid.uuid4().hex}.profile.json").resolve()
     error = await asyncio.to_thread(builder.build, program, output, overrides)
     if error:
         raise HTTPException(422, f"the program did not build with these values: {error.splitlines()[-1]}")
@@ -312,47 +392,48 @@ async def _profile(name, overrides):
 
 
 @app.post("/api/runs/{name}/drawing")
-async def drawing(name: str, request: Request):
+async def drawing(name: str, request: Request, match: str | None = None):
     """Screen 5: the part's top-face profile and thickness for the technical drawing (mm)."""
-    overrides = await _parameters(name, request)
-    winner = replay.winner(name)
-    return {"name": name, "program": winner["program"], "source": winner["source"],
-            "profile": await _profile(name, overrides)}
+    program, overrides, _ = await _target(name, request, match)
+    about = replay.winner(name) if match is None else _matching_info(name, match)
+    return {"name": about["name"], "program": about["program"], "source": about["source"],
+            "profile": await _profile(program, overrides)}
 
 
 @app.post("/api/runs/{name}/download")
-async def download(name: str, request: Request, format: str = "stl"):
+async def download(name: str, request: Request, format: str = "stl", match: str | None = None):
     """Screen 5: the part with the current slider values as STL, STEP, DXF, the CadQuery program (.py),
     the 1:1 print template (PDF) or all of them (.zip)."""
     if format not in DOWNLOADS:
         raise HTTPException(400, f"format must be one of {', '.join(DOWNLOADS)}")
-    overrides = await _parameters(name, request)
+    program, overrides, label = await _target(name, request, match)
     suffix, media_type = DOWNLOADS[format]
     try:
-        data = await _download_data(name, overrides, format)
+        data = await _download_data(program, overrides, format, label)
     except ValueError as error:  # e.g. the part does not fit on an A3 page
         raise HTTPException(422, str(error))
-    filename = f"reversecad_{name}{suffix}"
+    filename = f"reversecad_{label}{suffix}"
     return Response(data, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-async def _download_data(name, overrides, format):
+async def _download_data(program, overrides, format, label):
     if format == "py":  # the parametric program itself, with the slider values as its new defaults
-        return replay.program_with_defaults(name, overrides).encode("utf-8")
+        return replay.replace_defaults(program.read_text(encoding="utf-8"), overrides).encode("utf-8")
     if format == "dxf":
-        return drawing_export.dxf_bytes(await _profile(name, overrides), name)
+        return drawing_export.dxf_bytes(await _profile(program, overrides), label)
     if format == "pdf":
-        return drawing_export.template_pdf(await _profile(name, overrides), name)
+        return drawing_export.template_pdf(await _profile(program, overrides), label)
     if format == "zip":  # every format at once
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
             for part in ("step", "stl", "dxf", "py", "pdf"):
                 try:
-                    archive.writestr(f"reversecad_{name}{DOWNLOADS[part][0]}", await _download_data(name, overrides, part))
+                    archive.writestr(f"reversecad_{label}{DOWNLOADS[part][0]}",
+                                     await _download_data(program, overrides, part, label))
                 except ValueError:  # too large for the template: the other files still go in
                     continue
         return stream.getvalue()
-    return await _export(name, overrides, DOWNLOADS[format][0])
+    return await _export(program, overrides, DOWNLOADS[format][0])
 
 
 # ---------- live mode ----------

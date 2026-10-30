@@ -33,6 +33,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   const extensionMaterial = new THREE.LineDashedMaterial({ color: css("--color-extension-line"), dashSize: 1.2, gapSize: 1.2 });
 
   let part = null;
+  let companion = null;
   let annotations = null;
   let framedRadius = null;
   let changed = new Set();
@@ -54,7 +55,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     camera.updateProjectionMatrix();
   }
 
-  function setView(view, box = part && new THREE.Box3().setFromObject(part)) {
+  function framedBox() {
+    // What the view frames: the part and, if shown, the see-through original next to it.
+    const box = new THREE.Box3().setFromObject(part);
+    return companion ? box.expandByObject(companion) : box;
+  }
+
+  function setView(view, box = part && framedBox()) {
     if (!box) return;
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
@@ -151,6 +158,42 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     if (!framedRadius) setView("iso");  // keep the user's view when a slider rebuilds the part
   }
 
+  const companionMaterial = new THREE.MeshStandardMaterial({
+    color: css("--color-model"), transparent: true, opacity: 0.3, metalness: 0, roughness: 0.75, depthWrite: false,
+  });
+
+  function showCompanion(stlBuffer, labelText = null) {
+    // The original next to a matching part: see-through, behind it along +Y, clear of the largest outline
+    // offset the slider allows (+10 mm on both parts' facing edges); null hides it.
+    if (companion) {
+      scene.remove(companion);
+      companion.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.isCSS2DObject) o.element.remove();
+      });
+      companion = null;
+    }
+    if (!stlBuffer) return;
+    const geometry = new STLLoader().parse(stlBuffer);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const size = box.getSize(new THREE.Vector3());
+    companion = new THREE.Group();
+    companion.add(new THREE.Mesh(geometry, companionMaterial));
+    companion.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
+    companion.position.y = size.y + Math.max(size.y * 0.4, 16);
+    if (labelText) {
+      const element = document.createElement("div");
+      element.className = "dim-label";
+      element.textContent = labelText;
+      const tag = new CSS2DObject(element);
+      tag.position.set(box.getCenter(new THREE.Vector3()).x, box.max.y, box.max.z);
+      companion.add(tag);
+    }
+    scene.add(companion);
+  }
+
   let suggestion = null;
   const suggestionMaterial = new THREE.MeshStandardMaterial({
     color: css("--color-selected"), transparent: true, opacity: 0.55, metalness: 0, roughness: 0.6, depthWrite: false,
@@ -216,5 +259,5 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   loop();
   // Triangles of the shown part's mesh (the STL the viewer loaded).
   const triangleCount = () => (part ? part.children[0].geometry.attributes.position.count / 3 : 0);
-  return { show, showSuggestion, resize, setView, setChanged, previewLabel, triangleCount, reset: () => { framedRadius = null; } };
+  return { show, showCompanion, showSuggestion, resize, setView, setChanged, previewLabel, triangleCount, reset: () => { framedRadius = null; } };
 }
