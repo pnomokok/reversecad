@@ -87,15 +87,26 @@ def hole_wall(first, second):
     return _polygon_to_polygon(first["polygon"], second["polygon"])
 
 
-def _profile_hole(hole):
-    """A built profile's hole in wall form."""
+def profile_hole(hole):
+    """A built profile's hole in wall form: {"circle": (x, y, d)} or {"polygon": [(x, y), ...]}."""
     if hole["type"] == "circle":
         (x, y), d = hole["center"], hole["diameter"]
         return {"circle": (x, y, d)}
     return {"polygon": [tuple(p) for p in hole["points"]]}
 
 
-def _hole_center(hole):
+def hole_to_outline(hole, outline):
+    """Smallest distance (mm) from a hole's boundary to the closed outline polygon."""
+    corners = [tuple(p) for p in outline]
+    edges = list(zip(corners, corners[1:] + corners[:1]))
+    if "circle" in hole:
+        (x, y, d) = hole["circle"]
+        return min(_point_to_segment((x, y), a, b) for a, b in edges) - d / 2
+    hole_edges = list(zip(hole["polygon"], hole["polygon"][1:] + hole["polygon"][:1]))
+    return min(_segment_distance(a, b, c, d) for a, b in hole_edges for c, d in edges)
+
+
+def hole_center(hole):
     if "circle" in hole:
         return hole["circle"][:2]
     xs, ys = zip(*hole["polygon"])
@@ -109,7 +120,7 @@ def place_pattern(profile, pattern):
     when no candidate keeps every wall at MIN_WALL_MM. profile is the built original's top face
     (outline box, holes); pattern is a validated pattern B (holes relative to its centre).
     """
-    holes_a = [_profile_hole(h) for h in profile["holes"]]
+    holes_a = [profile_hole(h) for h in profile["holes"]]
     holes_b = [{"circle": (h["x"], h["y"], h["d"])} for h in pattern["holes"]]
     pairs = lambda holes: [hole_wall(a, b) for i, a in enumerate(holes) for b in holes[i + 1:]]
     wall_aa = min(pairs(holes_a), default=None)  # None with fewer than two holes (nothing to check)
@@ -117,7 +128,7 @@ def place_pattern(profile, pattern):
     if (wall_aa is not None and wall_aa < MIN_WALL_MM) or (wall_bb is not None and wall_bb < MIN_WALL_MM):
         return None  # rigid motions cannot fix A-A or B-B: no candidate can pass
     if holes_a:
-        center = [sum(c[i] for c in map(_hole_center, holes_a)) / len(holes_a) for i in (0, 1)]
+        center = [sum(c[i] for c in map(hole_center, holes_a)) / len(holes_a) for i in (0, 1)]
     else:  # no pattern A: centre on the plate instead
         box = profile["box"]
         center = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]

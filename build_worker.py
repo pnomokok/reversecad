@@ -118,7 +118,8 @@ def profile(result):
     box = solid.BoundingBox()
     bottom = min(vertex.Z for vertex in solid.Vertices())
     return {"outline": polyline(face.outerWire()), "outline_arcs": arcs, "holes": holes,
-            "thickness": round(top - bottom, 3), "box": [round(v, 3) for v in (box.xmin, box.ymin, box.xmax, box.ymax)]}
+            "thickness": round(top - bottom, 3), "box": [round(v, 3) for v in (box.xmin, box.ymin, box.xmax, box.ymax)],
+            "solid_count": len(result.solids().vals())}
 
 
 def features(result):
