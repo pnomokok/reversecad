@@ -910,7 +910,7 @@ async function showModel(sliderValues = {}) {
   state.viewer.showCompanion(null);
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
-  $("model-program").textContent = `Program ${w.program}`;
+  $("model-program").textContent = `Program ${w.name}.py`;  // display name; w.program is the internal file
   $("model-source").textContent = w.note || `Source: ${w.source}`;
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
   $("fit-iou").textContent = w.iou == null ? "" : `IoU ${w.iou.toFixed(4)}`;
