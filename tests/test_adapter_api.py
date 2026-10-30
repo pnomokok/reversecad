@@ -54,3 +54,27 @@ def test_demo_mode_closes_parsing_but_keeps_presets(monkeypatch):
     assert client.get("/api/adapter/presets").status_code == 200
     response = client.post("/api/runs/A_light/matching/adapter/parse", json={"text": "2 x M5"})
     assert response.status_code == 403 and "online demo" in response.json()["detail"]
+
+
+def test_place_puts_a_preset_on_a_light():
+    answer = client.post("/api/runs/A_light/matching/adapter/place",
+                         json={"base": {}, "pattern": adapter_pattern.PRESETS[0]})
+    assert answer.status_code == 200
+    placed = answer.json()["placement"]
+    assert placed["candidate"] == "centred" and len(placed["holes_b"]) == 2
+    assert placed["walls"]["min"] >= 2.0
+
+
+def test_place_reports_overlap_without_an_outline():
+    thin = {"holes": [{"x": -3.0, "y": 0.0, "d": 5.5}, {"x": 3.0, "y": 0.0, "d": 5.5}], "label": "thin"}
+    answer = client.post("/api/runs/A_light/matching/adapter/place", json={"base": {}, "pattern": thin})
+    assert answer.status_code == 422 and answer.json()["detail"] == "Patterns overlap — can't place pattern B"
+
+
+def test_place_validates_its_inputs():
+    assert client.post("/api/runs/A_light/matching/adapter/place",
+                       json={"base": {}, "pattern": {"holes": []}}).status_code == 422
+    assert client.post("/api/runs/A_light/matching/adapter/place",
+                       json={"base": {"nonsense": 1.0}, "pattern": adapter_pattern.PRESETS[0]}).status_code == 400
+    assert client.post("/api/runs/no_such_run/matching/adapter/place",
+                       json={"base": {}, "pattern": adapter_pattern.PRESETS[0]}).status_code == 404

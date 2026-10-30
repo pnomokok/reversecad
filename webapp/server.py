@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import adapter_pattern
+import adapter_place
 import drawing_export
 import matching_part
 import voice_edit
@@ -287,6 +288,25 @@ async def adapter_parse(name: str, request: Request):
         raise HTTPException(422, str(error))
     except Exception as error:
         raise HTTPException(502, f"Muse Spark Open did not answer: {type(error).__name__}")
+
+
+@app.post("/api/runs/{name}/matching/adapter/place")
+async def adapter_placement(name: str, request: Request):
+    """Place pattern B onto the original built with {"base"}: deterministic candidates, no model.
+
+    Body: {"base": original's values, "pattern": pattern B}. 422 when no candidate keeps every
+    wall: then there is no outline and no export. Works in the demo (no model involved).
+    """
+    body = await request.json()
+    pattern, error = adapter_pattern.validate_pattern(body.get("pattern"))
+    if pattern is None:
+        raise HTTPException(422, f"pattern B is not usable: {error}")
+    # The top-face profile does not depend on the matching kind; "cover" only lends its cache files.
+    _, profile = await _matching(name, "cover", body.get("base"))
+    placed = adapter_place.place_pattern(profile, pattern)
+    if placed is None:
+        raise HTTPException(422, "Patterns overlap — can't place pattern B")
+    return {"pattern": pattern, "holes_a": profile["holes"], "box": profile["box"], "placement": placed}
 
 
 @app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])
