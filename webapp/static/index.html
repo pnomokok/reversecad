@@ -216,6 +216,7 @@
             <div class="overlay-legend hidden" id="overlay-legend">
               <span><i class="swatch swatch-original"></i>Original</span>
               <span><i class="swatch swatch-matching"></i><span id="overlay-name"></span></span>
+              <span class="hidden" id="overlay-b-item"><i class="swatch swatch-pattern-b"></i><span id="overlay-b-label"></span></span>
             </div>
             <p class="fit-check hidden" id="fit-check"></p>
           </div>
@@ -252,8 +253,24 @@
             <div class="matching-choices hidden" id="matching-choices">
               <button data-kind="cover"><strong>Cover</strong><span>Same outline and holes, own thickness</span></button>
               <button data-kind="spacer"><strong>Spacer / gasket</strong><span>Same holes, outline offset, 1 mm thick</span></button>
+              <button data-kind="adapter"><strong>Adapter plate</strong><span>Original holes + a new pattern</span></button>
             </div>
             <p class="status-line" id="matching-status"></p>
+            <div class="adapter-panel hidden" id="adapter-panel">
+              <div class="adapter-presets" id="adapter-presets"></div>
+              <div class="adapter-textbox" id="adapter-textbox">
+                <form class="adapter-form" id="adapter-form">
+                  <button type="button" class="mic" id="adapter-mic" title="Speak a pattern (Muse Voice Transcribe)" disabled><span class="icon">mic</span></button>
+                  <input type="text" id="adapter-input" maxlength="300" placeholder="2 × M5, 60 mm apart" aria-label="hole pattern description">
+                  <button type="submit">Parse</button>
+                </form>
+              </div>
+              <div class="adapter-parsed hidden" id="adapter-parsed">
+                <span id="adapter-summary" class="adapter-summary"></span>
+                <div class="break-actions"><button class="break-apply" id="adapter-apply"><span class="icon">check</span>Apply</button><button class="break-ignore" id="adapter-dismiss">Dismiss</button></div>
+              </div>
+              <p class="status-line" id="adapter-status"></p>
+            </div>
           </div>
           <div class="voice-card" id="voice-card">
             <div class="voice-top">

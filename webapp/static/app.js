@@ -775,6 +775,7 @@ const LABEL_FOR = [[/diam|hole|bore/, "hole"], [/thick|height|depth/, "thickness
 const labelKey = (name) => (LABEL_FOR.find(([pattern]) => pattern.test(name.toLowerCase())) || [])[1];
 const prettyName = (name) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const unitFor = (name) => (/count|number|^n_/.test(name) ? "" : /angle/.test(name) ? "°" : " mm");
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 function currentValues() {
   const values = {};
@@ -792,7 +793,9 @@ function postJSON(url, body) {
 
 // What the model, drawing and download requests add for a matching part (nothing for the original).
 const matchQuery = (separator = "?") => (state.matching ? `${separator}match=${state.matching.kind}` : "");
-const modelBody = () => ({ parameters: currentValues(), base: state.matching?.base });
+const modelBody = () => (state.matching?.kind === "adapter"
+  ? { parameters: currentValues(), base: state.matching.base, pattern: state.matching.pattern, outline: state.matching.outline }
+  : { parameters: currentValues(), base: state.matching?.base });
 
 async function rebuild() {
   // Only the newest build may touch the screen: an older answer can arrive after it on a slow connection.
@@ -940,15 +943,16 @@ async function showAlignment(build) {
     return;
   }
   const { original, matching, alignment: a } = answer;
-  drawOverlay(original, matching);
+  drawOverlay(original, matching, answer.holes_b, answer.label_b);
   const breakouts = a.breakouts === 1 ? "1 hole breaks through the edge" : `${a.breakouts} holes break through the edge`;
   check.innerHTML = !a.total ? "No holes to align"
     : `Holes aligned: ${a.aligned}/${a.total}${a.max_offset_mm === null ? "" : `, max offset ${a.max_offset_mm.toFixed(3)} mm`}`
-      + (a.breakouts ? ` · <span class="fit-warning">${breakouts}</span>` : "");
+      + (a.breakouts ? ` · <span class="fit-warning">${breakouts}</span>` : "")
+      + (state.matching.kind === "adapter" ? adapterLine(answer) : "");
   check.classList.toggle("bad", a.aligned < a.total);
 }
 
-function drawOverlay(original, matching) {
+function drawOverlay(original, matching, holesB, labelB) {
   // Top view in mm (SVG's y runs down, so y is negated): the original see-through, the matching part as a line.
   const closed = (points) => `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z`;
   const circle = ([x, y], d) => `M${x - d / 2},${-y}a${d / 2},${d / 2} 0 1,0 ${d},0a${d / 2},${d / 2} 0 1,0 ${-d},0Z`;
@@ -960,12 +964,170 @@ function drawOverlay(original, matching) {
   const margin = 0.04 * Math.max(x1 - x0, y1 - y0);
   const view = $("overlay-view");
   view.setAttribute("viewBox", `${x0 - margin} ${-y1 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`);
-  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/>`;
+  const bPath = (holesB || []).map((h) => circle([h.x, h.y], h.d)).join("");
+  const bLabel = holesB?.length ? `<text class="overlay-b-label" x="${holesB[0].x}" y="${-holesB[0].y - holesB[0].d / 2 - 1}" text-anchor="middle">${esc(labelB || "")}</text>` : "";
+  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/>${bLabel}`;
+  $("overlay-b-item").classList.toggle("hidden", !holesB?.length);
+  if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB}`;
 }
 
 $("matching-open").addEventListener("click", () => $("matching-choices").classList.toggle("hidden"));
-document.querySelectorAll("#matching-choices button").forEach((b) => b.addEventListener("click", () => showMatching(b.dataset.kind)));
+document.querySelectorAll("#matching-choices button").forEach((b) => b.addEventListener("click", () =>
+  (b.dataset.kind === "adapter" ? showAdapterPanel() : showMatching(b.dataset.kind))));
 $("matching-back").addEventListener("click", () => showModel(state.matching.base));
+
+// ---------- adapter plate: the original's holes plus a new hole pattern ----------
+// Pattern B comes from a preset chip (fixed data, works everywhere) or free text parsed by Muse
+// Spark Open (the reading is shown back and needs Apply); voice lands in the same text box and
+// goes through the same parse + Apply path. Placement is deterministic; the outline is searched,
+// then this enters the matching layout like a cover or spacer.
+let adapterPattern = null;  // the parsed pattern waiting for Apply
+let adapterPresets = null;  // preset chips, loaded once from the server
+
+async function showAdapterPanel() {
+  const panel = $("adapter-panel");
+  panel.classList.toggle("hidden");
+  $("matching-choices").classList.add("hidden");
+  if (panel.classList.contains("hidden")) return;
+  clearAdapterPreview();
+  $("adapter-status").textContent = "";
+  $("matching-status").textContent = "";
+  if (!adapterPresets) {
+    adapterPresets = (await getJSON("/api/adapter/presets")).presets;
+    const box = $("adapter-presets");
+    adapterPresets.forEach((preset) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.textContent = preset.label;
+      chip.addEventListener("click", () => runAdapter(preset));
+      box.appendChild(chip);
+    });
+  }
+}
+
+function clearAdapterPreview() {
+  adapterPattern = null;
+  $("adapter-parsed").classList.add("hidden");
+  $("adapter-summary").textContent = "";
+}
+
+$("adapter-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = $("adapter-input").value.trim();
+  if (!text) return;
+  clearAdapterPreview();
+  $("adapter-status").textContent = "Reading the pattern · Muse Spark Open";
+  const response = await postJSON(`/api/runs/${state.run}/matching/adapter/parse`, { text });
+  if (!response.ok) {
+    $("adapter-status").textContent = (await response.json()).detail;
+    return;
+  }
+  const answer = await response.json();
+  adapterPattern = answer.pattern;
+  $("adapter-summary").textContent = answer.summary;
+  $("adapter-parsed").classList.remove("hidden");
+  $("adapter-status").textContent = "";
+});
+$("adapter-apply").addEventListener("click", () => { if (adapterPattern) runAdapter(adapterPattern); });
+$("adapter-dismiss").addEventListener("click", () => {
+  clearAdapterPreview();
+  $("adapter-status").textContent = "Dismissed.";
+});
+
+async function transcribePattern(blob) {
+  // The same speech endpoint as voice editing; the transcript lands in the pattern box and is
+  // parsed like typed text (shown back, needs Apply).
+  $("adapter-status").textContent = "Transcribing · Muse Voice Transcribe";
+  const form = new FormData();
+  form.append("audio", await toWav(blob), "command.wav");
+  const response = await fetch(`/api/runs/${state.run}/voice/transcribe`, { method: "POST", body: form });
+  if (!response.ok) {
+    $("adapter-status").textContent = `Not transcribed: ${(await response.json()).detail}`;
+    return;
+  }
+  const { transcript } = await response.json();
+  $("adapter-input").value = transcript;
+  if (transcript) $("adapter-form").requestSubmit();
+  else $("adapter-status").textContent = "No speech was heard.";
+}
+
+$("adapter-mic").addEventListener("click", async () => {
+  if (state.recorder) {  // second press: stop
+    state.recorder.stop();
+    return;
+  }
+  $("adapter-status").textContent = "Listening · press again to stop";
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    $("adapter-status").textContent = `No microphone: ${error.message}`;
+    return;
+  }
+  const chunks = [];
+  const recorder = new MediaRecorder(stream);
+  state.recorder = recorder;
+  recorder.ondataavailable = (event) => chunks.push(event.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((track) => track.stop());
+    clearTimeout(state.recordingTimer);
+    state.recorder = null;
+    $("adapter-mic").classList.remove("recording");
+    await transcribePattern(new Blob(chunks, { type: recorder.mimeType }));
+  };
+  recorder.start();
+  state.recordingTimer = setTimeout(() => recorder.state === "recording" && recorder.stop(), MAX_RECORDING_MS);
+  $("adapter-mic").classList.add("recording");
+});
+
+async function runAdapter(pattern) {
+  const base = currentValues();
+  clearAdapterPreview();
+  $("adapter-panel").classList.add("hidden");
+  $("model-status").textContent = "Placing the patterns…";
+  const placed = await postJSON(`/api/runs/${state.run}/matching/adapter/place`, { base, pattern });
+  if (!placed.ok) {
+    $("model-status").textContent = "";
+    $("matching-status").textContent = (await placed.json()).detail;
+    return;
+  }
+  const place = await placed.json();
+  const minWall = place.placement.walls.min;
+  $("model-status").textContent = `Placed ${place.placement.candidate}`
+    + (minWall === null ? "" : ` · min wall ${minWall.toFixed(1)} mm`) + " — finding the outline…";
+  const outline = await postJSON(`/api/runs/${state.run}/matching/adapter/outline`, { base, pattern, outline: "auto" });
+  if (!outline.ok) {
+    $("model-status").textContent = "";
+    $("matching-status").textContent = `Not built: ${(await outline.json()).detail}`;
+    return;
+  }
+  const original = await postJSON(`/api/runs/${state.run}/model`, { parameters: base });
+  if (!original.ok) {
+    $("model-status").textContent = "";
+    $("matching-status").textContent = `Not built: ${(await original.json()).detail}`;
+    return;
+  }
+  clearVoicePreview();
+  state.winner = await outline.json();
+  state.matching = { kind: "adapter", base, pattern, outline: "auto" };
+  const w = state.winner;
+  setMatchingLayout(w);
+  $("model-program").textContent = `Program ${w.program}`;
+  $("model-source").textContent = `Source: ${w.source}`;
+  $("sliders").innerHTML = "";
+  w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
+  state.viewer.showSuggestion(null);
+  state.viewer.showCompanion(await original.arrayBuffer(), "ORIGINAL");
+  state.viewer.reset();  // frame both parts
+  document.querySelectorAll(".view-tools button").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
+  await rebuild();
+}
+
+function adapterLine(answer) {
+  // Pattern B as built: its label, hole count and the smallest edge margin, all computed.
+  return ` · Pattern B: ${esc(answer.label_b)} (${answer.holes_b.length} holes, `
+    + `min margin ${answer.min_margin_mm.toFixed(1)} mm)`;
+}
 
 async function showCompletion() {
   // The "possible break" card: shown when Muse Wonder suggested a completion and it was not ignored.
@@ -1289,13 +1451,17 @@ function applyConfig(config) {
   }
   if (!config.voice) {
     offNote($("voice-card"), "Voice editing");
+    offNote($("adapter-textbox"), "Free text, voice and Spark Open outlines", true);
   } else if (!config.speech) {  // typing works; speaking also needs MODEL_API_KEY
     $("voice-mic").remove();
+    $("adapter-mic").remove();
     $("voice-said").textContent = "Type a command, for example \"make the holes 2 mm bigger\".";
   } else {
     $("voice-mic").disabled = false;
     $("voice-mic").title = "Press to speak a command, press again to stop";
     $("voice-said").textContent = "Press the mic and say a command, or type it and press Enter.";
+    $("adapter-mic").disabled = false;
+    $("adapter-mic").title = "Press to speak a pattern, press again to stop";
   }
 }
 
