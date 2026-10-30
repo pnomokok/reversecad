@@ -36,6 +36,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   let companion = null;
   let annotations = null;
   let framedRadius = null;
+  let labelsVisible = true;  // dimension labels on/off (toolbar toggle, default on)
   let changed = new Set();
   const labelElements = {};  // key -> element, so "changed" can be toggled without a rebuild
 
@@ -157,7 +158,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       annotations = annotate(features);
       scene.add(annotations);
     }
-    if (!framedRadius) setView("iso");  // keep the user's view when a slider rebuilds the part
+    if (annotations) annotations.visible = labelsVisible;
+    if (!framedRadius) setView("iso");  // first show frames the part
+    else {  // slider rebuilds keep the view, unless the part outgrew the frame or shrank to less than
+      // half of it: then the frustum is refit (direction kept) so a small part is never left tiny.
+      const radius = framedBox().getSize(new THREE.Vector3()).length() / 2;
+      if (radius < framedRadius * 0.5 || radius > framedRadius * 1.35) setView();
+    }
   }
 
   const companionMaterial = new THREE.MeshStandardMaterial({
@@ -261,5 +268,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   loop();
   // Triangles of the shown part's mesh (the STL the viewer loaded).
   const triangleCount = () => (part ? part.children[0].geometry.attributes.position.count / 3 : 0);
-  return { show, showCompanion, showSuggestion, resize, setView, setChanged, previewLabel, triangleCount, reset: () => { framedRadius = null; } };
+  return { show, showCompanion, showSuggestion, resize, setView, setChanged, previewLabel, triangleCount,
+    setLabelsVisible: (visible) => {
+      // CSS2DRenderer only honours each label's own visibility, never a parent group's, so the HTML
+      // labels are hidden via their container; the drawn dimension/leader lines via the group itself.
+      labelsVisible = visible;
+      labels.domElement.style.display = visible ? "" : "none";
+      if (annotations) annotations.visible = visible;
+    },
+    reset: () => { framedRadius = null; } };
 }

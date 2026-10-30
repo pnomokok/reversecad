@@ -932,7 +932,7 @@ async function showMatching(kind) {
   state.viewer.showSuggestion(null);
   state.viewer.showCompanion(await original.arrayBuffer(), "ORIGINAL");
   state.viewer.reset();  // frame both parts
-  document.querySelectorAll(".view-tools button").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
+  document.querySelectorAll(".view-tools button[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
   await rebuild();
 }
 
@@ -1150,7 +1150,7 @@ async function runAdapter(pattern) {
   state.viewer.showSuggestion(null);
   state.viewer.showCompanion(await original.arrayBuffer(), "ORIGINAL");
   state.viewer.reset();  // frame both parts
-  document.querySelectorAll(".view-tools button").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
+  document.querySelectorAll(".view-tools button[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
   await rebuild();
 }
 
@@ -1276,9 +1276,14 @@ $("reset-parameters").addEventListener("click", () => {
   rebuild();
 });
 
-document.querySelectorAll(".view-tools button").forEach((b) => b.addEventListener("click", () => {
-  if (b.dataset.view !== "fit") document.querySelectorAll(".view-tools button").forEach((o) => o.classList.toggle("active", o === b));
+document.querySelectorAll(".view-tools button[data-view]").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.view !== "fit") document.querySelectorAll(".view-tools button[data-view]").forEach((o) => o.classList.toggle("active", o === b));
   state.viewer?.setView(b.dataset.view);
+}));
+document.querySelector("[data-labels]").addEventListener("click", (event) => {
+  const button = event.currentTarget;
+  button.classList.toggle("active");
+  state.viewer?.setLabelsVisible(button.classList.contains("active"));
 }));
 
 async function downloadFile(format, status = $("download-status")) {
