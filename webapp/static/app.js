@@ -1320,7 +1320,7 @@ document.querySelector("[data-labels]").addEventListener("click", (event) => {
   const button = event.currentTarget;
   button.classList.toggle("active");
   state.viewer?.setLabelsVisible(button.classList.contains("active"));
-}));
+});
 
 async function downloadFile(format, status = $("download-status")) {
   if (state.splitWarning && state.matching?.kind === "spacer") {
