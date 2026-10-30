@@ -192,6 +192,36 @@ def test_outline_falls_back_when_repair_fails(monkeypatch):
     assert len(answer.json()["candidates"]) == 2
 
 
+@pytest.mark.parametrize("preset", [0, 1, 2])
+def test_adapter_end_to_end_with_the_fallback_outline(preset):
+    """Each preset on A_light without any model: place, outline, check, every download."""
+    body = _outline_body(preset)
+    outline = client.post("/api/runs/A_light/matching/adapter/outline", json=body)
+    assert outline.status_code == 200
+    assert outline.json()["outline_source"] == "fallback"
+    assert outline.json()["placement"]["candidate"] == "centred"
+
+    holes_b = len(adapter_pattern.PRESETS[preset]["holes"])
+    check = client.post("/api/runs/A_light/matching/adapter/check", json={**body, "parameters": {}}).json()
+    assert check["alignment"] == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 0}
+    assert len(check["holes_b"]) == holes_b and check["label_b"] == adapter_pattern.PRESETS[preset]["label"]
+    assert check["min_margin_mm"] >= 2.0
+    assert len(check["matching"]["holes"]) == 4 + holes_b
+
+    stl = client.post("/api/runs/A_light/model?match=adapter", json={**body, "parameters": {}})
+    assert stl.status_code == 200 and len(stl.content) > 84
+    for format, start in (("stl", None), ("step", b"ISO-10303"), ("dxf", None), ("pdf", b"%PDF"),
+                          ("py", b'"""Adapter plate')):
+        response = client.post(f"/api/runs/A_light/download?format={format}&match=adapter",
+                               json={**body, "parameters": {}})
+        assert response.status_code == 200, format
+        assert "reversecad_A_light_adapter" in response.headers["Content-Disposition"]
+        assert start is None or response.content.startswith(start)
+    drawing = client.post("/api/runs/A_light/drawing?match=adapter", json={**body, "parameters": {}}).json()
+    assert drawing["name"] == "A_light_adapter" and drawing["source"] == "Outline: fallback"
+    assert len(drawing["profile"]["holes"]) == 4 + holes_b and drawing["profile"]["thickness"] == 3.0
+
+
 def test_adapter_validates_its_inputs():
     assert client.post("/api/runs/A_light/matching/adapter/outline",
                        json=_outline_body(outline="hexagon")).status_code == 400
