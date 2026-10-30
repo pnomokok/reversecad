@@ -293,3 +293,114 @@ def pick_adapter_winner(rows):
     """The passing row with the fewest parameters (first on ties), or None."""
     passing = [row for row in rows if row.get("ok")]
     return min(passing, key=lambda row: (row["parameter_count"], row["candidate"])) if passing else None
+
+
+REPAIR_ROUNDS = 2  # same as the pipeline repair (repair.py)
+REPAIR_NUMBER = 100  # a passing repair is candidate 101 (round 1) or 102 (round 2), shown as R1/R2
+
+REPAIR_INTRODUCTION = """You repair CadQuery programs for a flat adapter plate that connects two hole patterns.
+
+All hole positions below are final, in absolute millimeters (X = u, Y = v). The failed programs below
+(or their absence) broke the plate rules; find out what is wrong and write one corrected program.
+
+Pattern A (the existing part, {count_a} holes):
+{holes_a}
+
+Pattern B (the new pattern, {count_b} holes):
+{holes_b}
+
+Plate rules: the outline is a clean plate shape enclosing every hole; every hole edge at least
+{wall} mm from the outline; one single solid; exactly these {count} through-holes; holes within
+{tolerance} mm in position and size. Thickness {thickness} mm, bottom face at Z = 0.
+`def build_part(...)` with the dimensions as keyword arguments; `import partkit as pk` helpers
+(absolute coordinates) and plain CadQuery where needed; only cadquery/partkit/math imports.
+
+{failed}
+"""
+
+
+def build_repair_prompt(holes_a, holes_b, thickness, failed):
+    """Prompt text for one repair round; failed is [{"name", "code" or None, "reasons"}]."""
+    from repair import ANSWER_FORMAT
+
+    parts = []
+    for attempt in failed:
+        reasons = "\n".join(f"- {reason}" for reason in attempt["reasons"])
+        if attempt["code"] is None:
+            parts.append(f"{attempt['name']} returned no program:\n{reasons}")
+        else:
+            parts.append(f"Failed program {attempt['name']}:\nWhy it failed:\n{reasons}\n"
+                         f"```python\n{attempt['code'].strip()}\n```")
+    prompt = REPAIR_INTRODUCTION.format(
+        count_a=len(holes_a), count_b=len(holes_b), count=len(holes_a) + len(holes_b),
+        holes_a=_hole_lines(holes_a), holes_b=_hole_lines(holes_b), wall=MIN_WALL_MM,
+        tolerance=HOLE_TOLERANCE_MM, thickness=round(float(thickness), 2),
+        failed="\n\n".join(parts) if parts else "(no failed programs: nothing was tried yet)")
+    return prompt + "\n" + ANSWER_FORMAT
+
+
+def repair_adapter_outlines(holes_a, holes_b, thickness, build, failed, out_dir, tag, ledger_folder=None,
+                            client=None, rounds=REPAIR_ROUNDS):
+    """Up to `rounds` Muse Wonder repair rounds; {"passed", "rows", "result", "rounds"}.
+
+    Text-only (no photo reference exists for an adapter). build(path) returns (profile, error);
+    failed are the search rows that did not pass ({"candidate", "file", "reasons"/"error"}); round
+    files go to out_dir as {tag}_repair{i}.*. Needs MODEL_API_KEY unless the client is faked.
+    """
+    from candidates import check_code
+    from repair import ask_wonder, make_client, parse_answer
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    client = client or make_client()
+
+    def attempt(row, name):
+        code = None
+        if Path(row.get("file", "")).exists():
+            code = Path(row["file"]).read_text(encoding="utf-8")
+        return {"name": name, "code": code, "reasons": row.get("reasons") or [row.get("error", "failed")]}
+
+    tried = [attempt(row, f"candidate {row['candidate']}") for row in failed[:3]]
+    rows, history = [], []
+    for number in range(1, rounds + 1):
+        prompt = build_repair_prompt(holes_a, holes_b, thickness, tried)
+        (out_dir / f"{tag}_repair{number}_prompt.txt").write_text(prompt, encoding="utf-8")
+        try:
+            response, seconds = ask_wonder(client, prompt, [])
+        except Exception as error:
+            response, seconds = {"error": f"{type(error).__name__}: {error}"}, None
+        (out_dir / f"{tag}_repair{number}_response.json").write_text(json.dumps(response), encoding="utf-8")
+        if ledger_folder is not None:
+            usage_ledger.record_response(ledger_folder, usage_ledger.WONDER, f"adapter repair {number}", response,
+                                         seconds)
+        path = out_dir / f"{tag}_repair{number}.py"
+        usage = (response.get("usage") or {}) if isinstance(response, dict) else {}
+        row = {"candidate": REPAIR_NUMBER + number, "label": f"R{number}", "style": "repair", "file": str(path),
+               "seconds": seconds, "input_tokens": usage.get("prompt_tokens"),
+               "output_tokens": usage.get("completion_tokens")}
+        text = None if "error" in response else response["choices"][0]["message"]["content"]
+        diagnosis, code = parse_answer(text)
+        row["diagnosis"] = diagnosis
+        if "error" in response:
+            row["error"] = f"request failed: {response['error']}"
+        elif code is None:
+            row["error"] = "no python code block (finish=" \
+                f"{response['choices'][0].get('finish_reason')})"
+        elif (problems := check_code(code)):
+            row["error"] = "rejected before running: " + "; ".join(problems)
+        else:
+            path.write_text(code, encoding="utf-8")
+            profile, error = build(path)
+            if error:
+                row["error"] = error
+            else:
+                report = check_adapter(profile, holes_a, holes_b)
+                row.update({k: report[k] for k in ("ok", "reasons", "matched", "min_margin_mm")})
+                row["parameter_count"] = len(program_parameters(code))
+        history.append({"round": number, "diagnosis": diagnosis, "passed": bool(row.get("ok")),
+                        "reasons": row.get("reasons") or [row.get("error")], "seconds": seconds})
+        rows.append(row)
+        if row.get("ok"):
+            return {"passed": True, "rows": rows, "result": row, "rounds": history}
+        tried = [attempt(row, f"repair {number}")] + tried  # the next round sees this attempt too
+    return {"passed": False, "rows": rows, "result": None, "rounds": history}

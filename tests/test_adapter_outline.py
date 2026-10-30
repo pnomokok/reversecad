@@ -5,7 +5,8 @@ import re
 
 import build_worker
 from adapter_outline import (
-    build_adapter_prompt, check_adapter, fallback_source, pick_adapter_winner, search_adapter_outlines,
+    build_adapter_prompt, build_repair_prompt, check_adapter, fallback_source, pick_adapter_winner,
+    repair_adapter_outlines, search_adapter_outlines,
 )
 from adapter_place import MIN_WALL_MM, profile_hole
 from candidates import check_code
@@ -173,6 +174,64 @@ def test_search_survives_request_build_and_screen_errors(tmp_path):
     rows = search_adapter_outlines(SEARCH_A, SEARCH_B, 3.0, _fake_build({1: (GOOD_PROFILE, None)}), tmp_path, "v",
                                    count=1, client=_FakeSearchClient({"as few parameters": "```python\nimport os\n```"}))
     assert rows[0]["error"].startswith("rejected before running")
+
+
+class _FakeWonderClient:
+    """Canned answers in call order (repair rounds run one after another)."""
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.calls = 0
+        self.chat = type("chat", (), {"completions": self})()
+
+    def create(self, **kwargs):
+        assert kwargs["model"] == "muse-wonder-1.0" and kwargs["reasoning_effort"] == "medium"
+        parts = kwargs["messages"][0]["content"]
+        assert len(kwargs["messages"]) == 1 and [p["type"] for p in parts] == ["text"]  # no images
+        text = self.answers[self.calls]
+        self.calls += 1
+
+        class Response:
+            def model_dump(self):
+                return {"choices": [{"message": {"content": text}, "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 30, "completion_tokens": 40}}
+
+        return Response()
+
+
+def test_repair_prompt_names_holes_failures_and_the_answer_format():
+    prompt = build_repair_prompt(SEARCH_A, SEARCH_B, 3.0, [
+        {"name": "candidate 1", "code": "def build_part():\n    pass", "reasons": ["hole 1.00 mm off"]},
+        {"name": "candidate 2", "code": None, "reasons": ["request failed"]}])
+    assert "[8.00, 8.00], diameter 6.00" in prompt and "exactly these 3 through-holes" in prompt
+    assert "Failed program candidate 1" in prompt and "hole 1.00 mm off" in prompt
+    assert "candidate 2 returned no program" in prompt and "DIAGNOSIS:" in prompt
+
+
+def test_repair_passes_on_round_two_and_sees_round_one(tmp_path):
+    bad = copy.deepcopy(GOOD_PROFILE)
+    bad["holes"][0]["center"][0] += 1.0
+
+    def build(path):
+        return (GOOD_PROFILE, None) if "repair2" in path.name else (bad, None)
+
+    failed = [{"candidate": 1, "file": str(tmp_path / "missing.py"), "reasons": ["hole 1.00 mm off"]}]
+    answers = ["DIAGNOSIS: still off\n" + CODE, "DIAGNOSIS: moved the hole back\n" + CODE]
+    result = repair_adapter_outlines(SEARCH_A, SEARCH_B, 3.0, build, failed, tmp_path, "t",
+                                     ledger_folder=tmp_path, client=_FakeWonderClient(answers))
+    assert result["passed"] is True and result["result"]["label"] == "R2"
+    assert [entry["round"] for entry in result["rounds"]] == [1, 2]
+    assert "repair 1" in (tmp_path / "t_repair2_prompt.txt").read_text(encoding="utf-8")
+    assert (tmp_path / "usage.jsonl").read_text(encoding="utf-8").count("adapter repair") == 2
+
+
+def test_repair_gives_up_after_two_rounds(tmp_path):
+    bad = copy.deepcopy(GOOD_PROFILE)
+    bad["holes"][0]["center"][0] += 1.0
+    result = repair_adapter_outlines(SEARCH_A, SEARCH_B, 3.0, lambda path: (bad, None),
+                                     [{"candidate": 1, "file": "x.py", "reasons": ["off"]}], tmp_path, "t",
+                                     client=_FakeWonderClient(["DIAGNOSIS: x\n" + CODE] * 2))
+    assert result["passed"] is False and result["result"] is None and len(result["rows"]) == 2
 
 
 def test_winner_is_the_passing_outline_with_the_fewest_parameters():

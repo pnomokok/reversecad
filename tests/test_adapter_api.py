@@ -152,6 +152,46 @@ def test_model_and_drawing_work_for_the_adapter():
     assert drawing.json()["source"] == "Outline: fallback"
 
 
+def _failing_search(*args, **kwargs):
+    return [{"candidate": 1, "style": "fewest_parameters", "file": "/nonexistent.py", "ok": False,
+             "reasons": ["pattern A hole 1: built 1.00 mm off"], "matched": "5/6", "min_margin_mm": 2.0,
+             "parameter_count": 4}]
+
+
+def test_outline_repairs_when_search_fails(monkeypatch, tmp_path):
+    _clear_matching_cache()
+    monkeypatch.setenv("BASETEN_API_KEY", "fake")
+    monkeypatch.setenv("MODEL_API_KEY", "fake")
+    monkeypatch.setattr(adapter_outline, "search_adapter_outlines", _failing_search)
+    program = tmp_path / "repaired.py"
+    program.write_text(adapter_outline.fallback_source(
+        [{"type": "circle", "center": [0.0, 0.0], "diameter": 6.0}], [{"x": 20.0, "y": 0.0, "d": 5.5}],
+        3.0, "pair"), encoding="utf-8")
+    repaired = {"candidate": 101, "label": "R1", "style": "repair", "file": str(program), "ok": True, "reasons": [],
+                "matched": "2/2", "min_margin_mm": 2.0, "parameter_count": 3, "diagnosis": "moved it back"}
+    monkeypatch.setattr(adapter_outline, "repair_adapter_outlines",
+                        lambda *a, **k: {"passed": True, "rows": [repaired], "result": repaired, "rounds": []})
+    answer = client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body(0, outline="auto"))
+    assert answer.status_code == 200
+    assert answer.json()["outline_source"] == "Muse Wonder repair" and answer.json()["winner"] == 101
+    assert len(answer.json()["candidates"]) == 2
+
+
+def test_outline_falls_back_when_repair_fails(monkeypatch):
+    _clear_matching_cache()
+    monkeypatch.setenv("BASETEN_API_KEY", "fake")
+    monkeypatch.setenv("MODEL_API_KEY", "fake")
+    monkeypatch.setattr(adapter_outline, "search_adapter_outlines", _failing_search)
+    failed = {"candidate": 101, "label": "R1", "style": "repair", "file": "/nonexistent.py",
+              "error": "request failed", "diagnosis": None}
+    monkeypatch.setattr(adapter_outline, "repair_adapter_outlines",
+                        lambda *a, **k: {"passed": False, "rows": [failed], "result": None, "rounds": []})
+    answer = client.post("/api/runs/A_light/matching/adapter/outline",
+                         json=_outline_body(1, outline="auto", base={"thickness": 4.0}))
+    assert answer.status_code == 200 and answer.json()["outline_source"] == "fallback"
+    assert len(answer.json()["candidates"]) == 2
+
+
 def test_adapter_validates_its_inputs():
     assert client.post("/api/runs/A_light/matching/adapter/outline",
                        json=_outline_body(outline="hexagon")).status_code == 400
@@ -160,5 +200,6 @@ def test_adapter_validates_its_inputs():
     fresh = {"base": {}, "pattern": {"holes": [{"x": 0.0, "y": 0.0, "d": 6.6}], "label": "single M6"},
              "outline": "fallback", "parameters": {}}
     assert client.post("/api/runs/A_light/model?match=adapter", json=fresh).status_code == 404
+    client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body())  # cache may be cleared
     assert client.post("/api/runs/A_light/matching/adapter/check",
                        json={**_outline_body(), "parameters": {"length": 5.0}}).status_code == 400

@@ -375,8 +375,9 @@ async def adapter_outline_program(name: str, request: Request):
     """Find the adapter outline for {"base", "pattern", "outline": "auto" (default) or "fallback"}.
 
     "auto" asks Muse Spark Open for outlines and keeps the passing one with the fewest parameters;
-    without keys (always in the demo) it uses the deterministic fallback instead. The program is
-    cached by its inputs; the response names which outline was used.
+    when none passes, Muse Wonder repairs (at most 2 rounds), else the deterministic fallback is used.
+    Without keys (always in the demo) "auto" falls back directly. The program is cached by its
+    inputs; the response names which outline was used.
     """
     body = await request.json()
     key, pattern, _, original, mode = await _adapter_key(name, body)
@@ -403,10 +404,24 @@ async def adapter_outline_program(name: str, request: Request):
                                        profile["thickness"], _adapter_build, MATCHING_DIR, key,
                                        adapter_outline.ADAPTER_CANDIDATE_COUNT, replay.run_dir(name))
         winner = adapter_outline.pick_adapter_winner(rows)
-        if winner is None:  # (3c inserts the Muse Wonder repair here)
+        if winner is None and os.getenv("MODEL_API_KEY"):
+            try:
+                repaired = await asyncio.to_thread(
+                    adapter_outline.repair_adapter_outlines, holes_a, holes_b, profile["thickness"],
+                    _adapter_build, [row for row in rows if not row.get("ok")], MATCHING_DIR, key,
+                    replay.run_dir(name))
+            except Exception:
+                repaired = {"passed": False, "rows": []}
+            rows = rows + repaired["rows"]
+            if repaired["passed"]:
+                winner = repaired["result"]
+        if winner is None:
             source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
                                                      pattern["label"], original.name)
             outline_source = "fallback"
+        elif str(winner.get("label", "")).startswith("R"):
+            source = Path(winner["file"]).read_text(encoding="utf-8")
+            outline_source = "Muse Wonder repair"
         else:
             source = Path(winner["file"]).read_text(encoding="utf-8")
             outline_source = "Muse Spark Open"
