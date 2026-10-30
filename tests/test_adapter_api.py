@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import adapter_outline
 import adapter_pattern
 from webapp import replay, server
 from webapp.server import app
@@ -78,3 +79,86 @@ def test_place_validates_its_inputs():
                        json={"base": {"nonsense": 1.0}, "pattern": adapter_pattern.PRESETS[0]}).status_code == 400
     assert client.post("/api/runs/no_such_run/matching/adapter/place",
                        json={"base": {}, "pattern": adapter_pattern.PRESETS[0]}).status_code == 404
+
+
+def _outline_body(preset=0, **overrides):
+    body = {"base": {}, "pattern": adapter_pattern.PRESETS[preset], "outline": "fallback"}
+    body.update(overrides)
+    return body
+
+
+def _clear_matching_cache():
+    """Adapter programs are cached by inputs across runs; fresh-path tests start without them."""
+    for path in server.MATCHING_DIR.glob("*"):
+        if path.is_file():
+            path.unlink()
+
+
+def test_outline_fallback_needs_no_keys_and_is_cached():
+    _clear_matching_cache()
+    first = client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body())
+    assert first.status_code == 200
+    answer = first.json()
+    assert answer["outline_source"] == "fallback" and answer["cached"] is False
+    assert answer["source"] == "Outline: fallback" and answer["title"] == "Adapter plate"
+    assert answer["placement"]["candidate"] == "centred" and answer["winner"] is None
+    params = {p["name"]: p["default"] for p in answer["parameters"]}
+    assert (params["thickness"], params["hole_diameter_a"], params["hole_diameter_b"]) == (3.0, 6.0, 5.5)
+    second = client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body())
+    assert second.json()["cached"] is True and second.json()["program"] == answer["program"]
+
+
+def test_outline_auto_falls_back_without_keys(monkeypatch):
+    _clear_matching_cache()
+
+    def fail(*args, **kwargs):
+        raise AssertionError("no search without keys")
+    monkeypatch.setattr(adapter_outline, "search_adapter_outlines", fail)
+    answer = client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body(1, outline="auto"))
+    assert answer.status_code == 200 and answer.json()["outline_source"] == "fallback"
+
+
+def test_outline_uses_the_search_winner_with_keys(monkeypatch, tmp_path):
+    _clear_matching_cache()
+    monkeypatch.setenv("BASETEN_API_KEY", "fake")
+    program = tmp_path / "winner.py"
+    program.write_text(adapter_outline.fallback_source(
+        [{"type": "circle", "center": [0.0, 0.0], "diameter": 6.0}], [{"x": 20.0, "y": 0.0, "d": 5.5}],
+        3.0, "pair"), encoding="utf-8")
+    rows = [{"candidate": 1, "style": "fewest_parameters", "file": str(program), "ok": True, "reasons": [],
+             "matched": "2/2", "min_margin_mm": 2.0, "parameter_count": 3}]
+    monkeypatch.setattr(adapter_outline, "search_adapter_outlines", lambda *a, **k: rows)
+    answer = client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body(2, outline="auto"))
+    assert answer.status_code == 200
+    assert answer.json()["outline_source"] == "Muse Spark Open" and answer.json()["winner"] == 1
+    assert answer.json()["candidates"] == rows
+
+
+def test_check_reports_alignment_pattern_b_and_margins():
+    client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body())
+    answer = client.post("/api/runs/A_light/matching/adapter/check", json={**_outline_body(), "parameters": {}})
+    assert answer.status_code == 200
+    check = answer.json()
+    assert check["alignment"] == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 0}
+    assert len(check["holes_b"]) == 2 and check["label_b"] == "2 × M5 · 60 mm"
+    assert check["min_margin_mm"] == 2.0 and check["outline_source"] == "fallback"
+
+
+def test_model_and_drawing_work_for_the_adapter():
+    client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body())
+    stl = client.post("/api/runs/A_light/model?match=adapter", json={**_outline_body(), "parameters": {}})
+    assert stl.status_code == 200 and len(stl.content) > 84
+    drawing = client.post("/api/runs/A_light/drawing?match=adapter", json={**_outline_body(), "parameters": {}})
+    assert drawing.json()["source"] == "Outline: fallback"
+
+
+def test_adapter_validates_its_inputs():
+    assert client.post("/api/runs/A_light/matching/adapter/outline",
+                       json=_outline_body(outline="hexagon")).status_code == 400
+    assert client.post("/api/runs/A_light/matching/adapter/outline",
+                       json=_outline_body(pattern={"holes": []})).status_code == 422
+    fresh = {"base": {}, "pattern": {"holes": [{"x": 0.0, "y": 0.0, "d": 6.6}], "label": "single M6"},
+             "outline": "fallback", "parameters": {}}
+    assert client.post("/api/runs/A_light/model?match=adapter", json=fresh).status_code == 404
+    assert client.post("/api/runs/A_light/matching/adapter/check",
+                       json={**_outline_body(), "parameters": {"length": 5.0}}).status_code == 400

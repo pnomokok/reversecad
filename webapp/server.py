@@ -24,6 +24,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import adapter_outline
 import adapter_pattern
 import adapter_place
 import drawing_export
@@ -187,16 +188,50 @@ async def _matching(name, kind, base):
     return program, json.loads(profile_path.read_text(encoding="utf-8"))
 
 
+async def _adapter_key(name, body):
+    """(cache key, pattern, overrides, original program, outline mode) for an adapter request."""
+    pattern, error = adapter_pattern.validate_pattern((body or {}).get("pattern"))
+    if pattern is None:
+        raise HTTPException(422, f"pattern B is not usable: {error}")
+    mode = (body or {}).get("outline", "auto")
+    if mode not in ("auto", "fallback"):
+        raise HTTPException(400, "outline must be auto or fallback")
+    overrides = _checked((body or {}).get("base"), _result_names(name))
+    original, _ = replay.result_program(name)
+    made_from = json.dumps(["adapter", original.read_text(encoding="utf-8"), overrides, pattern, mode], sort_keys=True)
+    return hashlib.sha256(made_from.encode("utf-8")).hexdigest()[:24], pattern, overrides, original, mode
+
+
+def _adapter_build(path):
+    """(profile, error) for an adapter candidate file, in the long-running build process."""
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    output = (MODEL_DIR / f"{uuid.uuid4().hex}.profile.json").resolve()
+    error = builder.build(path, output, {})
+    if error:
+        return None, error
+    profile = json.loads(output.read_text(encoding="utf-8"))
+    output.unlink()
+    return profile, None
+
+
 async def _target(name, request, match):
     """What a model, drawing or download request builds: (program path, overrides, name for its files).
 
     Without `match`, the run's result. With it ("cover", "spacer"), the matching part of the result built
-    with the posted "base" values; "parameters" are then the matching program's own.
+    with the posted "base" values; "parameters" are then the matching program's own. "adapter" loads the
+    searched outline for the posted base/pattern/outline (404 when no search ran for these inputs yet).
     """
     if match is None:
         overrides = await _parameters(name, request)
         return replay.result_program(name)[0], overrides, name
     body = await request.json()
+    if match == "adapter":
+        key, _, _, _, _ = await _adapter_key(name, body)
+        program = MATCHING_DIR / f"{key}.py"
+        if not program.exists():
+            raise HTTPException(404, "no adapter outline for these inputs yet (run the outline search first)")
+        allowed = {p["name"] for p in matching_part.slider_parameters(program.read_text(encoding="utf-8"))}
+        return program, _checked(body.get("parameters"), allowed), f"{name}_adapter"
     program, _ = await _matching(name, match, body.get("base"))
     allowed = {p["name"] for p in matching_part.slider_parameters(program.read_text(encoding="utf-8"))}
     return program, _checked(body.get("parameters"), allowed), f"{name}_{match}"
@@ -225,7 +260,7 @@ async def build_model(name: str, request: Request, match: str | None = None):
     """Screen 4: build with the posted parameter values; binary STL for the viewer.
 
     Body: {"parameters": {"name": value, ...}}; only the program's own numeric parameters are accepted.
-    ?match=cover|spacer builds a matching part instead (see _target).
+    ?match=cover|spacer|adapter builds a matching part instead (see _target).
     The X-Model-Features header carries the model's bounding box and top-face holes (JSON, mm).
     """
     program, overrides, _ = await _target(name, request, match)
@@ -233,11 +268,17 @@ async def build_model(name: str, request: Request, match: str | None = None):
     return Response(data, media_type="model/stl", headers={"X-Model-Features": features})
 
 
-def _matching_info(name, kind):
+def _matching_info(name, kind, program=None):
     """How a matching part is named on screen and in its files."""
     label = f"{name}_{kind}"
-    return {"name": label, "program": f"{label}.py", "kind": kind, "title": matching_part.KINDS[kind],
-            "source": "built part, no model"}
+    titles = {**matching_part.KINDS, "adapter": "Adapter plate"}
+    if kind == "adapter":  # which outline was used: the search winner, a repair, or the fallback
+        meta = json.loads(Path(program).with_suffix(".json").read_text(encoding="utf-8"))
+        source = f"Outline: {meta['outline_source']}"
+    else:
+        source = "built part, no model"
+    return {"name": label, "program": f"{label}.py", "kind": kind, "title": titles[kind],
+            "source": source}
 
 
 @app.post("/api/runs/{name}/matching/{kind}")
@@ -246,6 +287,26 @@ async def matching_program(name: str, kind: str, request: Request):
     program, _ = await _matching(name, kind, (await request.json()).get("base"))
     return {**_matching_info(name, kind),
             "parameters": matching_part.slider_parameters(program.read_text(encoding="utf-8"))}
+
+
+@app.post("/api/runs/{name}/matching/adapter/check")
+async def adapter_check(name: str, request: Request):
+    """The original's and the adapter's top faces as built: pattern A alignment, pattern B, margins.
+
+    Body: {"base", "pattern", "outline", "parameters"}. Needs a searched outline (404 otherwise).
+    Registered before /matching/{kind}/check, which would also match this path.
+    """
+    program, overrides, _ = await _target(name, request, "adapter")
+    meta = json.loads(program.with_suffix(".json").read_text(encoding="utf-8"))
+    _, original = await _matching(name, "cover", (await request.json()).get("base"))
+    matching = await _profile(program, overrides)
+    margins = [adapter_place.hole_to_outline(adapter_place.profile_hole(h), matching["outline"])
+               for h in matching["holes"]]
+    return {"original": original, "matching": matching,
+            "alignment": matching_part.hole_alignment(original, matching),
+            "holes_b": meta["placement"]["holes_b"], "label_b": meta["pattern"]["label"],
+            "min_margin_mm": round(min(margins), 3) if margins else None,
+            "outline_source": meta["outline_source"]}
 
 
 @app.post("/api/runs/{name}/matching/{kind}/check")
@@ -307,6 +368,60 @@ async def adapter_placement(name: str, request: Request):
     if placed is None:
         raise HTTPException(422, "Patterns overlap — can't place pattern B")
     return {"pattern": pattern, "holes_a": profile["holes"], "box": profile["box"], "placement": placed}
+
+
+@app.post("/api/runs/{name}/matching/adapter/outline")
+async def adapter_outline_program(name: str, request: Request):
+    """Find the adapter outline for {"base", "pattern", "outline": "auto" (default) or "fallback"}.
+
+    "auto" asks Muse Spark Open for outlines and keeps the passing one with the fewest parameters;
+    without keys (always in the demo) it uses the deterministic fallback instead. The program is
+    cached by its inputs; the response names which outline was used.
+    """
+    body = await request.json()
+    key, pattern, _, original, mode = await _adapter_key(name, body)
+    program, meta_path = MATCHING_DIR / f"{key}.py", MATCHING_DIR / f"{key}.json"
+    if program.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        return {**_matching_info(name, "adapter", program),
+                "parameters": matching_part.slider_parameters(program.read_text(encoding="utf-8")),
+                "pattern": meta["pattern"], "placement": meta["placement"], "winner": meta["winner"],
+                "outline_source": meta["outline_source"],
+                "candidates": meta["candidates"], "cached": True}
+    _, profile = await _matching(name, "cover", body.get("base"))
+    placed = adapter_place.place_pattern(profile, pattern)
+    if placed is None:
+        raise HTTPException(422, "Patterns overlap — can't place pattern B")
+    holes_a = [adapter_place.profile_hole(h) for h in profile["holes"]]
+    holes_b = [{"circle": (h["x"], h["y"], h["d"])} for h in placed["holes_b"]]
+    if mode == "fallback" or DEMO or not os.getenv("BASETEN_API_KEY"):
+        source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
+                                                 pattern["label"], original.name)
+        outline_source, rows, winner = "fallback", [], None
+    else:
+        rows = await asyncio.to_thread(adapter_outline.search_adapter_outlines, holes_a, holes_b,
+                                       profile["thickness"], _adapter_build, MATCHING_DIR, key,
+                                       adapter_outline.ADAPTER_CANDIDATE_COUNT, replay.run_dir(name))
+        winner = adapter_outline.pick_adapter_winner(rows)
+        if winner is None:  # (3c inserts the Muse Wonder repair here)
+            source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
+                                                     pattern["label"], original.name)
+            outline_source = "fallback"
+        else:
+            source = Path(winner["file"]).read_text(encoding="utf-8")
+            outline_source = "Muse Spark Open"
+    meta = {"pattern": pattern, "placement": placed, "holes_a": profile["holes"],
+            "thickness": profile["thickness"], "outline_source": outline_source,
+            "winner": winner["candidate"] if winner else None, "candidates": rows}
+    MATCHING_DIR.mkdir(parents=True, exist_ok=True)
+    for path, text in ((meta_path, json.dumps(meta)), (program, source)):
+        temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+    return {**_matching_info(name, "adapter", program),
+            "parameters": matching_part.slider_parameters(source),
+            "pattern": pattern, "placement": placed, "winner": meta["winner"], "outline_source": outline_source,
+            "candidates": rows, "cached": False}
 
 
 @app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])
@@ -446,7 +561,7 @@ async def _profile(program, overrides):
 async def drawing(name: str, request: Request, match: str | None = None):
     """Screen 5: the part's top-face profile and thickness for the technical drawing (mm)."""
     program, overrides, _ = await _target(name, request, match)
-    about = replay.winner(name) if match is None else _matching_info(name, match)
+    about = replay.winner(name) if match is None else _matching_info(name, match, program)
     return {"name": about["name"], "program": about["program"], "source": about["source"],
             "profile": await _profile(program, overrides)}
 
