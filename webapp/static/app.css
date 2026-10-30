@@ -290,7 +290,7 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .slider { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--color-container); }
 .slider-head { display: flex; justify-content: space-between; align-items: center; }
 .slider .name { font-size: var(--font-size-body-lg); font-weight: 500; color: var(--color-text-strong); display: inline-flex; align-items: center; gap: var(--space-2); }
-.slider output { font-family: var(--font-mono); font-size: var(--font-size-value); font-weight: 700; color: var(--color-text-strong); }
+.slider .mini-stepper input[type="text"] { width: 86px; color: var(--color-text-strong); }
 .slider input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: var(--color-highest); margin: var(--space-2) 0; cursor: pointer; }
 .slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--color-text); border: 2px solid var(--color-bg); }
 .slider input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--color-text); border: 2px solid var(--color-bg); }
@@ -298,7 +298,7 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .slider .range .default { color: var(--color-text-muted); }
 .slider.changed { background: linear-gradient(90deg, var(--color-container), var(--color-highest)); }
 .slider.changed .name::before { content: ""; width: 8px; height: 8px; background: var(--color-selected); }
-.slider.changed output { color: var(--color-selected); }
+.slider.changed .mini-stepper input[type="text"] { color: var(--color-selected); }
 .slider.changed input[type="range"] { background: var(--color-selected); }
 .slider.changed input[type="range"]::-webkit-slider-thumb { background: var(--color-selected); }
 .slider.changed .range .default { color: var(--color-selected); }
@@ -421,7 +421,7 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .voice-change strong { color: var(--color-selected); }
 .slider.pending { background: linear-gradient(90deg, var(--color-container), var(--color-highest)); }
 .slider .voice-tag { font-family: var(--font-mono); font-size: var(--font-size-label-sm); color: var(--color-text-muted); letter-spacing: 0.05em; }
-.slider.pending output { color: var(--color-selected); }
+.slider.pending .mini-stepper input[type="text"] { color: var(--color-selected); }
 .slider.pending .range .default { color: var(--color-selected); }
 
 /* ---------- matching part ---------- */

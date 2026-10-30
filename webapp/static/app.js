@@ -782,12 +782,12 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 
 function currentValues() {
   const values = {};
-  document.querySelectorAll("#sliders input").forEach((input) => (values[input.name] = Number(input.value)));
+  document.querySelectorAll("#sliders input[type=\"range\"]").forEach((input) => (values[input.name] = Number(input.value)));
   return values;
 }
 
 function changedLabels() {
-  return [...document.querySelectorAll("#sliders .slider.changed input")].map((i) => labelKey(i.name)).filter(Boolean);
+  return [...document.querySelectorAll("#sliders .slider.changed input[type=\"range\"]")].map((i) => labelKey(i.name)).filter(Boolean);
 }
 
 function postJSON(url, body) {
@@ -832,22 +832,58 @@ function slider(parameter) {
   const value = parameter.default;
   const span = Math.max(Math.abs(value) * Number(css("--slider-range")), 1);
   const unit = unitFor(parameter.name);
-  const row = document.createElement("label");
+  // Design-parameter steps: 0.1 mm, or 0.05 mm for sub-millimetre values. Snapping runs on a grid
+  // through the program's own value (in code, not the browser's step), so that value stays exact.
+  const stepSize = Math.abs(value) < 1 ? 0.05 : 0.1;
+  const snap = (v) => value + Math.round((v - value) / stepSize) * stepSize;
+  const show = (v) => {
+    const rounded = Math.round(v * 100) / 100;
+    return String(Math.abs(v - rounded) < 1e-9 ? rounded : v);
+  };
+  const row = document.createElement("div");
   row.className = "slider";
-  // A step of 0.01 keeps the program's own value exact (with 0.1 the browser snapped 40.26 to 40.3).
   const min = (parameter.min ?? value - span).toFixed(2);
   const max = (parameter.max ?? value + span).toFixed(2);
-  row.innerHTML = `<span class="slider-head"><span class="name">${prettyName(parameter.name)}</span><output>${value}${unit}</output></span>
+  row.innerHTML = `<span class="slider-head"><span class="name">${prettyName(parameter.name)}</span>`
+    + `<span class="mini-stepper"><button type="button" data-step="-1">\u2212</button>`
+    + `<input type="text" inputmode="decimal" value="${value}"><span class="unit">${unit}</span>`
+    + `<button type="button" data-step="1">+</button></span></span>
     <input type="range" name="${parameter.name}" min="${min}" max="${max}" step="0.01" value="${value}">
     <span class="range"><span>${min}</span><span class="default">PROGRAM: ${value}</span><span>${max}</span></span>`;
-  const input = row.querySelector("input");
+  const input = row.querySelector('input[type="range"]');
+  const field = row.querySelector('input[type="text"]');
   input.dataset.default = value;
-  input.addEventListener("input", () => {
-    row.querySelector("output").textContent = `${input.value}${unit}`;
+  const sync = () => {
+    field.value = show(Number(input.value));
     row.classList.toggle("changed", Number(input.value) !== Number(input.dataset.default));
     state.viewer.setChanged(changedLabels());
+  };
+  input.addEventListener("input", () => {
+    input.value = snap(Number(input.value)).toFixed(2);
+    sync();
   });
   input.addEventListener("change", rebuild);
+  const clamp = (v) => Math.min(Number(input.max), Math.max(Number(input.min), v));
+  row.querySelectorAll(".mini-stepper button").forEach((button) => button.addEventListener("click", () => {
+    input.value = show(clamp(snap(Number(input.value)) + stepSize * Number(button.dataset.step)));
+    sync();
+    rebuild();
+  }));
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      // Typed values apply exactly as typed (clamped to the slider range); only drags snap.
+      const number = Number(field.value.replace(",", "."));
+      input.value = Number.isFinite(number) ? clamp(number) : Number(input.value);
+      sync();
+      rebuild();
+    } else if (event.key === "Escape") {
+      field.value = show(Number(input.value));
+      field.blur();
+    }
+  });
+  field.addEventListener("blur", () => {
+    field.value = show(Number(input.value));
+  });
   return row;
 }
 
@@ -1230,7 +1266,7 @@ function partsHTML(parts, answers, locked) {
 document.addEventListener("click", (event) => {
   // The card's small steppers: ±0.5 mm.
   const button = event.target.closest(".mini-stepper button");
-  if (!button) return;
+  if (!button || !event.target.closest("#break-parts")) return;  // sliders handle their own steppers
   const input = document.querySelector(`#break-parts input[data-part="${button.dataset.for}"]`);
   const number = Number(String(input.value).replace(",", ".")) || 0;
   input.value = Math.max(0, number + 0.5 * Number(button.dataset.step)).toFixed(2).replace(/\.?0+$/, "");
@@ -1268,9 +1304,9 @@ $("break-ignore").addEventListener("click", async () => {
 
 $("reset-parameters").addEventListener("click", () => {
   document.querySelectorAll("#sliders .slider").forEach((row) => {
-    const input = row.querySelector("input");
+    const input = row.querySelector('input[type="range"]');
     input.value = input.dataset.default;
-    row.querySelector("output").textContent = `${input.value}${unitFor(input.name)}`;
+    row.querySelector(".mini-stepper input").value = input.value;
     row.classList.remove("changed");
   });
   rebuild();
@@ -1319,8 +1355,8 @@ function clearVoicePreview() {
   $("voice-proposal")?.classList.add("hidden");
   document.querySelectorAll("#sliders .slider.pending").forEach((row) => {
     row.classList.remove("pending");
-    const input = row.querySelector("input");
-    row.querySelector("output").textContent = `${input.value}${unitFor(input.name)}`;
+    const input = row.querySelector('input[type="range"]');
+    row.querySelector(".mini-stepper input").value = input.value;
     row.querySelector(".voice-tag")?.remove();
     row.querySelector(".range .default").textContent = `PROGRAM: ${input.dataset.default}`;
   });
@@ -1344,7 +1380,7 @@ function showVoiceChanges(result) {
     if (!row) continue;
     row.classList.add("pending");
     row.querySelector(".name").insertAdjacentHTML("beforeend", `<span class="voice-tag">VOICE EDIT</span>`);
-    row.querySelector("output").innerHTML = `<s>${fmt(c.from)}</s> → ${fmt(c.to)}${unitFor(c.name)}`;
+    row.querySelector(".mini-stepper input").value = fmt(c.to);  // from → to stays in the card and the TARGET line
     const delta = c.to - c.from;
     row.querySelector(".range .default").textContent = `TARGET: ${fmt(c.to)} (${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))})`;
   }
