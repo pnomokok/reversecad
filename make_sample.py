@@ -37,13 +37,13 @@ def make_sample(name):
     round_name = candidate_round(name)
     shutil.copy(source / f"5_summary_{round_name}.json", target / f"5_summary_{round_name}.json")
     (target / round_name).mkdir()
-    for program in (source / round_name).glob("cand_*.py"):
+    # The baseline too: it is the result of a run where no candidate passed, and the screens show its silhouette.
+    for program in [*(source / round_name).glob("cand_*.py"), source / round_name / "baseline.py"]:
         shutil.copy(program, target / round_name / program.name)
         mask_path = program.with_suffix(".default.mask.npy")
         if mask_path.exists():
             cv2.imwrite(str(target / round_name / f"{program.stem}.default.mask.png"),
                         np.load(mask_path).astype(np.uint8) * 255)
-    shutil.copy(source / round_name / "baseline.py", target / round_name / "baseline.py")
     if (source / "usage.jsonl").exists():
         shutil.copy(source / "usage.jsonl", target / "usage.jsonl")
     for repair in source.glob("repair_round_*"):  # Muse Wonder repairs: program, silhouette, result

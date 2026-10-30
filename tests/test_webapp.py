@@ -23,6 +23,7 @@ def test_page_and_styles_are_served():
     # Layout must not hard-code colors: every color lives in tokens.css.
     layout = client.get("/static/app.css").text
     assert "#" not in layout.replace("#steps", "")
+    assert client.get("/favicon.ico").status_code == 200
 
 
 def test_unknown_run_is_404():
@@ -61,6 +62,19 @@ def test_failed_candidate_has_a_reason_and_no_silhouette(monkeypatch):
     assert failed and failed[0]["silhouette"] is None
     assert failed[0]["reasons"][0].startswith("no python code block")  # the technical text, for hovering
     assert failed[0]["plain_reasons"][0] == "ran out of reasoning budget, no code returned"
+
+
+@pytest.mark.parametrize("run", ["A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken"])
+def test_every_image_a_sample_shows_exists(run, monkeypatch):
+    # The online demo serves only samples/: each picture its screens ask for must be saved there.
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
+    monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
+    events = _events(client.get(f"/api/runs/{run}/candidates/stream").text)
+    done = events[-1][1]
+    images = [data["silhouette"] for kind, data in events if kind == "candidate" and data["silhouette"]]
+    images += [(done["fallback"] or {}).get("silhouette"), f"/api/runs/{run}/photo", f"/api/runs/{run}/capture-fit.png"]
+    for url in filter(None, images):
+        assert client.get(url).status_code == 200, url
 
 
 def test_plain_reasons():

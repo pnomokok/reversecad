@@ -444,7 +444,7 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .swatch-original { background: var(--color-text); opacity: 0.35; }
 .swatch-matching { border: 2px solid var(--color-selected); }
 .fit-check { margin: 0; font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); line-height: 1.35; }
-.fit-check.bad { color: var(--color-bad); }
+.fit-check.bad, .fit-warning { color: var(--color-bad); }
 
 /* a feature this server cannot run (no API keys): one calm line instead of its controls */
 .off-note { margin: 0; padding: var(--space-2) 0; font-size: var(--font-size-label-lg); color: var(--color-text-muted); line-height: 1.4; }

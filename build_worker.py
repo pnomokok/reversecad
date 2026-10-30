@@ -71,7 +71,8 @@ def compare(result, base, job):
 
 def profile(result):
     """The part's top face in mm: outline and holes (circles as center and diameter, other shapes as closed
-    polylines, 0.01 mm accurate), the bounding box and the thickness. Prismatic parts only."""
+    polylines, 0.01 mm accurate), the outline's circular arcs (center and diameter, so a hole opened into the
+    edge can be told by its exact center), the bounding box and the thickness. Prismatic parts only."""
     import cv2
     import numpy as np
 
@@ -112,10 +113,12 @@ def profile(result):
                           "diameter": round(2 * edges[0].radius(), 3)})
         else:
             holes.append({"type": "polyline", "points": polyline(wire)})
+    arcs = [{"center": [round(edge.arcCenter().x, 3), round(edge.arcCenter().y, 3)], "diameter": round(2 * edge.radius(), 3)}
+            for edge in face.outerWire().Edges() if edge.geomType() == "CIRCLE"]
     box = solid.BoundingBox()
     bottom = min(vertex.Z for vertex in solid.Vertices())
-    return {"outline": polyline(face.outerWire()), "holes": holes, "thickness": round(top - bottom, 3),
-            "box": [round(v, 3) for v in (box.xmin, box.ymin, box.xmax, box.ymax)]}
+    return {"outline": polyline(face.outerWire()), "outline_arcs": arcs, "holes": holes,
+            "thickness": round(top - bottom, 3), "box": [round(v, 3) for v in (box.xmin, box.ymin, box.xmax, box.ymax)]}
 
 
 def features(result):

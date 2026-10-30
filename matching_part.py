@@ -90,12 +90,24 @@ def _center(hole):
             sum((y0 + y1) * c for ((_, y0), (_, y1)), c in zip(pairs, crosses)) / (6 * area))
 
 
+def _opened_offset(hole, matching):
+    """How far what is left of an opened hole on the matching outline is from the original hole, or None.
+
+    A round hole leaves an arc with its exact center (at whatever diameter it now has); a shaped hole
+    keeps its own corners, which are fixed data in the program.
+    """
+    if hole["type"] == "circle":
+        return min((math.dist(hole["center"], arc["center"]) for arc in matching["outline_arcs"]), default=None)
+    return min(math.dist(corner, point) for corner in hole["points"] for point in matching["outline"])
+
+
 def hole_alignment(original, matching, within=ALIGNED_WITHIN_MM):
     """How the matching part's holes line up with the original's, both as built top-face profiles.
 
-    Holes pair up closest first, so a missing hole cannot take another hole's partner. A hole a large
-    inward offset has opened into the outline is no longer a hole, so it counts against the result.
-    {"aligned": count, "total": original holes, "max_offset_mm": largest center offset of the pairs}.
+    Holes pair up closest first, so a missing hole cannot take another hole's partner. A hole an inward
+    offset has opened into the edge is not a closed hole any more, but its center is still where it should
+    be: it counts as aligned and as a breakout. A hole left entirely outside the outline counts as neither.
+    {"aligned": count, "total": original holes, "max_offset_mm": largest center offset, "breakouts": count}.
     """
     distances = sorted((math.dist(_center(a), _center(b)), i, j) for i, a in enumerate(original["holes"])
                        for j, b in enumerate(matching["holes"]))
@@ -105,5 +117,11 @@ def hole_alignment(original, matching, within=ALIGNED_WITHIN_MM):
             used_original.add(i)
             used_matching.add(j)
             offsets.append(distance)
+    breakouts = 0
+    for i, hole in enumerate(original["holes"]):
+        offset = None if i in used_original else _opened_offset(hole, matching)
+        if offset is not None and offset <= within:
+            offsets.append(offset)
+            breakouts += 1
     return {"aligned": sum(offset <= within for offset in offsets), "total": len(original["holes"]),
-            "max_offset_mm": round(max(offsets), 3) if offsets else None}
+            "max_offset_mm": round(max(offsets), 3) if offsets else None, "breakouts": breakouts}

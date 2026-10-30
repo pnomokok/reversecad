@@ -18,7 +18,7 @@ from webapp.server import app
 client = TestClient(app)
 SAMPLES = ["A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken"]
 PROFILE = {
-    "outline": [[0.0, 0.0], [80.0, 0.0], [80.0, 40.0], [0.0, 40.0]],
+    "outline": [[0.0, 0.0], [80.0, 0.0], [80.0, 40.0], [0.0, 40.0]], "outline_arcs": [],
     "holes": [{"type": "circle", "center": [10.0, 10.0], "diameter": 6.0},
               {"type": "circle", "center": [70.0, 10.0], "diameter": 6.0},
               {"type": "circle", "center": [40.0, 30.0], "diameter": 9.0},
@@ -78,7 +78,7 @@ def test_outline_offset_moves_the_outline_and_never_the_holes():
     for offset in (-2.0, 3.0):
         built = _build(source, outline_offset=offset)
         assert built["box"] == pytest.approx([-offset, -offset, 80 + offset, 40 + offset], abs=0.01)
-        assert matching_part.hole_alignment(PROFILE, built) == {"aligned": 4, "total": 4, "max_offset_mm": 0.0}
+        assert matching_part.hole_alignment(PROFILE, built) == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 0}
 
 
 def test_offset_works_on_a_curved_outline():
@@ -94,15 +94,47 @@ def test_offset_works_on_a_curved_outline():
 def test_alignment_counts_what_is_really_there():
     moved = json.loads(json.dumps(PROFILE))
     moved["holes"][0]["center"] = [10.3, 10.4]
-    assert matching_part.hole_alignment(PROFILE, moved) == {"aligned": 3, "total": 4, "max_offset_mm": 0.5}
+    assert matching_part.hole_alignment(PROFILE, moved) == {"aligned": 3, "total": 4, "max_offset_mm": 0.5, "breakouts": 0}
     missing = {**PROFILE, "holes": PROFILE["holes"][1:]}
     assert matching_part.hole_alignment(PROFILE, missing)["aligned"] == 3
-    assert matching_part.hole_alignment({**PROFILE, "holes": []}, PROFILE) == {"aligned": 0, "total": 0, "max_offset_mm": None}
+    assert matching_part.hole_alignment({**PROFILE, "holes": []}, PROFILE) == {
+        "aligned": 0, "total": 0, "max_offset_mm": None, "breakouts": 0}
 
 
-def test_a_hole_opened_into_the_outline_is_not_counted_as_aligned():
-    built = _build(matching_part.matching_source(PROFILE, "spacer"), outline_offset=-9.0)
-    assert matching_part.hole_alignment(PROFILE, built)["aligned"] < 4
+def test_a_hole_opened_into_the_edge_is_aligned_and_reported_as_a_breakout():
+    # At -9 mm the edges pass through all four holes, round and shaped; their centers have not moved.
+    source = matching_part.matching_source(PROFILE, "spacer")
+    built = _build(source, outline_offset=-9.0)
+    assert built["holes"] == []
+    assert matching_part.hole_alignment(PROFILE, built) == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 4}
+    resized = _build(source, outline_offset=-9.0, hole_diameter_1=7.0)  # the arc's center, at any diameter
+    assert matching_part.hole_alignment(PROFILE, resized)["breakouts"] == 4
+
+
+def test_only_the_holes_that_break_through_are_counted_as_breakouts():
+    built = _build(matching_part.matching_source(PROFILE, "spacer"), outline_offset=-6.5)
+    # The new edges are at 6.5 and 33.5: the Ø9 hole reaches 34.5, the others stay inside (from 7 and 8).
+    alignment = matching_part.hole_alignment(PROFILE, built)
+    assert alignment["aligned"] == 4 and alignment["breakouts"] == 1 and len(built["holes"]) == 3
+
+
+def test_a_hole_left_outside_the_outline_is_neither_aligned_nor_a_breakout():
+    profile = {**PROFILE, "holes": [{"type": "circle", "center": [2.0, 2.0], "diameter": 2.0},
+                                    {"type": "circle", "center": [40.0, 20.0], "diameter": 6.0}]}
+    built = _build(matching_part.matching_source(profile, "spacer"), outline_offset=-5.0)
+    assert matching_part.hole_alignment(profile, built) == {"aligned": 1, "total": 2, "max_offset_mm": 0.0, "breakouts": 0}
+
+
+def test_an_unrelated_arc_on_the_outline_is_not_a_breakout():
+    notched = build_worker.profile(pk.semicircle_notch(pk.plate(80, 40, 3), (-40, 0), 8))
+    assert len(notched["outline_arcs"]) == 1
+    hole = {"type": "circle", "center": [20.0, 0.0], "diameter": 6.0}
+    assert matching_part.hole_alignment({**notched, "holes": [hole]}, notched)["breakouts"] == 0
+
+
+def test_the_app_reports_a_breakout():
+    alignment = _post("A_light", "spacer", {"outline_offset": -9.0}, path="/check").json()["alignment"]
+    assert alignment == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 4}
 
 
 @pytest.mark.parametrize("run", SAMPLES)
@@ -120,7 +152,7 @@ def test_every_sample_builds_with_the_original_holes(run, kind):
 
     check = _post(run, kind, path="/check").json()
     assert check["alignment"]["aligned"] == check["alignment"]["total"] > 0
-    assert check["alignment"]["max_offset_mm"] <= 0.002
+    assert check["alignment"]["max_offset_mm"] <= 0.002 and check["alignment"]["breakouts"] == 0
     assert _centers(check["matching"]) == _centers(check["original"])
     assert check["matching"]["outline"] == check["original"]["outline"]
     assert sorted(h.get("diameter", 0) for h in check["matching"]["holes"]) == \

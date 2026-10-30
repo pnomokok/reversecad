@@ -506,4 +506,10 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
+@app.get("/favicon.ico")
+def favicon():
+    """For anything asking the default address instead of reading the page's icon link."""
+    return FileResponse(STATIC / "favicon.svg", media_type="image/svg+xml")
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

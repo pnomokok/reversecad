@@ -1,6 +1,6 @@
 """Candidate approaches (prompt styles) and stopping the search early."""
 import threading
-import time
+from concurrent.futures import ThreadPoolExecutor
 
 import candidates
 from candidates import STYLES, build_prompt, iter_candidates, style_for
@@ -33,20 +33,37 @@ def test_search_settles_when_three_passing_candidates_agree():
 
 
 def test_closing_the_search_cancels_requests_not_yet_started(monkeypatch):
-    calls, lock = [], threading.Lock()
+    # Only two requests may ever finish, so exactly two workers are freed and each starts one queued
+    # request: seven have started, five are still running. Nothing depends on how long a thread takes.
+    finished = 2
+    workers = candidates.MAX_PARALLEL_REQUESTS
+    started = threading.Condition()
+    calls = []
+    may_finish = threading.Semaphore(finished)
+    pools = []
 
-    def slow_request(client, prompt, image_url, effort):
-        with lock:
+    class WatchedPool(ThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            pools.append(self)
+
+    def held_request(client, prompt, image_url, effort):
+        with started:
             calls.append(prompt)
-        time.sleep(0.2)
+            started.notify_all()
+        assert may_finish.acquire(timeout=30)
         return {"choices": [{"message": {"content": ""}, "finish_reason": "stop"}]}
 
     monkeypatch.setattr(candidates, "make_client", lambda: None)
     monkeypatch.setattr(candidates, "image_data_url", lambda path: "data:")
-    monkeypatch.setattr(candidates, "_request_one", slow_request)
+    monkeypatch.setattr(candidates, "_request_one", held_request)
+    monkeypatch.setattr(candidates, "ThreadPoolExecutor", WatchedPool)
     requests = iter_candidates(VIEW, "mask.png", 10)
-    received = [next(requests) for _ in range(2)]
+    received = [next(requests) for _ in range(finished)]
+    with started:
+        assert started.wait_for(lambda: len(calls) == workers + finished, timeout=30)
     requests.close()
-    time.sleep(0.5)  # requests already running may finish; the queued ones must not start
+    may_finish.release(10)  # the running requests finish; a queued one would start now if it was not cancelled
+    pools[0].shutdown(wait=True)
     assert {r[2]["style"] for r in received} <= set(STYLES)
-    assert len(calls) <= candidates.MAX_PARALLEL_REQUESTS + len(received) < 10  # a freed worker may start one more
+    assert len(calls) == workers + finished < 10

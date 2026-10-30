@@ -941,8 +941,10 @@ async function showAlignment(build) {
   }
   const { original, matching, alignment: a } = answer;
   drawOverlay(original, matching);
-  check.textContent = !a.total ? "No holes to align"
-    : `Holes aligned: ${a.aligned}/${a.total}${a.max_offset_mm === null ? "" : `, max offset ${a.max_offset_mm.toFixed(3)} mm`}`;
+  const breakouts = a.breakouts === 1 ? "1 hole breaks through the edge" : `${a.breakouts} holes break through the edge`;
+  check.innerHTML = !a.total ? "No holes to align"
+    : `Holes aligned: ${a.aligned}/${a.total}${a.max_offset_mm === null ? "" : `, max offset ${a.max_offset_mm.toFixed(3)} mm`}`
+      + (a.breakouts ? ` · <span class="fit-warning">${breakouts}</span>` : "");
   check.classList.toggle("bad", a.aligned < a.total);
 }
 
