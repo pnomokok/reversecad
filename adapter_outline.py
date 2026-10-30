@@ -64,12 +64,29 @@ def _points(name, points):
     return [f"{name} = [", *[f"    {_point(p)}," for p in points], "]", ""]
 
 
-def fallback_source(holes_a, holes_b, thickness, label_b, source_program="the original"):
+def _rounded_rect_points(x0, y0, x1, y1, radius, steps=12):
+    """Counterclockwise points of a rounded rectangle: edge ends plus sampled corner arcs."""
+    points = [(x0 + radius, y0), (x1 - radius, y0)]
+    corners = [((x1 - radius, y0 + radius), -90.0, (x1, y1 - radius)),
+               ((x1 - radius, y1 - radius), 0.0, (x0 + radius, y1)),
+               ((x0 + radius, y1 - radius), 90.0, (x0, y0 + radius)),
+               ((x0 + radius, y0 + radius), 180.0, None)]
+    for (cx, cy), start, edge_end in corners:
+        for i in range(1, steps + 1):
+            angle = math.radians(start + 90.0 * i / steps)
+            points.append((round(cx + radius * math.cos(angle), 3), round(cy + radius * math.sin(angle), 3)))
+        if edge_end is not None:
+            points.append(edge_end)
+    return points
+
+
+def fallback_source(holes_a, holes_b, thickness, label_b, margin_default, source_program="the original"):
     """The fallback adapter program (text): a rounded rectangle with margin around every hole.
 
     holes_a are the original's top-face holes (circles and fixed polygons, as measured); holes_b
-    are the placed pattern B circles ({"x", "y", "d"}). Only the thickness and the hole diameters
-    are parameters; the outline that encloses the holes is fixed data.
+    are the placed pattern B circles ({"x", "y", "d"}). Parameters are the thickness, the edge
+    margin (default margin_default, never below MIN_WALL_MM) and the hole diameters; the outline
+    is the base rounded rectangle (drawn at MIN_WALL_MM) grown by the margin above that.
     """
     groups_a, groups_b = {}, {}
     for hole in holes_a:
@@ -90,14 +107,13 @@ def fallback_source(holes_a, holes_b, thickness, label_b, source_program="the or
     y0 = min(p[1] for p in extremes) - MIN_WALL_MM
     y1 = max(p[1] for p in extremes) + MIN_WALL_MM
     length, width = round(x1 - x0, 3), round(y1 - y0, 3)
-    center = (round((x0 + x1) / 2, 3), round((y0 + y1) / 2, 3))
-    # The margin alone makes each side over 4 mm, so a fillet always fits.
+    # The margin alone makes each side over 4 mm, so the corner arcs always fit.
     radius = round(min(FALLBACK_CORNER_RADIUS_MM, length / 2 - 0.1, width / 2 - 0.1), 3)
+    base = _rounded_rect_points(x0, y0, x1, y1, radius)
 
-    arguments = [f"    thickness={thickness!r},"]
-    data = [f"CENTER = {_point(center)}", f"LENGTH = {length!r}", f"WIDTH = {width!r}", ""]
-    body = ["    part = (cq.Workplane(\"XY\", origin=CENTER).rect(LENGTH, WIDTH).extrude(thickness)"
-            f".edges(\"|Z\").fillet({radius!r}))"]
+    arguments = [f"    thickness={thickness!r},", f"    edge_margin={margin_default!r},"]
+    data = [f"MARGIN_BASE = {MIN_WALL_MM!r}", *_points("BASE_OUTLINE", base)]
+    body = ["    part = pk.offset_outline(BASE_OUTLINE, edge_margin - MARGIN_BASE, thickness)"]
     for tag, groups in (("a", groups_a), ("b", groups_b)):
         for i, (diameter, centers) in enumerate(groups.items(), 1):
             parameter = f"hole_diameter_{tag}" if len(groups) == 1 else f"hole_diameter_{tag}_{i}"
@@ -110,7 +126,6 @@ def fallback_source(holes_a, holes_b, thickness, label_b, source_program="the or
     return "\n".join([
         f'"""Adapter plate matching {source_program}: pattern A plus pattern B ({label_b}).',
         "Fallback outline by adapter_outline.py: a rounded rectangle with margin around every hole.\"\"\"",
-        "import cadquery as cq",
         "import partkit as pk",
         "",
         *data,
@@ -129,11 +144,12 @@ def _describe(tag, index, hole):
     return f"pattern {tag} hole {index + 1} at ({at[0]:.2f}, {at[1]:.2f})"
 
 
-def check_adapter(built, holes_a, holes_b):
+def check_adapter(built, holes_a, holes_b, min_margin=MIN_WALL_MM):
     """{"ok", "reasons", "matched", "min_margin_mm"} for a built adapter profile.
 
     holes_a/holes_b are the expected holes in wall form (adapter_place.profile_hole for A,
-    {"circle": (x, y, d)} for placed B). Reasons name the hole and the numbers, for the screen.
+    {"circle": (x, y, d)} for placed B); every hole edge must be at least min_margin from the
+    outline. Reasons name the hole and the numbers, for the screen.
     """
     reasons = []
     if built.get("solid_count", 1) != 1:
@@ -185,10 +201,10 @@ def check_adapter(built, holes_a, holes_b):
         reasons.append(f"extra hole at ({at[0]:.2f}, {at[1]:.2f}), {what}")
     margins = [adapter_place.hole_to_outline(h, built["outline"]) for h in built_holes]
     for hole, margin in zip(built_holes, margins):
-        if margin < MIN_WALL_MM - 1e-9:
+        if margin < min_margin - 1e-9:
             at = adapter_place.hole_center(hole)
             reasons.append(f"hole at ({at[0]:.2f}, {at[1]:.2f}) is {margin:.2f} mm from the edge "
-                           f"(at least {MIN_WALL_MM} mm needed)")
+                           f"(at least {min_margin} mm needed)")
     return {"ok": not reasons, "reasons": reasons, "matched": f"{matched}/{len(expected)}",
             "min_margin_mm": round(min(margins), 3) if margins else None}
 
@@ -205,14 +221,15 @@ def _hole_lines(holes):
     return "\n".join(lines)
 
 
-def build_adapter_prompt(holes_a, holes_b, thickness, style=None):
+def build_adapter_prompt(holes_a, holes_b, thickness, style=None, margin_default=MIN_WALL_MM):
     """Prompt text for an outline around the expected holes (wall form), at this thickness.
 
-    style (a key of candidates.STYLES) adds that approach; None leaves it out.
+    style (a key of candidates.STYLES) adds that approach; None leaves it out. margin_default is
+    the required edge margin (the original's own smallest hole-to-outline distance).
     """
     prompt = PROMPT_TEMPLATE.format(
         count=len(holes_a) + len(holes_b), count_a=len(holes_a), count_b=len(holes_b),
-        holes_a=_hole_lines(holes_a), holes_b=_hole_lines(holes_b), wall=MIN_WALL_MM,
+        holes_a=_hole_lines(holes_a), holes_b=_hole_lines(holes_b), wall=margin_default,
         tolerance=HOLE_TOLERANCE_MM, thickness=round(float(thickness), 2), partkit=partkit_reference())
     if style:
         from candidates import STYLES
@@ -234,7 +251,7 @@ def _request_text(client, prompt, reasoning_effort):
 
 def search_adapter_outlines(holes_a, holes_b, thickness, build, out_dir, tag,
                             count=ADAPTER_CANDIDATE_COUNT, ledger_folder=None, client=None,
-                            reasoning_effort=DEFAULT_REASONING_EFFORT):
+                            reasoning_effort=DEFAULT_REASONING_EFFORT, margin_default=MIN_WALL_MM):
     """Ask Muse Spark Open for `count` outlines and check each; returns rows in candidate order.
 
     Text-only requests (there is no photo to send: the hole lists are the whole task). build(path)
@@ -247,7 +264,8 @@ def search_adapter_outlines(holes_a, holes_b, thickness, build, out_dir, tag,
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     client = client or make_client()
-    prompts = {i: build_adapter_prompt(holes_a, holes_b, thickness, style_for(i)) for i in range(1, count + 1)}
+    prompts = {i: build_adapter_prompt(holes_a, holes_b, thickness, style_for(i),
+                                       margin_default=margin_default) for i in range(1, count + 1)}
     responses = {}
     with ThreadPoolExecutor(max_workers=min(count, ADAPTER_MAX_PARALLEL)) as pool:
         futures = {pool.submit(_request_text, client, prompts[i], reasoning_effort): i for i in prompts}
@@ -282,7 +300,7 @@ def search_adapter_outlines(holes_a, holes_b, thickness, build, out_dir, tag,
             if error:
                 row["error"] = error
             else:
-                report = check_adapter(profile, holes_a, holes_b)
+                report = check_adapter(profile, holes_a, holes_b, min_margin=margin_default)
                 row.update({k: report[k] for k in ("ok", "reasons", "matched", "min_margin_mm")})
                 row["parameter_count"] = len(program_parameters(code))
         rows.append(row)
@@ -319,7 +337,7 @@ Plate rules: the outline is a clean plate shape enclosing every hole; every hole
 """
 
 
-def build_repair_prompt(holes_a, holes_b, thickness, failed):
+def build_repair_prompt(holes_a, holes_b, thickness, failed, margin_default=MIN_WALL_MM):
     """Prompt text for one repair round; failed is [{"name", "code" or None, "reasons"}]."""
     from repair import ANSWER_FORMAT
 
@@ -333,14 +351,14 @@ def build_repair_prompt(holes_a, holes_b, thickness, failed):
                          f"```python\n{attempt['code'].strip()}\n```")
     prompt = REPAIR_INTRODUCTION.format(
         count_a=len(holes_a), count_b=len(holes_b), count=len(holes_a) + len(holes_b),
-        holes_a=_hole_lines(holes_a), holes_b=_hole_lines(holes_b), wall=MIN_WALL_MM,
+        holes_a=_hole_lines(holes_a), holes_b=_hole_lines(holes_b), wall=margin_default,
         tolerance=HOLE_TOLERANCE_MM, thickness=round(float(thickness), 2),
         failed="\n\n".join(parts) if parts else "(no failed programs: nothing was tried yet)")
     return prompt + "\n" + ANSWER_FORMAT
 
 
 def repair_adapter_outlines(holes_a, holes_b, thickness, build, failed, out_dir, tag, ledger_folder=None,
-                            client=None, rounds=REPAIR_ROUNDS):
+                            client=None, rounds=REPAIR_ROUNDS, margin_default=MIN_WALL_MM):
     """Up to `rounds` Muse Wonder repair rounds; {"passed", "rows", "result", "rounds"}.
 
     Text-only (no photo reference exists for an adapter). build(path) returns (profile, error);
@@ -363,7 +381,7 @@ def repair_adapter_outlines(holes_a, holes_b, thickness, build, failed, out_dir,
     tried = [attempt(row, f"candidate {row['candidate']}") for row in failed[:3]]
     rows, history = [], []
     for number in range(1, rounds + 1):
-        prompt = build_repair_prompt(holes_a, holes_b, thickness, tried)
+        prompt = build_repair_prompt(holes_a, holes_b, thickness, tried, margin_default=margin_default)
         (out_dir / f"{tag}_repair{number}_prompt.txt").write_text(prompt, encoding="utf-8")
         try:
             response, seconds = ask_wonder(client, prompt, [])
@@ -394,7 +412,7 @@ def repair_adapter_outlines(holes_a, holes_b, thickness, build, failed, out_dir,
             if error:
                 row["error"] = error
             else:
-                report = check_adapter(profile, holes_a, holes_b)
+                report = check_adapter(profile, holes_a, holes_b, min_margin=margin_default)
                 row.update({k: report[k] for k in ("ok", "reasons", "matched", "min_margin_mm")})
                 row["parameter_count"] = len(program_parameters(code))
         history.append({"round": number, "diagnosis": diagnosis, "passed": bool(row.get("ok")),

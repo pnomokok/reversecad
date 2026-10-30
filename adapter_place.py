@@ -113,6 +113,13 @@ def hole_center(hole):
     return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
+def default_margin(profile):
+    """The adapter's default edge margin for this original: its own smallest hole-to-outline
+    distance (at least MIN_WALL_MM), or MIN_WALL_MM when it has no holes."""
+    margins = [hole_to_outline(profile_hole(hole), profile["outline"]) for hole in profile["holes"]]
+    return round(max(min(margins), MIN_WALL_MM), 2) if margins else MIN_WALL_MM
+
+
 def place_pattern(profile, pattern):
     """Place pattern B's holes onto the profile's (absolute) coordinates.
 

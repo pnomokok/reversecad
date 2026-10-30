@@ -8,6 +8,7 @@ they are what must line up with the original. Curved edges arrive as the profile
 """
 import math
 
+from adapter_place import MIN_WALL_MM
 from design_intent import parameters as program_parameters
 
 KINDS = {"cover": "Cover", "spacer": "Spacer / gasket"}
@@ -15,6 +16,7 @@ SPACER_THICKNESS_MM = 1.0
 OFFSET_LIMIT_MM = 10.0  # the outline offset slider runs from -limit to +limit
 MIN_THICKNESS_MM = 0.1
 MAX_THICKNESS_MM = 10.0  # or twice the default, if that is more
+EDGE_MARGIN_MAX_MM = 10.0  # or twice the default, if that is more
 ALIGNED_WITHIN_MM = 0.05  # a hole counts as aligned when its center is this close to the original's
 
 
@@ -79,6 +81,8 @@ def slider_parameters(source):
             parameter.update(min=MIN_THICKNESS_MM, max=max(MAX_THICKNESS_MM, 2 * value))
         elif name == "outline_offset":
             parameter.update(min=-OFFSET_LIMIT_MM, max=OFFSET_LIMIT_MM)
+        elif name == "edge_margin":
+            parameter.update(min=MIN_WALL_MM, max=max(EDGE_MARGIN_MAX_MM, 2 * value))
         result.append(parameter)
     return result
 

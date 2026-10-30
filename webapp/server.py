@@ -49,6 +49,7 @@ def _needs_keys():
 STATIC = Path(__file__).parent / "static"
 MODEL_DIR = Path("outputs") / "web"  # temporary model files (git-ignored)
 MATCHING_DIR = MODEL_DIR / "matching"  # generated matching programs, named by what they were made from
+_ADAPTER_KEY_VERSION = 2  # bump when the adapter fallback or search changes (older cache files are orphaned)
 REPLAY_DELAY_S = 0.4  # pause between replayed candidate events
 builder = Builder()  # one long-running build process (CadQuery loads once)
 
@@ -198,7 +199,8 @@ async def _adapter_key(name, body):
         raise HTTPException(400, "outline must be auto or fallback")
     overrides = _checked((body or {}).get("base"), _result_names(name))
     original, _ = replay.result_program(name)
-    made_from = json.dumps(["adapter", original.read_text(encoding="utf-8"), overrides, pattern, mode], sort_keys=True)
+    made_from = json.dumps(["adapter", _ADAPTER_KEY_VERSION, original.read_text(encoding="utf-8"), overrides,
+                            pattern, mode], sort_keys=True)
     return hashlib.sha256(made_from.encode("utf-8")).hexdigest()[:24], pattern, overrides, original, mode
 
 
@@ -398,21 +400,23 @@ async def adapter_outline_program(name: str, request: Request):
         raise HTTPException(422, "Patterns overlap — can't place pattern B")
     holes_a = [adapter_place.profile_hole(h) for h in profile["holes"]]
     holes_b = [{"circle": (h["x"], h["y"], h["d"])} for h in placed["holes_b"]]
+    margin_default = adapter_place.default_margin(profile)
     if mode == "fallback" or DEMO or not os.getenv("BASETEN_API_KEY"):
         source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
-                                                 pattern["label"], original.name)
+                                                 pattern["label"], margin_default, original.name)
         outline_source, rows, winner = "fallback", [], None
     else:
         rows = await asyncio.to_thread(adapter_outline.search_adapter_outlines, holes_a, holes_b,
                                        profile["thickness"], _adapter_build, MATCHING_DIR, key,
-                                       adapter_outline.ADAPTER_CANDIDATE_COUNT, replay.run_dir(name))
+                                       adapter_outline.ADAPTER_CANDIDATE_COUNT, replay.run_dir(name),
+                                       margin_default=margin_default)
         winner = adapter_outline.pick_adapter_winner(rows)
         if winner is None and os.getenv("MODEL_API_KEY"):
             try:
                 repaired = await asyncio.to_thread(
                     adapter_outline.repair_adapter_outlines, holes_a, holes_b, profile["thickness"],
                     _adapter_build, [row for row in rows if not row.get("ok")], MATCHING_DIR, key,
-                    replay.run_dir(name))
+                    replay.run_dir(name), margin_default=margin_default)
             except Exception:
                 repaired = {"passed": False, "rows": []}
             rows = rows + repaired["rows"]
@@ -420,7 +424,7 @@ async def adapter_outline_program(name: str, request: Request):
                 winner = repaired["result"]
         if winner is None:
             source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
-                                                     pattern["label"], original.name)
+                                                     pattern["label"], margin_default, original.name)
             outline_source = "fallback"
         elif str(winner.get("label", "")).startswith("R"):
             source = Path(winner["file"]).read_text(encoding="utf-8")
@@ -428,7 +432,7 @@ async def adapter_outline_program(name: str, request: Request):
         else:
             source = Path(winner["file"]).read_text(encoding="utf-8")
             outline_source = "Muse Spark Open"
-    meta = {"pattern": pattern, "placement": placed, "holes_a": profile["holes"],
+    meta = {"pattern": pattern, "placement": placed, "holes_a": profile["holes"], "margin_default": margin_default,
             "thickness": profile["thickness"], "outline_source": outline_source,
             "winner": winner["candidate"] if winner else None, "candidates": rows}
     MATCHING_DIR.mkdir(parents=True, exist_ok=True)

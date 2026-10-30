@@ -8,7 +8,7 @@ from adapter_outline import (
     build_adapter_prompt, build_repair_prompt, check_adapter, fallback_source, pick_adapter_winner,
     repair_adapter_outlines, search_adapter_outlines,
 )
-from adapter_place import MIN_WALL_MM, profile_hole
+from adapter_place import MIN_WALL_MM, default_margin, profile_hole
 from candidates import check_code
 from design_intent import parameters
 
@@ -30,17 +30,17 @@ def _expected():
 
 
 def test_fallback_passes_the_code_screen_and_imports_no_model():
-    source = fallback_source(HOLES_A, HOLES_B, 3.0, "2 × M5 · 60 mm")
+    source = fallback_source(HOLES_A, HOLES_B, 3.0, "2 × M5 · 60 mm", 5.0)
     assert check_code(source) == []
     imports = {alias.name for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Import)
                for alias in node.names}
-    assert imports == {"cadquery", "partkit"}
+    assert imports == {"partkit"}
     params = dict(parameters(source))
-    assert params == {"thickness": 3.0, "hole_diameter_a": 6.0, "hole_diameter_b": 5.5}
+    assert params == {"thickness": 3.0, "edge_margin": 5.0, "hole_diameter_a": 6.0, "hole_diameter_b": 5.5}
 
 
 def test_fallback_builds_and_passes_its_own_checks():
-    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "2 × M5 · 60 mm"))
+    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "2 × M5 · 60 mm", 2.0))
     assert built["solid_count"] == 1 and built["thickness"] == 3.0
     assert built["box"] == [3.0, 3.0, 77.0, 37.0]  # hole extents plus the 2 mm margin
     assert len(built["outline"]) > 4  # rounded corners, not a plain rectangle
@@ -50,17 +50,17 @@ def test_fallback_builds_and_passes_its_own_checks():
 
 def test_fallback_keeps_shaped_holes_of_pattern_a():
     shaped_a = HOLES_A[:2] + [{"type": "polyline", "points": [[30.0, 8.0], [50.0, 8.0], [50.0, 14.0], [30.0, 14.0]]}]
-    built = _build(fallback_source(shaped_a, HOLES_B, 3.0, "pair"))
+    built = _build(fallback_source(shaped_a, HOLES_B, 3.0, "pair", 2.0))
     expected_a = [profile_hole(h) for h in shaped_a]
     assert check_adapter(built, expected_a, _expected()[1])["ok"] is True
 
 
 def test_a_thicker_fallback_still_passes():
-    assert check_adapter(_build(fallback_source(HOLES_A, HOLES_B, 5.0, "pair")), *_expected())["ok"] is True
+    assert check_adapter(_build(fallback_source(HOLES_A, HOLES_B, 5.0, "pair", 2.0)), *_expected())["ok"] is True
 
 
 def test_moved_resized_missing_and_extra_holes_are_caught():
-    good = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair"))
+    good = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 2.0))
 
     moved = copy.deepcopy(good)
     moved["holes"][0]["center"][0] += 1.0
@@ -84,7 +84,7 @@ def test_moved_resized_missing_and_extra_holes_are_caught():
 
 
 def test_a_hole_too_close_to_the_edge_is_caught():
-    good = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair"))
+    good = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 2.0))
     tight = copy.deepcopy(good)
     tight["outline"] = [[0.0, 0.0], [73.0, 0.0], [73.0, 40.0], [0.0, 40.0]]  # edge 1 mm past a hole centre
     report = check_adapter(tight, *_expected())
@@ -96,7 +96,7 @@ def test_margins_are_measured_to_the_built_outline():
 
 
 def adapter_margin(hole):
-    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair"))
+    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 2.0))
     return check_adapter(built, *_expected())["min_margin_mm"]
 
 
@@ -232,6 +232,48 @@ def test_repair_gives_up_after_two_rounds(tmp_path):
                                      [{"candidate": 1, "file": "x.py", "reasons": ["off"]}], tmp_path, "t",
                                      client=_FakeWonderClient(["DIAGNOSIS: x\n" + CODE] * 2))
     assert result["passed"] is False and result["result"] is None and len(result["rows"]) == 2
+
+
+def test_default_margin_is_the_original_s_own_smallest_margin():
+    profile = {"outline": [[0.0, 0.0], [80.0, 0.0], [80.0, 40.0], [0.0, 40.0]],
+               "holes": [{"type": "circle", "center": [8.0, 8.0], "diameter": 6.0},
+                         {"type": "circle", "center": [72.0, 20.0], "diameter": 6.0}]}
+    assert default_margin(profile) == 5.0
+    assert default_margin({"outline": profile["outline"], "holes": []}) == MIN_WALL_MM
+    tight = {"outline": profile["outline"],
+             "holes": [{"type": "circle", "center": [4.0, 20.0], "diameter": 6.0}]}
+    assert default_margin(tight) == MIN_WALL_MM  # clamped to the feasibility floor
+
+
+def test_fallback_grows_with_the_margin_default():
+    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 5.0))
+    assert built["box"] == [0.0, 0.0, 80.0, 40.0]
+    report = check_adapter(built, *_expected(), min_margin=5.0)
+    assert report == {"ok": True, "reasons": [], "matched": "6/6", "min_margin_mm": 5.0}
+
+
+def test_a_lowered_edge_margin_still_builds():
+    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 5.0), edge_margin=2.0)
+    assert check_adapter(built, *_expected())["min_margin_mm"] == 2.0
+
+
+def test_prompt_and_checks_use_the_margin_default():
+    assert "at least 5.0 mm from the outline" in build_adapter_prompt(SEARCH_A, SEARCH_B, 3.0, margin_default=5.0)
+    built = _build(fallback_source(HOLES_A, HOLES_B, 3.0, "pair", 2.0))
+    report = check_adapter(built, *_expected(), min_margin=5.0)
+    assert report["ok"] is False and "(at least 5.0 mm needed)" in report["reasons"][0]
+
+
+def test_search_and_repair_enforce_the_margin_default(tmp_path):
+    rows = search_adapter_outlines(SEARCH_A, SEARCH_B, 3.0, _fake_build({1: (GOOD_PROFILE, None)}), tmp_path,
+                                   "t", count=1, client=_FakeSearchClient({"as few parameters": CODE}),
+                                   margin_default=6.0)
+    assert rows[0]["ok"] is False and "at least 6.0 mm needed" in rows[0]["reasons"][0]
+    result = repair_adapter_outlines(SEARCH_A, SEARCH_B, 3.0, lambda path: (GOOD_PROFILE, None),
+                                     [{"candidate": 1, "file": "x.py", "reasons": ["off"]}], tmp_path, "u",
+                                     client=_FakeWonderClient(["DIAGNOSIS: x\n" + CODE]), rounds=1,
+                                     margin_default=6.0)
+    assert result["passed"] is False
 
 
 def test_winner_is_the_passing_outline_with_the_fewest_parameters():

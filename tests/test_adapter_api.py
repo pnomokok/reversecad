@@ -104,6 +104,8 @@ def test_outline_fallback_needs_no_keys_and_is_cached():
     assert answer["placement"]["candidate"] == "centred" and answer["winner"] is None
     params = {p["name"]: p["default"] for p in answer["parameters"]}
     assert (params["thickness"], params["hole_diameter_a"], params["hole_diameter_b"]) == (3.0, 6.0, 5.5)
+    margin = next(p for p in answer["parameters"] if p["name"] == "edge_margin")
+    assert (margin["default"], margin["min"], margin["max"]) == (5.0, 2.0, 10.0)  # A_light's own margin
     second = client.post("/api/runs/A_light/matching/adapter/outline", json=_outline_body())
     assert second.json()["cached"] is True and second.json()["program"] == answer["program"]
 
@@ -124,7 +126,7 @@ def test_outline_uses_the_search_winner_with_keys(monkeypatch, tmp_path):
     program = tmp_path / "winner.py"
     program.write_text(adapter_outline.fallback_source(
         [{"type": "circle", "center": [0.0, 0.0], "diameter": 6.0}], [{"x": 20.0, "y": 0.0, "d": 5.5}],
-        3.0, "pair"), encoding="utf-8")
+        3.0, "pair", 2.0), encoding="utf-8")
     rows = [{"candidate": 1, "style": "fewest_parameters", "file": str(program), "ok": True, "reasons": [],
              "matched": "2/2", "min_margin_mm": 2.0, "parameter_count": 3}]
     monkeypatch.setattr(adapter_outline, "search_adapter_outlines", lambda *a, **k: rows)
@@ -141,7 +143,7 @@ def test_check_reports_alignment_pattern_b_and_margins():
     check = answer.json()
     assert check["alignment"] == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 0}
     assert len(check["holes_b"]) == 2 and check["label_b"] == "2 × M5 · 60 mm"
-    assert check["min_margin_mm"] == 2.0 and check["outline_source"] == "fallback"
+    assert check["min_margin_mm"] == 5.0 and check["outline_source"] == "fallback"
 
 
 def test_model_and_drawing_work_for_the_adapter():
@@ -166,7 +168,7 @@ def test_outline_repairs_when_search_fails(monkeypatch, tmp_path):
     program = tmp_path / "repaired.py"
     program.write_text(adapter_outline.fallback_source(
         [{"type": "circle", "center": [0.0, 0.0], "diameter": 6.0}], [{"x": 20.0, "y": 0.0, "d": 5.5}],
-        3.0, "pair"), encoding="utf-8")
+        3.0, "pair", 2.0), encoding="utf-8")
     repaired = {"candidate": 101, "label": "R1", "style": "repair", "file": str(program), "ok": True, "reasons": [],
                 "matched": "2/2", "min_margin_mm": 2.0, "parameter_count": 3, "diagnosis": "moved it back"}
     monkeypatch.setattr(adapter_outline, "repair_adapter_outlines",
@@ -205,7 +207,7 @@ def test_adapter_end_to_end_with_the_fallback_outline(preset):
     check = client.post("/api/runs/A_light/matching/adapter/check", json={**body, "parameters": {}}).json()
     assert check["alignment"] == {"aligned": 4, "total": 4, "max_offset_mm": 0.0, "breakouts": 0}
     assert len(check["holes_b"]) == holes_b and check["label_b"] == adapter_pattern.PRESETS[preset]["label"]
-    assert check["min_margin_mm"] >= 2.0
+    assert check["min_margin_mm"] == 5.0  # the adapter inherits A_light's own margin
     assert len(check["matching"]["holes"]) == 4 + holes_b
 
     stl = client.post("/api/runs/A_light/model?match=adapter", json={**body, "parameters": {}})
