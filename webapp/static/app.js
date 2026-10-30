@@ -1045,9 +1045,11 @@ $("adapter-form").addEventListener("submit", async (event) => {
   if (!text) return;
   clearAdapterPreview();
   $("adapter-status").textContent = "Reading the pattern · Muse Spark Open";
+  $("adapter-status").classList.remove("warning");
   const response = await postJSON(`/api/runs/${state.run}/matching/adapter/parse`, { text });
   if (!response.ok) {
     $("adapter-status").textContent = (await response.json()).detail;
+    $("adapter-status").classList.add("warning");
     return;
   }
   const answer = await response.json();
@@ -1060,6 +1062,7 @@ $("adapter-apply").addEventListener("click", () => { if (adapterPattern) runAdap
 $("adapter-dismiss").addEventListener("click", () => {
   clearAdapterPreview();
   $("adapter-status").textContent = "Dismissed.";
+  $("adapter-status").classList.remove("warning");
 });
 
 async function transcribePattern(blob) {

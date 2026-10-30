@@ -37,6 +37,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .chip-accent { background: var(--color-container); color: var(--color-selected); font-family: var(--font-mono); font-size: var(--font-size-label); font-weight: 700; padding: 2px var(--space-2); }
 .dot-accent { width: 8px; height: 8px; border-radius: 50%; background: var(--color-selected); display: inline-block; }
 .status-line { margin: 0; min-height: 18px; text-align: center; font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); }
+.status-line.warning { color: var(--color-selected); }
 
 /* ---------- rail and top bar ---------- */
 .rail {
