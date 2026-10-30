@@ -24,6 +24,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import adapter_pattern
 import drawing_export
 import matching_part
 import voice_edit
@@ -256,6 +257,36 @@ async def matching_check(name: str, kind: str, request: Request):
     _, original = await _matching(name, kind, (await request.json()).get("base"))
     matching = await _profile(program, overrides)
     return {"original": original, "matching": matching, "alignment": matching_part.hole_alignment(original, matching)}
+
+
+@app.get("/api/adapter/presets")
+def adapter_presets():
+    """Pattern B presets: fixed hole layouts with ISO 273 medium diameters (no model, demo-safe)."""
+    return {"presets": adapter_pattern.PRESETS}
+
+
+@app.post("/api/runs/{name}/matching/adapter/parse", dependencies=[Depends(_needs_keys)])
+async def adapter_parse(name: str, request: Request):
+    """Free text -> a validated hole pattern (Muse Spark Open, needs BASETEN_API_KEY).
+
+    Body: {"text": "2 x M5, 60 mm apart"}. The pattern is only parsed and shown back;
+    nothing is placed until the user applies it. Unreadable text is 422 with a message, never a guess.
+    """
+    try:
+        replay.run_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    text = str((await request.json()).get("text") or "").strip()
+    if not text or len(text) > 300:
+        raise HTTPException(400, "send a short pattern description (1-300 characters)")
+    if not os.getenv("BASETEN_API_KEY"):
+        raise HTTPException(503, "pattern reading needs BASETEN_API_KEY in .env (Muse Spark Open)")
+    try:
+        return await asyncio.to_thread(adapter_pattern.interpret_pattern, text, replay.run_dir(name))
+    except RuntimeError as error:  # no pattern could be read: the message goes on screen
+        raise HTTPException(422, str(error))
+    except Exception as error:
+        raise HTTPException(502, f"Muse Spark Open did not answer: {type(error).__name__}")
 
 
 @app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])
