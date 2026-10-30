@@ -118,7 +118,7 @@ def summarize_pattern(pattern):
     else:
         width = max(h["x"] for h in holes) - min(h["x"] for h in holes)
         height = max(h["y"] for h in holes) - min(h["y"] for h in holes)
-        layout = f"{_number(width)} \u00d7 {_number(height)} mm"
+        layout = f"spans {_number(width)} \u00d7 {_number(height)} mm"
     count = f"{len(holes)} hole" + ("s" if len(holes) != 1 else "")
     return f"{count} \u00b7 {sizes} \u00b7 {layout}"
 

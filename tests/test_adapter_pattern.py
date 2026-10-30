@@ -16,8 +16,8 @@ def test_presets_are_valid_and_summarize_to_their_labels(preset):
     pattern, error = validate_pattern(preset)
     assert error is None
     assert summarize_pattern(pattern) == {"2xM5_60": "2 holes · Ø5.5 · 60 mm apart",
-                                          "4xM4_40x40": "4 holes · Ø4.5 · 40 × 40 mm",
-                                          "4xM3_30x30": "4 holes · Ø3.4 · 30 × 30 mm"}[preset["id"]]
+                                          "4xM4_40x40": "4 holes · Ø4.5 · spans 40 × 40 mm",
+                                          "4xM3_30x30": "4 holes · Ø3.4 · spans 30 × 30 mm"}[preset["id"]]
 
 
 def test_a_good_pattern_is_sorted_and_rounded():
@@ -61,6 +61,9 @@ def test_touching_holes_pass_but_overlapping_holes_are_rejected():
 def test_summaries_are_computed_from_the_holes():
     single, _ = validate_pattern({"holes": [{"x": 3.0, "y": 4.0, "d": 6.6}], "label": "one"})
     assert summarize_pattern(single) == "1 hole · Ø6.6 · single hole"
+    spread, _ = validate_pattern({"holes": [{"x": 0, "y": 0, "d": 6.6}, {"x": 43.3, "y": 0, "d": 6.6},
+                                                                {"x": 0, "y": 37.5, "d": 6.6}], "label": "spread"})
+    assert summarize_pattern(spread) == "3 holes · Ø6.6 · spans 43.3 × 37.5 mm"  # width × height
     mixed, _ = validate_pattern({"holes": [{"x": 0, "y": 0, "d": 3.4}, {"x": 10, "y": 0, "d": 6.6}], "label": "mixed"})
     assert summarize_pattern(mixed) == "2 holes · Ø3.4–Ø6.6 · 10 mm apart"
 
