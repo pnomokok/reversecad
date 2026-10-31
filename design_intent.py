@@ -40,6 +40,32 @@ def parameters(code):
     return pairs
 
 
+def replace_defaults(source, values):
+    """A program's source with build_part's defaults replaced by `values` (name -> number).
+
+    Only the default values change (located by the parser, replaced from the end of the text so
+    earlier positions stay valid); the rest of the code is kept as written.
+    """
+    function = next(node for node in ast.parse(source).body
+                    if isinstance(node, ast.FunctionDef) and node.name == "build_part")
+    args = function.args
+    pairs = list(zip(args.args[len(args.args) - len(args.defaults):], args.defaults))
+    pairs += [(arg, default) for arg, default in zip(args.kwonlyargs, args.kw_defaults) if default is not None]
+    lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    edits = []
+    for arg, default in pairs:
+        if arg.arg in values:
+            start = offsets[default.lineno - 1] + default.col_offset
+            end = offsets[default.end_lineno - 1] + default.end_col_offset
+            edits.append((start, end, repr(round(float(values[arg.arg]), 4))))
+    for start, end, text in sorted(edits, reverse=True):
+        source = source[:start] + text + source[end:]
+    return source
+
+
 def symmetry_axes(truth, tolerance=0.01):
     """Mirror axes of the true part: 'left-right' (u -> -u) and/or 'top-bottom' (v -> -v)."""
     def same(points_a, points_b):

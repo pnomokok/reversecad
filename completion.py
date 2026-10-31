@@ -20,10 +20,11 @@ import numpy as np
 import usage_ledger
 from break_cues import find_break_cues
 from candidates import check_code, extract_python_block
-from design_intent import parameters as program_parameters
+from design_intent import parameters as program_parameters, replace_defaults
 from e2e_pipeline import MM_PER_PIXEL, pixel_to_mm_scales, save_json
 from homography import rectify_image
 from repair import ask_wonder, make_client
+from restored_hole import restore_hole_position
 from sam_client import load_photo
 
 FOLDER = "6_completion"
@@ -174,12 +175,49 @@ def verify_parts(parts, table, winner_params):
     checked = []
     for part in parts:
         entry = dict(part)
-        if part.get("basis") == "measured" and not _measured_backed(part, by_name, centers, diameters,
-                                                                    winner_params):
+        if (part.get("basis") == "measured" and part.get("method") != "arc fit"
+                and not _measured_backed(part, by_name, centers, diameters, winner_params)):
             entry["basis"] = "estimated"
             entry["demoted_from"] = "measured"
         checked.append(entry)
     return checked
+
+
+def _position_pairs(parts):
+    """[(x_entry, y_entry)] for complete x/y (or u/v) pairs with numeric values."""
+    by_name = {part["name"]: part for part in parts}
+    pairs = []
+    for part in parts:
+        for x_suffix, y_suffix in (("_x", "_y"), ("_u", "_v")):
+            if part["name"].endswith(x_suffix):
+                mate = by_name.get(part["name"][:-2] + y_suffix)
+                if mate is not None and isinstance(mate.get("value"), (int, float)):
+                    pairs.append((part, mate))
+    return pairs
+
+
+def apply_restored_positions(parts, table):
+    """PARTS with restored-hole pairs moved to their deterministic positions.
+
+    A pair on no measured hole claims a restored hole: its numbers come from
+    restore_hole_position, with its basis and method set (Wonder's explanation text is
+    kept). Returns (parts, defaults) with the pair parameters' new defaults.
+    """
+    centers = [xy for xy in (_hole_xy(hole) for hole in table.get("holes", [])) if xy is not None]
+    checked = [dict(part) for part in parts]
+    defaults = {}
+    for x_entry, y_entry in _position_pairs(checked):
+        claimed = (x_entry["value"], y_entry["value"])
+        if any(float(np.linalg.norm(np.array(claimed) - np.array(center))) <= HOLE_MATCH_MM
+               for center in centers):
+            continue  # an existing hole, not a restored one
+        (x, y), method = restore_hole_position(table, claimed)
+        for entry, value in ((x_entry, x), (y_entry, y)):
+            entry["value"] = value
+            entry["basis"] = "measured" if method == "arc fit" else "estimated"
+            entry["method"] = method
+            defaults[entry["name"]] = value
+    return checked, defaults
 
 
 def verified_stored_parts(run_folder, data):
@@ -233,6 +271,7 @@ def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues
     save_json(folder / "response.json", response)
     usage_ledger.record_response(out, usage_ledger.WONDER, f"completion ({source})", response, seconds)
     answer = parse_answer(None if "error" in response else response["choices"][0]["message"]["content"])
+    answer["parts"], restored = apply_restored_positions(answer["parts"], table)
     winner_params = {name: value for name, value in program_parameters(winner_code)
                      if isinstance(value, (int, float)) and not isinstance(value, bool)}
     answer["parts"] = verify_parts(answer["parts"], table, winner_params)
@@ -243,7 +282,7 @@ def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues
 
     if answer["code"]:
         program = folder / "completed.py"
-        program.write_text(answer["code"], encoding="utf-8")
+        program.write_text(replace_defaults(answer["code"], restored), encoding="utf-8")
         result["program"] = program.name
         result["check"] = check_completion(program, winner_path, folder, builder)
     result["valid"] = bool(result["check"] and result["check"]["ok"])

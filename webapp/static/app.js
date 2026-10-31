@@ -1240,7 +1240,7 @@ function partsHTML(parts, answers, locked) {
   // (with the suggested value in a stepper) and per optional feature (off unless ticked).
   const escape = (text) => escapeAttribute(text || "");
   const isFlag = (p) => /^(add|restore)_/.test(p.name) && (p.value === 0 || p.value === 1);
-  const item = (p) => escape(prettyName(p.name)) + (isFlag(p) ? "" : ` ${p.value}`);
+  const item = (p) => escape(prettyName(p.name)) + (isFlag(p) ? "" : ` ${p.value}`) + (p.method ? ` · ${escape(p.method)}` : "");
   const measured = parts.filter((p) => p.basis === "measured");
   const asked = parts.filter((p) => p.basis !== "measured");
   const value = (p) => answers[p.name] || p.value;
@@ -1260,7 +1260,7 @@ function partsHTML(parts, answers, locked) {
       ? `<label class="question-label"><input type="checkbox" data-optional="${escape(p.name)}" ${answers[p.name] > 0 ? "checked" : ""} ${locked ? "disabled" : ""}>${escape(prettyName(p.name))}?</label>`
       : `<span class="question-label">${escape(prettyName(p.name))}?</span>`;
     // Short on the card (the parameter as a question); Wonder's full question on hover.
-    const sub = optional ? `suggested ${p.value} mm · not visible, off unless ticked` : `suggested ${p.value} mm`;
+    const sub = (optional ? `suggested ${p.value} mm · not visible, off unless ticked` : `suggested ${p.value} mm`) + (p.method ? ` · ${escape(p.method)}` : "");
     html.push(`<div class="question" title="${escape(p.question)}"><span class="question-text">${label}`
       + `<span class="question-sub">${sub}</span></span>${stepper(p)}</div>`);
   }
