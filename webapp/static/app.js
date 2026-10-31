@@ -364,6 +364,9 @@ function showSummary(a) {
   const warning = a.resolution_warning;
   $("resolution-warning").classList.toggle("hidden", !warning);
   if (warning) $("resolution-warning-text").textContent = warning;
+  const tilt = a.tilt_warning;
+  $("tilt-warning").classList.toggle("hidden", !tilt);
+  if (tilt) $("tilt-warning-text").textContent = tilt;
   $("measure-results").classList.remove("hidden");
 }
 
@@ -387,6 +390,7 @@ function resetResults() {
   state.winner = null;
   $("measure-results").classList.add("hidden");
   $("resolution-warning").classList.add("hidden");
+  $("tilt-warning").classList.add("hidden");
   $("to-candidates").classList.add("hidden");
   $("analyze").classList.remove("hidden");
   $("capture-status").textContent = "";

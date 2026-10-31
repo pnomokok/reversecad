@@ -23,6 +23,7 @@ import numpy as np
 from e2e_pipeline import pixel_to_mm_scales, run_photo
 from homography import largest_contour, to_mm
 from resolution import MIN_CARD_PX, card_long_edge_px
+from tilt_warning import TILT_WARNING_THRESHOLD, card_tilt
 
 PHOTO_DIR = Path("data") / "private"
 OUT = Path("outputs") / "real"
@@ -94,19 +95,20 @@ def extra_measurements(out, hole_method):
     part_mask = cv2.imread(str(out / f"3_mask_{hole_method}.png"), cv2.IMREAD_GRAYSCALE) > 0
     card_px = card_long_edge_px(card_mask)
     scales, scale_used, _ = pixel_to_mm_scales(card_mask)
-    return card_px, median_extents(part_mask, scales[scale_used])
+    return card_px, median_extents(part_mask, scales[scale_used]), card_tilt(card_mask)
 
 
 def percent(value, reference):
     return f"{(value - reference) / reference:+.1%}"
 
 
-def compare(name, measured, table, card_px, medians):
+def compare(name, measured, table, card_px, medians, tilt):
     length, width = table["outline"]["length_mm"], table["outline"]["width_mm"]
     ref_length, ref_width = measured["length"], measured["width"]
     median_length, median_width = medians
     print(f"\n[{measured['tool']}] {name}: card {card_px:.0f} px long"
-          f"{f'  WARNING: under {MIN_CARD_PX} px, small holes and edges lose precision' if card_px < MIN_CARD_PX else ''}")
+          f"{f'  WARNING: under {MIN_CARD_PX} px, small holes and edges lose precision' if card_px < MIN_CARD_PX else ''}"
+          f"{'  WARNING: phone looks tilted, hold it parallel to the table and retake' if tilt > TILT_WARNING_THRESHOLD else ''}")
     print(f"        outline max    {length:.1f} x {width:.1f} mm vs {ref_length} x {ref_width} "
           f"({percent(length, ref_length)} / {percent(width, ref_width)})")
     print(f"        outline median {median_length:.1f} x {median_width:.1f} mm vs {ref_length} x {ref_width} "
@@ -131,8 +133,8 @@ def main(names):
             result = run_photo(name, PHOTO_DIR / photo["file"], photo["click"], out, config["candidates"],
                                config.get("candidates_folder", "candidates_intent"),
                                suggest=config.get("suggest", True))
-            card_px, medians = extra_measurements(out, result["hole_method"])
-            compare(f"{name} ({photo['file']})", config["measured"], result["table"], card_px, medians)
+            card_px, medians, tilt = extra_measurements(out, result["hole_method"])
+            compare(f"{name} ({photo['file']})", config["measured"], result["table"], card_px, medians, tilt)
             (out / "3_report_extras.json").write_text(json.dumps(
                 {"card_long_px": round(card_px, 1), "median_length_mm": round(medians[0], 2),
                  "median_width_mm": round(medians[1], 2), "measured": config["measured"]}, indent=1),
