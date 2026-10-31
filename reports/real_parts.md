@@ -104,3 +104,18 @@ restored point lands exactly on the corner — the intersection of the extended 
 and right edges — and the collinear middle point merges away. The cut's asymmetry
 only moves where the winner drew the break line, not the restored corner. No change
 needed.
+
+## 8. Deterministic restored-hole position on BREAK2
+
+Same §6 alignment (3-hole fit, RMS 0.711 mm). The code tries arc fit, neighbour
+alignment, then the mirror fallback:
+
+| Method | Position mm | Centre err vs intact (36.85, 37.28) | Shown as |
+|---|---|---|---|
+| (a) arc fit | refused: the ragged arc covers ~40° of the circle, under the 60° bar | – | – |
+| (b) aligned with neighbours | (38.74, 38.94): x from the BR-column hole, y from the TL-row hole | 2.56 mm | Estimated |
+| (c) mirrored | (42.66, 39.16): Wonder's mirror of the top-left hole | 6.19 mm | Estimated |
+
+Method (b) is chosen. Diameter is the shared 6.11 vs 5.97 mm (+0.14) under every
+method. The mirror misses by 6 mm because the hand-punched layout is itself
+asymmetric; alignment halves that twice over by reading the actual rows/columns.
