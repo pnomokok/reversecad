@@ -163,11 +163,14 @@ Findings (reported, not fixed): two breaks need two cue regions and two hole
 pairs — the pipeline found one of each and restored zero holes; a mirrored
 notch entered the restored corner unchallenged.
 
-After fix — NOT held-out (the check and prompt changed after seeing BREAK3);
-run `live-20261031-205032-a27d72`, held-out numbers above unchanged: one
-suggestion, valid, restores the big corner with no notch and no hole positions.
-Same physical fit (rms 0.052): extents 106.24 × 96.16, identical; outline
-deviation max 12.36 (unchanged), mean 0.72 mm (was 1.21). The 12.36 mm sits at
-the small cut through unrestored hole 0 (upper-left), where the unmended cut
-edge runs 12 mm inside the intact outline (overlay:
-`break3_after_fix_overlay.svg`).
+After fix — NOT held-out (the check and prompt changed after seeing BREAK3),
+held-out numbers above unchanged. Two runs, both reported (model output varies
+between runs): `live-20261031-205032-a27d72` — valid, corner only, no notch,
+same physical fit (rms 0.052), extents 106.24 × 96.16, max 12.36, mean 0.72 mm;
+`live-20261031-212531-ac3862` — valid, corner only, no notch, same fit (rms
+0.047), extents 106.25 × 96.18, max 13.09, mean 1.43 mm. They differ because
+the second run's winning program drew the real cut through unrestored hole 2
+as a notch, which the valid corner restoration kept; in both runs the largest
+deviation lies in an unrestored broken-hole region (overlay
+`break3_after_fix_overlay.svg` shows the first run: its 12.36 mm sits at the
+small cut through unrestored hole 0, upper-left).
