@@ -8,6 +8,7 @@ import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const ISO = new THREE.Vector3(1, -1, 0.9).normalize();  // looking at the front (-y) and right (+x) faces
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // shiftRight (px) moves the picture right, to keep the part clear of an overlay on the left.
 export function createViewer(container, { shiftRight = 0 } = {}) {
@@ -159,7 +160,10 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       scene.add(annotations);
     }
     if (annotations) annotations.visible = labelsVisible;
-    if (!framedRadius) setView("iso");  // first show frames the part
+    if (!framedRadius) {  // first show: the part rises from its flat outline while the camera swings down
+      if (reducedMotion()) setView("iso");
+      else riseFromTop();
+    }
     else {  // slider rebuilds keep the view, unless the part outgrew the frame or shrank to less than
       // half of it: then the frustum is refit (direction kept) so a small part is never left tiny.
       const radius = framedBox().getSize(new THREE.Vector3()).length() / 2;
@@ -254,6 +258,43 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   function setChanged(keys) {
     changed = new Set(keys);
     for (const [key, element] of Object.entries(labelElements)) element.classList.toggle("changed", changed.has(key));
+  }
+
+  function riseFromTop() {
+    // Model-ready transition on the real geometry: flat outline to full thickness, top view to iso.
+    const box = framedBox();
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = box.getSize(new THREE.Vector3()).length() / 2;
+    framedRadius = radius;
+    setFrustum(radius);
+    camera.zoom = 1;
+    controls.target.copy(center);
+    camera.up.set(0, 0, 1);
+    const topPos = center.clone().add(new THREE.Vector3(0, 0, radius * 4));
+    const isoPos = center.clone().addScaledVector(ISO, radius * 4);
+    camera.position.copy(topPos).lerp(isoPos, 0.02);  // a touch off the exact top, so "up" stays valid
+    camera.updateProjectionMatrix();
+    controls.update();
+    part.scale.z = 0.02;
+    if (annotations) annotations.scale.z = 0.02;
+    controls.enabled = false;
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / 1100);
+      const eased = 1 - Math.pow(1 - t, 3);
+      camera.position.copy(topPos).lerp(isoPos, 0.02 + 0.98 * eased);
+      part.scale.z = 0.02 + 0.98 * eased;
+      if (annotations) annotations.scale.z = part.scale.z;
+      camera.updateProjectionMatrix();
+      controls.update();
+      if (t < 1) requestAnimationFrame(step);
+      else {
+        part.scale.z = 1;
+        if (annotations) annotations.scale.z = 1;
+        controls.enabled = true;
+      }
+    };
+    requestAnimationFrame(step);
   }
 
   function loop() {

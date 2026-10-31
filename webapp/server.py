@@ -124,6 +124,15 @@ async def candidate_stream(name: str, round: str | None = None):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
+@app.get("/api/runs/{name}/reference.png")
+def run_reference(name: str):
+    """The reference mask, shown dimmed behind each candidate silhouette."""
+    try:
+        return FileResponse(replay.reference_path(name))
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+
+
 @app.get("/api/runs/{name}/candidates/{candidate}/silhouette.png")
 def candidate_silhouette(name: str, candidate: int, round: str | None = None):
     try:

@@ -143,11 +143,12 @@ function scale() {
   return canvas.width / (canvas.clientWidth || canvas.width);
 }
 
-function polygon(points, color, width, closed = true, glow = false) {
+function polygon(points, color, width, closed = true, glow = false, progress = 1) {
   context.save();
   context.beginPath();
-  points.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
-  if (closed) context.closePath();
+  const shown = progress >= 1 ? points : points.slice(0, Math.max(2, Math.ceil(points.length * progress)));
+  shown.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+  if (closed && progress >= 1) context.closePath();
   context.strokeStyle = color;
   context.lineWidth = width * scale();
   if (glow) {
@@ -267,22 +268,26 @@ function drawCard(corners) {
   edgeDimension([shortPair[1], shortPair[0]], center, "53.98 mm", gap);  // left short edge first
 }
 
-function drawMeasurements(a) {
+function drawMeasurements(a, fx) {
+  fx = fx || { outline: 1, dims: 1 };  // measure intro: the contour draws itself, then the dimensions fade in
   const s = scale();
   occupied = [];
   polygon(a.card_corners_px, css("--color-overlay-card"), 2);
-  polygon(a.outline_px, css("--color-overlay-part"), Number(css("--overlay-line-width")), true, true);
+  polygon(a.outline_px, css("--color-overlay-part"), Number(css("--overlay-line-width")), true, true, fx.outline);
   a.holes.forEach((hole) => polygon(hole.contour_px, css("--color-overlay-hole"), 2));
 
   const box = orientedBox(a.outline_px);
   if (state.click) occupied.push([state.click[0] - 70 * s, state.click[1] - 30 * s, state.click[0] + 70 * s, state.click[1] + 62 * s]);
 
   // The part's outline first (its labels matter most), along its own axes; then the holes; then the card.
+  context.save();
+  context.globalAlpha = fx.dims;
   const { longPair, shortPair } = sidePairs(box.corners);
   edgeDimension(longPair, box.center, mm(a.outline_mm.length), 56 * s);
   edgeDimension(shortPair, box.center, mm(a.outline_mm.width), 56 * s);
   holeGroups(a.holes).forEach((group) => drawHoleGroup(group, box));
   drawCard(a.card_corners_px);
+  context.restore();
 }
 
 function holeGroups(holes) {
@@ -375,7 +380,7 @@ function render() {
   canvas.width = state.image.naturalWidth;
   canvas.height = state.image.naturalHeight;
   context.drawImage(state.image, 0, 0);
-  if (state.analysis) drawMeasurements(state.analysis);
+  if (state.analysis) drawMeasurements(state.analysis, state.fx);
   drawClick();
   updateBadges();
 }
@@ -529,11 +534,34 @@ $("thickness").addEventListener("input", updateProcedure);
 document.querySelectorAll("#thickness-presets button").forEach((b) =>
   b.addEventListener("click", () => setThickness(Number(b.dataset.thickness))));
 
+function showScan() {
+  if (reducedMotion()) return;
+  $("scanline").classList.remove("hidden");
+}
+function hideScan() { $("scanline").classList.add("hidden"); }
+
+function playMeasureIntro() {
+  // The mask contour draws itself as an orange line, then the dimension lines fade in with
+  // their final numbers. Purely visual: nothing waits for it.
+  if (reducedMotion() || state.screen !== "capture") { state.fx = null; render(); hideScan(); return; }
+  if (!state.live) { showScan(); setTimeout(hideScan, 900); }  // replay has no live SAM stage to watch
+  else hideScan();  // live: the scan ran while SAM worked; the mask has arrived
+  const t0 = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - t0) / 900);
+    state.fx = { outline: 1 - Math.pow(1 - t, 3), dims: Math.max(0, Math.min(1, (t - 0.35) / 0.65)) };
+    if (t >= 1 || state.screen !== "capture") { state.fx = null; render(); return; }
+    render();
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 function showAnalysis(a) {
   state.analysis = a;
   $("analyze").classList.add("hidden");
   $("to-candidates").classList.remove("hidden");
-  render();
+  playMeasureIntro();
   updateProcedure();
   updateCaptureBars();
   enableSteps();
@@ -543,6 +571,7 @@ function measureLive() {
   return new Promise((resolve) => {
     const status = $("capture-status");
     const [x, y] = state.click;
+    showScan();
     const stream = new EventSource(`/api/live/${state.run}/measure/stream?x=${x}&y=${y}`);
     stream.addEventListener("progress", (m) => (status.textContent = JSON.parse(m.data).message));
     stream.addEventListener("analysis", (m) => {
@@ -555,6 +584,7 @@ function measureLive() {
     stream.addEventListener("error", (m) => {
       stream.close();
       status.textContent = m.data ? `Failed: ${JSON.parse(m.data).message}` : "The connection was lost.";
+      hideScan();
       watch.pause();
       resolve();
     });
@@ -574,6 +604,8 @@ $("analyze").addEventListener("click", measure);
 // ---------- search ----------
 const escapeAttribute = (text) => String(text).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const percent = (model, truth) => `${model - truth >= 0 ? "+" : "−"}${Math.abs((100 * (model - truth)) / truth).toFixed(1)}%`;
+
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function scoreLine(event) {
   // IoU, and the fit to the measurements when it was checked (title explains the number).
@@ -624,12 +656,17 @@ function candidateCard(event) {
   const card = document.createElement("div");
   card.className = `candidate-card ${event.status}`;
   card.id = `candidate-${event.candidate}`;
-  const picture = event.silhouette ? `<img src="${event.silhouette}" alt="candidate ${event.candidate} silhouette">` : "";
+  const reference = `<img class="shape-ref" src="/api/runs/${state.run}/reference.png" alt="" onerror="this.remove()">`;
+  const picture = event.silhouette ? reference + `<img class="shape-cand" src="${event.silhouette}" alt="candidate ${event.candidate} silhouette">` : "";
   const reason = event.reasons.length  // plain words on the card, the technical text on hover
     ? `<div class="reason" title="${escapeAttribute(event.reasons.join("\n"))}">${event.plain_reasons[0]}</div>` : "";
   const status = { passed: "PASS", rejected: "REJECTED", failed: "FAILED" }[event.status];
   card.innerHTML = `<header><span>#${idOf(event)}</span><span class="status-chip">${status}</span></header>`
     + `<div class="shape">${picture}${reason}</div><div class="scores">${scoreLine(event)}</div>`;
+  if (event.status === "rejected" || event.status === "failed") {  // visible fade-out, then the reason stays
+    if (reducedMotion()) card.classList.add("settled");
+    else requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("settled")));
+  }
   return card;
 }
 
@@ -647,7 +684,8 @@ function winnerCard(event) {
       + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
   card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${idOf(event)}</span>${event.label ? "REPAIRED" : "BEST MATCH"}</span>`
     + `<span class="winner-chip">Selected · ${event.parameters} params</span></div>`
-    + `<div class="shape">${length}<img src="${event.silhouette}" alt="selected candidate silhouette"></div>`
+    + `<div class="shape">${length}<img class="shape-ref" src="/api/runs/${state.run}/reference.png" alt="" onerror="this.remove()">`
+    + `<img class="shape-cand" src="${event.silhouette}" alt="selected candidate silhouette"></div>`
     + `<div class="winner-scores"><div><span class="label">Overlap (IoU)</span><span class="big-accent">IoU ${event.iou.toFixed(4)}</span></div>`
     + `${fit}</div>${truth}`;
   return card;

@@ -99,6 +99,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .canvas-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-6) var(--space-6) 64px; }
 .canvas-stage canvas { display: block; max-width: 100%; max-height: 100%; cursor: crosshair; box-shadow: 0 10px 40px var(--color-lowest); }
+.scanline { position: absolute; left: var(--space-6); right: var(--space-6); height: 2px; background: var(--color-selected); box-shadow: 0 0 12px var(--color-selected-glow); animation: scan-sweep 1.1s linear infinite; pointer-events: none; }
+@keyframes scan-sweep { from { top: 0; } to { top: 100%; } }
+@media (prefers-reduced-motion: reduce) { .scanline { animation: none; } }
 .stage-empty { color: var(--color-text-muted); font-size: var(--font-size-value); text-align: center; max-width: 520px; }
 .badge {
   position: absolute; bottom: var(--space-5); display: flex; align-items: center; gap: var(--space-4);
@@ -196,10 +199,13 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .status-chip { font-family: var(--font-mono); font-size: var(--font-size-label-sm); font-weight: 600; padding: 1px var(--space-1); background: var(--color-high); color: var(--color-text); text-transform: uppercase; }
 .candidate-card .shape { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--color-lowest); position: relative; overflow: hidden; }
 .candidate-card .shape img { max-width: 92%; max-height: 88%; object-fit: contain; }
+.candidate-card .shape img.shape-ref { position: absolute; inset: 0; margin: auto; opacity: 0.25; }
+.candidate-card .shape img.shape-cand { position: relative; transition: opacity 0.6s ease; }
 .candidate-card .scores { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text); background: var(--color-low); padding: 2px var(--space-2); }
 .candidate-card.rejected, .candidate-card.failed { background: var(--color-low); }
-.candidate-card.rejected .shape img, .candidate-card.failed .shape img, .candidate-card.rejected .scores, .candidate-card.failed .scores,
+.candidate-card.rejected .scores, .candidate-card.failed .scores,
 .candidate-card.rejected header span:first-child, .candidate-card.failed header span:first-child { opacity: 0.4; }
+.candidate-card.rejected.settled .shape img.shape-cand, .candidate-card.failed.settled .shape img.shape-cand { opacity: 0.15; }
 .candidate-card.rejected .status-chip, .candidate-card.failed .status-chip { background: var(--color-bad-container); color: var(--color-bad-on-container); }
 .reason {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-2); text-align: center;

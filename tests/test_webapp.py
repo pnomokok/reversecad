@@ -72,7 +72,8 @@ def test_every_image_a_sample_shows_exists(run, monkeypatch):
     events = _events(client.get(f"/api/runs/{run}/candidates/stream").text)
     done = events[-1][1]
     images = [data["silhouette"] for kind, data in events if kind == "candidate" and data["silhouette"]]
-    images += [(done["fallback"] or {}).get("silhouette"), f"/api/runs/{run}/photo", f"/api/runs/{run}/capture-fit.png"]
+    images += [(done["fallback"] or {}).get("silhouette"), f"/api/runs/{run}/photo", f"/api/runs/{run}/capture-fit.png",
+               f"/api/runs/{run}/reference.png"]
     for url in filter(None, images):
         assert client.get(url).status_code == 200, url
 

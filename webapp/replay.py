@@ -57,6 +57,14 @@ def photo_path(name):
     return _photo(run_dir(name, measured=False))
 
 
+def reference_path(name):
+    """The run's reference top-view mask (3_part_mask_topdown.png) every candidate is checked against."""
+    path = run_dir(name, measured=False) / "3_part_mask_topdown.png"
+    if not path.exists():
+        raise FileNotFoundError(f"run {name!r} has no reference mask")
+    return path
+
+
 def _cached_card_mask(folder, image):
     """The card mask the run used: the first card prompt whose cached answer has a card-shaped mask.
 
