@@ -18,6 +18,7 @@ from repair import REPAIR_NUMBER
 from resolution import card_long_edge_px, resolution_warning
 from tilt_warning import card_tilt, tilt_warning
 from design_intent import parameters
+from deviation_check import describe
 from e2e_pipeline import CARD_PROMPTS, MM_PER_PIXEL, card_aspect_ok, pixel_to_mm_scales
 from homography import card_corners, largest_contour, to_mm
 from iou import _centroid_and_angle, aligned_iou
@@ -99,7 +100,7 @@ def _status(row):
     if row.get("topology_ok") is False:
         reasons += row.get("topology_issues", [])
     if not row.get("deviation_ok", True):
-        reasons += [f"{d['dimension']}: off by {d['deviation_mm']} mm (limit {d['limit_mm']})"
+        reasons += [describe(d)
                     for d in row.get("deviation", []) if not d["ok"]]
     return ("rejected" if reasons else "passed"), reasons
 

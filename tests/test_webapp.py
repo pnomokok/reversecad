@@ -81,6 +81,14 @@ def test_plain_reasons():
     assert replay.plain_reason("no python code block (finish=stop, 900 output tokens)") == "the answer contained no code"
     assert replay.plain_reason("ValueError: Null TopoDS_Shape object") == "the program crashed while building the part"
     assert replay.plain_reason("hole 2 diameter: off by 0.8 mm (limit 0.5)") == "hole 2 diameter is off by 0.8 mm (limit 0.5)"
+    assert replay.plain_reason("hole count: expected 4, found 3") == "hole count: expected 4, found 3"
+
+
+def test_hole_count_rejection_shows_counts():
+    row = {"deviation_ok": False, "deviation": [{"dimension": "hole count", "measured_mm": 4,
+                                                "candidate_mm": 3, "deviation_mm": None,
+                                                "limit_mm": 0, "ok": False}]}
+    assert replay._status(row) == ("rejected", ["hole count: expected 4, found 3"])
 
 
 @needs_saved_run

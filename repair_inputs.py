@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from baseline_cad import baseline_code
+from deviation_check import describe
 from e2e_pipeline import xor_image
 from model_view import model_view
 
@@ -62,8 +63,7 @@ def failure_reasons(row):
     if "error" in row:
         return [row["error"].strip().splitlines()[-1]]
     reasons = list(row.get("topology_issues") or [])
-    reasons += [f"{d['dimension']}: measured {d['measured_mm']}, candidate {d['candidate_mm']}, "
-                f"off by {d['deviation_mm']} mm (limit {d['limit_mm']})" for d in row.get("deviation", []) if not d["ok"]]
+    reasons += [describe(d, verbose=True) for d in row.get("deviation", []) if not d["ok"]]
     return reasons
 
 

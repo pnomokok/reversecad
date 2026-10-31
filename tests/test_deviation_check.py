@@ -3,7 +3,7 @@ import cadquery as cq
 import numpy as np
 
 import partkit as pk
-from deviation_check import check_deviation, tolerance
+from deviation_check import check_deviation, describe, tolerance
 from model_view import model_view
 from part_measurements import measure_part
 from parts.template_parts import make_part
@@ -86,3 +86,15 @@ def test_extra_hole_is_rejected():
     extra = ((-32, -12), (-32, 12), (32, -12), (32, 12), (0, 0))
     ok, rows = check_deviation(model_view(table_of(plate())), table_of(plate(holes=extra)))
     assert not ok and "hole count" in failing(rows)
+
+
+def test_hole_count_reason_shows_counts():
+    row = {"dimension": "hole count", "measured_mm": 4, "candidate_mm": 3,
+           "deviation_mm": None, "limit_mm": 0, "ok": False}
+    assert describe(row) == "hole count: expected 4, found 3"
+    assert describe(row, verbose=True) == "hole count: expected 4, found 3"
+    plain = {"dimension": "hole 2 diameter", "measured_mm": 6.0, "candidate_mm": 6.8,
+             "deviation_mm": 0.8, "limit_mm": 0.5, "ok": False}
+    assert describe(plain) == "hole 2 diameter: off by 0.8 mm (limit 0.5)"
+    assert describe(plain, verbose=True) == ("hole 2 diameter: measured 6.0, candidate 6.8, "
+                                             "off by 0.8 mm (limit 0.5)")

@@ -109,3 +109,13 @@ def check_deviation(view, candidate):
         for key, value in measured_sizes.items():
             add(f"hole {i} {key}", value, chosen_sizes[key], SMALL_LIMIT_MM)
     return all(row["ok"] for row in rows), rows
+
+
+def describe(row, verbose=False):
+    """One failed deviation row as a short reason line; the hole count shows counts, not mm."""
+    if row["dimension"] == "hole count":
+        return f"hole count: expected {row['measured_mm']}, found {row['candidate_mm']}"
+    if verbose:
+        return (f"{row['dimension']}: measured {row['measured_mm']}, candidate {row['candidate_mm']}, "
+                f"off by {row['deviation_mm']} mm (limit {row['limit_mm']})")
+    return f"{row['dimension']}: off by {row['deviation_mm']} mm (limit {row['limit_mm']})"
