@@ -1,9 +1,11 @@
 """Completion suggestions: reading Wonder's answer, and which completed programs pass the check."""
 import json
+from pathlib import Path
 
 import pytest
 
-from completion import check_completion, parse_answer, verify_parts
+from completion import apply_restored_positions, check_completion, parse_answer, verify_parts
+from design_intent import replace_defaults
 from webapp import replay
 from webapp.builder import Builder
 
@@ -17,6 +19,12 @@ def build_part(length=80.0, width=40.0, thickness=3.0, hole_diameter=6.0):
 
 ADDS_THE_MISSING_HOLE = WINNER.replace("(-32, 12)]", "(-32, 12), (32, 12)]")
 ADDS_A_TAB = WINNER.replace("    return pk.hole_pattern", "    part = pk.tab(part, (0, 20), 12, 16, 90)\n    return pk.hole_pattern")
+WINNER_STUB = WINNER.replace("    return pk.hole_pattern", "    part = pk.tab(part, (0, 20), 4, 16, 90)\n    return pk.hole_pattern")
+EXTENDS_THE_STUB = WINNER_STUB.replace("pk.tab(part, (0, 20), 4, 16, 90)", "pk.tab(part, (0, 20), 12, 16, 90)")
+NOTCHED_TAB = EXTENDS_THE_STUB.replace(
+    "    return pk.hole_pattern(part, [(-32, -12), (32, -12), (-32, 12)], hole_diameter)",
+    "    part = pk.hole_pattern(part, [(-32, -12), (32, -12), (-32, 12)], hole_diameter)\n"
+    "    return pk.cut_circle(part, (0, 32), 6)")
 CUTS_THE_PLATE_IN_HALF = WINNER.replace("pk.plate(length, width, thickness)", "pk.plate(length / 2, width, thickness)")
 
 
@@ -41,13 +49,24 @@ def test_answer_fields_are_read():
     assert parse_answer("BROKEN: no\nSUGGESTION: none\nRATIONALE: designed this way.")["broken"] is False
 
 
-@pytest.mark.parametrize("code, ok", [(ADDS_THE_MISSING_HOLE, True), (ADDS_A_TAB, True),
-                                      (CUTS_THE_PLATE_IN_HALF, False), (WINNER, False)])
-def test_a_completion_may_add_or_drill_but_not_take_away_the_part(tmp_path, builder, code, ok):
-    winner = write(tmp_path, "winner", WINNER)
-    result = check_completion(write(tmp_path, "completed", code), winner, tmp_path, builder)
+def _pair(name, x, y, method):
+    return [{"name": f"{name}_x", "value": x, "method": method},
+            {"name": f"{name}_y", "value": y, "method": method}]
+
+
+@pytest.mark.parametrize(
+    "base, code, parts, ok",
+    [(WINNER, ADDS_THE_MISSING_HOLE, _pair("restored_hole", 32.0, 12.0, "mirrored"), True),
+     (WINNER, ADDS_THE_MISSING_HOLE, [], False),  # a hole with no restored-hole pair is unmeasured
+     (WINNER_STUB, EXTENDS_THE_STUB, [], True),  # the new tab end extends the stub's measured sides
+     (WINNER, ADDS_A_TAB, [], False),  # a tab from a flat edge extends no measured edge
+     (WINNER_STUB, NOTCHED_TAB, [], False),  # an arc on the outline with no restored hole there
+     (WINNER, CUTS_THE_PLATE_IN_HALF, [], False), (WINNER, WINNER, [], False)])
+def test_a_completion_may_add_or_drill_but_not_take_away_the_part(tmp_path, builder, base, code, parts, ok):
+    winner = write(tmp_path, "winner", base)
+    result = check_completion(write(tmp_path, "completed", code), winner, tmp_path, builder, parts)
     assert result["ok"] is ok, result
-    if code is ADDS_A_TAB:
+    if code is EXTENDS_THE_STUB:
         assert result["added_volume_mm3"] > 0 and (tmp_path / "added.stl").exists()
 
 

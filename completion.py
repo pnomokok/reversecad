@@ -8,6 +8,9 @@ estimated (with a question for the user) or optional (a feature nothing shows, o
 a question), and writes the completed program, keeping the winner's parameters. The completion is a separate
 candidate: it must build, and compared with the winner it may add material and cut holes but must not
 take away the measured part (checked with CadQuery booleans: what it adds and removes, in mm^3).
+Its new holes, outline arcs and corners are checked against the measurements too: a new hole needs
+a restored-hole pair from restored_hole.py, a new arc needs one breaking through the edge, and a new
+corner must lie on a measured edge's line, so mirrored or invented features are rejected.
 Outputs go to <run>/6_completion/.
 """
 import json
@@ -62,6 +65,12 @@ its hole) and write the completed program:
 - keep every parameter of the given program with its name and default; add new named parameters for
   what you add (for example tab_length, tab_width, tab_hole_diameter);
 - keep the measured part: only add material or cut holes where the cues point;
+- restore only what the cues show: extend straight edges to their intersections (a tab end may
+  join two extended sides); never copy arcs, notches or other features from elsewhere on the
+  part into the restored region;
+- give every restored hole its own X and Y parameters as an x/y pair (for example
+  restored_hole_x, restored_hole_y); their numbers are computed from the measurements, so
+  yours are only the starting guess;
 - use the patterns and symmetry the program already has (shared hole diameter, edge margins);
 - same rules as the given program: one function build_part, X = u, Y = v, bottom face at Z = 0,
   `import cadquery as cq`, `import partkit as pk` and `import math` only, no show_object or I/O.
@@ -284,14 +293,85 @@ def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues
         program = folder / "completed.py"
         program.write_text(replace_defaults(answer["code"], restored), encoding="utf-8")
         result["program"] = program.name
-        result["check"] = check_completion(program, winner_path, folder, builder)
+        result["check"] = check_completion(program, winner_path, folder, builder, answer["parts"])
     result["valid"] = bool(result["check"] and result["check"]["ok"])
     save_json(folder / "completion.json", result)
     return result
 
 
-def check_completion(program, winner_path, folder, builder):
-    """Build the completion against the winner: it must build, change something, and keep the winner's material."""
+def _hole_centers(profile):
+    """(x, y) centers of a profile's holes (circles by center, other shapes by centroid)."""
+    centers = []
+    for hole in profile.get("holes", []):
+        if hole.get("type") == "circle":
+            centers.append(tuple(hole["center"]))
+        else:
+            centers.append(tuple(np.array(hole["points"], dtype=float).mean(axis=0)))
+    return centers
+
+
+def _nearest(point, points):
+    """The distance from point to the closest of points (inf when there are none)."""
+    return min((float(np.linalg.norm(np.array(point, dtype=float) - np.array(p, dtype=float)))
+                for p in points), default=float("inf"))
+
+
+def _off_shape(points, outline, clip):
+    """Those of points off the closed outline: farther than HOLE_MATCH_MM from every edge.
+
+    With clip the distance is to the edge segments (points on the outline); without, to their
+    infinite lines (points on a measured edge's line, such as a corner where extended edges meet).
+    """
+    outline = np.array(outline, dtype=float)
+    starts, spans = outline, np.roll(outline, -1, axis=0) - outline
+    scale = (spans ** 2).sum(axis=1)
+    off = []
+    for point in points:
+        projection = ((np.array(point, dtype=float) - starts) * spans).sum(axis=1) / np.maximum(scale, 1e-12)
+        if clip:
+            projection = np.clip(projection, 0, 1)
+        closest = starts + projection[:, None] * spans
+        if float(np.linalg.norm(closest - point, axis=1).min()) > HOLE_MATCH_MM:
+            off.append(point)
+    return off
+
+
+def _unmeasured_features(completed, winner, parts):
+    """Reasons a completion adds features nothing measured: holes, outline arcs, corners.
+
+    A new hole is only allowed with a restored-hole pair positioned by the deterministic
+    code (the pair carries its method); a new outline arc additionally needs the restored
+    hole breaking through the edge (a winner hole's diameter); a new corner must lie on a
+    measured edge's line. Anything else is mirrored or invented and rejected.
+    """
+    reasons = []
+    restored = [(x_entry["value"], y_entry["value"]) for x_entry, y_entry in _position_pairs(parts or [])
+                if x_entry.get("method") or y_entry.get("method")]
+    winner_centers = _hole_centers(winner)
+    for center in _hole_centers(completed):
+        if _nearest(center, winner_centers) > HOLE_MATCH_MM and _nearest(center, restored) > HOLE_MATCH_MM:
+            reasons.append(f"it adds a hole at ({center[0]:.2f}, {center[1]:.2f}) with no restored-hole pair")
+    winner_arcs = winner.get("outline_arcs", [])
+    winner_diameters = [hole["diameter"] for hole in winner.get("holes", []) if hole.get("type") == "circle"]
+    for arc in completed.get("outline_arcs", []):
+        if any(_nearest(arc["center"], [other["center"]]) <= HOLE_MATCH_MM
+               and abs(arc["diameter"] - other["diameter"]) <= HOLE_MATCH_MM for other in winner_arcs):
+            continue
+        through_hole = (_nearest(arc["center"], restored) <= HOLE_MATCH_MM
+                        and any(abs(arc["diameter"] - diameter) <= HOLE_MATCH_MM for diameter in winner_diameters))
+        if not through_hole:
+            reasons.append(f"it adds an arc at ({arc['center'][0]:.2f}, {arc['center'][1]:.2f})"
+                           f" r={arc['diameter'] / 2:.2f} with no restored hole there")
+    new_points = _off_shape(completed.get("outline", []), winner.get("outline", []), clip=True)
+    for corner in _off_shape(new_points, winner.get("outline", []), clip=False):
+        reasons.append(f"it adds a corner at ({corner[0]:.2f}, {corner[1]:.2f}) off every measured edge")
+    return reasons
+
+
+def check_completion(program, winner_path, folder, builder, parts=None):
+    """Build the completion against the winner: it must build, change something, keep the winner's
+    material, and add no unmeasured features (new holes, arcs and corners are checked against the
+    measurements and the restored-hole pairs in parts)."""
     problems = check_code(Path(program).read_text(encoding="utf-8"))
     if problems:
         return {"ok": False, "reasons": problems}
@@ -305,4 +385,12 @@ def check_completion(program, winner_path, folder, builder):
         reasons.append("the completion does not change the part")
     if report["removed_volume_mm3"] > MAX_REMOVED_SHARE * report["base_volume_mm3"]:
         reasons.append(f"it removes {report['removed_volume_mm3']} mm^3 of the measured part")
+    profiles = {}
+    for name, code in (("completed", program), ("winner", winner_path)):
+        path = folder / f"{name}.profile.json"
+        error = builder.build(code, path)
+        if error:
+            return {"ok": False, "reasons": [f"the {name} program did not build its profile: {error}"]}
+        profiles[name] = json.loads(path.read_text(encoding="utf-8"))
+    reasons.extend(_unmeasured_features(profiles["completed"], profiles["winner"], parts))
     return {"ok": not reasons, "reasons": reasons, **report}
