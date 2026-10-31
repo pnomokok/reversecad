@@ -49,12 +49,13 @@ Only flat-faced, prismatic parts with holes: brackets, plates, covers, simple ta
 
 ## Models
 
-| Model | Where | Use |
-|---|---|---|
-| SAM 3.1 | Meta Model API | Mask extraction, validation |
-| Muse Spark Open | Baseten, model name exactly `meta-models/muse-spark-open-1026` (the docs omit `-1026`; we always add it) | Parallel candidate code generation |
-| Muse Wonder | Meta Model API | Geometric reasoning for hard candidates (next phase) |
-| Muse Voice Transcribe | Meta Model API | Voice editing (nice to have) |
+| Model | Where | What it does in ReverseCAD | Files |
+|---|---|---|---|
+| SAM 3.1 | Meta Model API | Card, part and crop masks (text, box and point prompts); the part mask is the reference every candidate is validated against | sam_client.py, e2e_pipeline.py, webapp/live.py |
+| Muse Spark Open | Baseten (`meta-models/muse-spark-open-1026`) | Candidate CadQuery programs; part-name suggestions for SAM; spoken/typed edit commands to JSON parameter changes; adapter outline programs; free-text adapter patterns to JSON | candidates.py, prompt_suggestions.py, voice_edit.py, adapter_outline.py, adapter_pattern.py |
+| Muse Wonder | Meta Model API (`muse-wonder-1.0`) | Repair of failed candidates; break completion; adapter outline repair (text-only) | repair.py, completion.py, adapter_outline.py |
+| Muse Voice Transcribe | Meta Model API (`muse-voice-transcribe-1.0`) | Speech to text for voice editing | voice_edit.py, webapp/server.py |
+| Muse Code | Development (not called by the app) | Main coding agent | [muse-code] commits, starting with the adapter 2dba37f..8ebaa30 |
 
 Environment variables: `BASETEN_API_KEY`, `MODEL_API_KEY` (Meta Model API key; Meta's docs use this name). Both in `.env`.
 
@@ -176,7 +177,7 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   | rotated 90° | 1.2 | -1.11 … +1.45% | -0.03 … +0.68% |
   | **mean absolute error** | | **0.86%** (max 1.45%) | **0.48%** (max 1.44%) |
 
-  **Decision: the homography is the default measurement method.** Lens distortion is small (at most ~1% at opposite frame edges; no lens correction needed). Rotation is handled. Each photo's two directions mirror each other (the reference card's own mask error flips sign), so the error of a single measurement is roughly half of these numbers. The key's +1.6% in the swapped photo fits within this plus the ruler's ±1%.
+  **Decision: the homography is the default measurement method.** Lens distortion is small (at most ~1% at opposite frame edges; no lens correction needed). Rotation is handled. Each photo's two directions mirror each other (the reference card's own mask error flips sign), so the error of a single measurement is roughly half of these numbers. The key's +1.6% in the swapped photo fits within this plus the ruler's ±1%. (superseded 2026-10-31: the current scale rule uses the simple mean card scale, with the homography only when opposite card edges differ by more than 2%)
 - [x] End-to-end skeleton on a **synthetic scene** (first version; now `e2e_pipeline.py` + `run_template_scenes.py`, outputs in `outputs/e2e/<scene>/`): photo → SAM → homography measurements → 5 Muse Spark Open candidates → compile in a separate process → silhouette → IoU → best.
   - Scene (`synthetic_scene.py`): the CadQuery 80 × 40 plate (4 × Ø6, 8 mm in), rotated 8°, next to a card on dark fabric, slight tilt (card top-bottom 1.30%), blur and noise.
   - SAM: `credit card` found the synthetic card; `plate` found nothing, `metal plate` worked.
@@ -314,7 +315,7 @@ Phone photos are often saved sideways and rotated via an EXIF tag. SAM gives coo
   5. Repair runs only when no candidate passes every check (the IoU < 0.90 trigger is gone). The winner is chosen only among candidates that passed every check (deviation limits and, when the truth is known, topology).
   6. `samples/` holds `A_light_repair` (A_light with only two deliberately broken candidates; Muse Wonder repaired them in round 1: IoU 0.988, 5 parameters, $0.04) and `D_tab_broken` (completion card). Synthetic, JPEG without EXIF (checked), 0.7 MB each.
   7. Completion from the mask only vs the photo (`compare_completion_inputs.py`): same validity and identical IoU against the true design on all 4 broken parts (difference 0.000), similar cost ($0.05-0.07 per call). **The mask is now the default**; the photo no longer goes to Muse Wonder.
-- [x] **Large synthetic test: 300 random parts** (`parts/random_parts.py`, `run_random_parts.py`, report `outputs/random_test/report.json`; 2026-10-28/29). Plates, flat L's and tabbed bodies (≤ 100 mm) with random hole layouts, 77 of them broken (42 chipped corners, 9 snapped tabs, 26 holes never drilled); each through the whole pipeline: synthetic photo, SAM, measurements, up to 5 Spark candidates (3 at a time, stopping once 3 passing candidates agree), checks, Muse Wonder repair when none passes, completion when break cues exist, final model against the true design. Built locally on 16 cores (8 parts at once); Modal was set up (`modal_render.py`) but the token approval timed out.
+- [x] **Large synthetic test: 300 random parts** (`parts/random_parts.py`, `run_random_parts.py`, report `outputs/random_test/report.json`; 2026-10-28/29). Plates, flat L's and tabbed bodies (≤ 100 mm) with random hole layouts, 77 of them broken (42 chipped corners, 9 snapped tabs, 26 holes never drilled); each through the whole pipeline: synthetic photo, SAM, measurements, up to 5 Spark candidates (3 at a time, stopping once 3 passing candidates agree), checks, Muse Wonder repair when none passes, completion when break cues exist, final model against the true design. Built locally on 16 cores (8 parts at once); Modal was set up (`modal_render.py`) but the token approval timed out. (superseded 2026-10-31: a Modal deploy later succeeded; see the Modal demo entry)
 
   | | Result |
   |---|---|
