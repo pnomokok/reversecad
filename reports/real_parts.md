@@ -121,3 +121,44 @@ method. The ragged arc shows only 40° around the true centre (torn points fall 
 the band) but 60° around the fitted one — exactly the acceptance bar; the fit is
 stable (neighbouring starts converge to the same centre or refuse). The mirror misses
 by 6 mm because the hand-punched layout is itself asymmetric.
+
+## 9. Held-out test (BREAK3) — evaluated after the method was frozen
+
+No code, threshold or method was changed before or during this evaluation. Photo
+19:58 through the UI path (upload → click → 5 candidates → completion → apply
+with defaults): run `live-20261031-200739-677d2d`. The BREAK2 corner is still
+broken; a second corner is cut through another hole. The UI offers one break
+suggestion (no re-suggest path exists); it was applied with defaults and that
+result is evaluated here.
+
+Run: tilt 1.14% (simple scale, no warning — correct, shot parallel). Card found
+at 0.86, part by click at 0.973. Holes: sam_crop fallback, 2 clean circles
+(5.86/5.74 mm); color failed on a 0.82 mm speck, full-photo SAM on polygons.
+Candidates: 2/5 passed (IoU 0.9932 both); one failed corners/arcs/holes (0.8746),
+two failed hole positions (0.9912). No repair needed. Cost $0.63 (SAM $0.01,
+Spark $0.18 at the unverified price, Wonder $0.44 — the completion alone took
+134.6 s and 21k output tokens).
+
+Break cues: 2 (one rough edge + one missing-material region, big corner only).
+The small cut is fully invisible: its edges fit circles at rms 0.110–0.147
+(≤ 0.15 counts as smooth arc), and no mirror hole pattern validates (the two
+survivors sit 2.32 mm off-mirror, over the 1.0 mm tolerance), so no hole cues
+exist either. The suggestion restores the big corner's material only and
+contains no hole positions: neither broken hole was restored, so no
+arc-fit/aligned/mirrored method ran and there are no arc angles to report. The
+restored corner also carries a mirrored notch (r 7.57) copied from the winner,
+which had read the small break's arc as a designed notch.
+
+Evaluation vs INTACT (fit on the 2 never-broken holes, rms 0.052, 0.6°, no
+mirror): restored extents 106.24 × 96.16 vs 106.59 × 96.06 mm (−0.35/−0.3%,
++0.10/+0.1%); outline deviation max 12.36, mean 1.21 mm; applied holes 2/4
+(Ø5.8 pair; intact-hole diameters 6.04/5.88). Restored-hole centre errors: none
+to report — no holes were restored. Fit note: with 2 holes the hole fit is
+degenerate (a 180° rotation ties at rms 0.052); the outline cannot break the
+tie either (10.96 vs 12.36 — wrong fits hide defects better), so the physical
+fit was taken (smallest rotation among unmirrored fits; applied holes match the
+table unmirrored).
+
+Findings (reported, not fixed): two breaks need two cue regions and two hole
+pairs — the pipeline found one of each and restored zero holes; a mirrored
+notch entered the restored corner unchallenged.
