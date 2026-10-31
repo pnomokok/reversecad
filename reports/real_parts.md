@@ -72,3 +72,24 @@ The parallel shot measures within ~1.5% of ruler and punch on every feature but 
 hand-cut edge. The tilted shot reads 3–5% large under the homography it triggered;
 the new tilt warning (threshold 2%) flags exactly this photo. No measurement code or
 tolerance was changed for these findings.
+
+## 6. Break restorations vs the intact photo (deterministic check, no LLM)
+
+BREAK1 = corner cut off, holes intact (`live-20261031-173851-7490f8`, photo 17:09);
+BREAK2 = same corner cut through a hole (`live-20261031-175232-b9869e`, photo 17:50).
+Each run's applied completion was built and fitted rigidly to the intact measurement
+table (rotation and mirror searched, lowest RMS kept) using the holes that were never
+broken: all 4 for BREAK1 (fit RMS 0.145 mm, −0.1°, no mirror), 3 for BREAK2 (fit RMS
+0.711 mm, −0.0°, no mirror).
+
+| Run | Restored extents mm | Intact mm | Diff mm (%) | Max outline dev after fit (mean) |
+|---|---|---|---|---|
+| BREAK1 | 106.54 × 96.53 | 106.59 × 96.06 | −0.05 / +0.47 (−0.0 / +0.5) | 1.55 mm (0.62) |
+| BREAK2 | 107.52 × 97.18 | 106.59 × 96.06 | +0.93 / +1.12 (+0.9 / +1.2) | 2.13 mm (0.60) |
+
+BREAK2's restored hole sits 6.19 mm from the intact hole's centre; its diameter 6.11
+vs 5.97 mm (+0.14, +2.3%) is fine. The 6 mm miss is real, not a fitting artefact: the
+intact part's own holes are hand-punched asymmetric (left |x| ≈ 41–42 mm, right ≈
+37–38 mm), so mirroring the top-left hole across u = 0 cannot land on the true
+top-right hole. The same asymmetry is what rejected every Spark candidate's hole
+positions on the intact photo (§4).
