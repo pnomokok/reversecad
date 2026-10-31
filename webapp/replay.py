@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 
 from break_cues import ROUGH_RMS_MM, find_break_cues
-from completion import topdown_photo
+from completion import topdown_photo, verified_stored_parts
 from repair import REPAIR_NUMBER
 from resolution import card_long_edge_px, resolution_warning
 from tilt_warning import card_tilt, tilt_warning
@@ -283,6 +283,7 @@ def completion(name):
     if not path.exists():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
+    data["parts"] = verified_stored_parts(folder.parent, data)
     decision = folder / "decision.json"
     answer = json.loads(decision.read_text(encoding="utf-8")) if decision.exists() else {}
     data["decision"], data["answers"] = answer.get("decision"), answer.get("values") or {}

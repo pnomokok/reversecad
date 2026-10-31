@@ -20,6 +20,7 @@ import numpy as np
 import usage_ledger
 from break_cues import find_break_cues
 from candidates import check_code, extract_python_block
+from design_intent import parameters as program_parameters
 from e2e_pipeline import MM_PER_PIXEL, pixel_to_mm_scales, save_json
 from homography import rectify_image
 from repair import ask_wonder, make_client
@@ -27,6 +28,8 @@ from sam_client import load_photo
 
 FOLDER = "6_completion"
 MAX_REMOVED_SHARE = 0.03  # a completion may cut new holes, but remove at most this share of the winner's volume
+HOLE_MATCH_MM = 0.5  # a claimed-measured hole position/diameter must match a measured hole this closely
+PARAM_MATCH = 1e-9  # a claimed-measured winner parameter is copied exactly
 
 PROMPT = """A flat, prismatic part was measured from a photo and modeled as a CadQuery program (below).
 The program matches the photo. But deterministic code found cues that the part itself may be broken
@@ -130,6 +133,72 @@ def _parts(text):
             and isinstance(e.get("value"), (int, float)) and e.get("name")]
 
 
+def _hole_xy(hole):
+    """A table hole's center as (x, y); the table stores it as a pair or as "u v"."""
+    center = hole.get("center_from_part_center_mm")
+    try:
+        x, y = center if isinstance(center, list) else center.split()
+        return float(x), float(y)
+    except (TypeError, ValueError):
+        return None
+
+
+def _measured_backed(part, by_name, centers, diameters, winner_params):
+    """Whether a "measured" claim reappears in the measurements: an x/y pair at a measured
+    hole center, a winner parameter's own default, or a measured hole diameter."""
+    name, value = part["name"], part["value"]
+    for x_suffix, y_suffix in (("_x", "_y"), ("_u", "_v")):
+        if name.endswith((x_suffix, y_suffix)):
+            mate = by_name.get(name[:-2] + (y_suffix if name.endswith(x_suffix) else x_suffix))
+            if mate is None or not isinstance(mate.get("value"), (int, float)):
+                return False  # a lone coordinate proves no measured hole
+            x, y = (value, mate["value"]) if name.endswith(x_suffix) else (mate["value"], value)
+            return any(float(np.linalg.norm(np.array([x, y]) - np.array(center))) <= HOLE_MATCH_MM
+                       for center in centers)
+    if any(abs(value - default) <= PARAM_MATCH for default in winner_params.values()):
+        return True
+    return any(abs(value - diameter) <= HOLE_MATCH_MM for diameter in diameters)
+
+
+def verify_parts(parts, table, winner_params):
+    """The PARTS list with unverifiable "measured" claims demoted to "estimated".
+
+    Wonder labels each added value, but a mirrored hole position is still a guess even when
+    its mirror source was measured. Demotion is one way only (estimated/optional are never
+    touched), so re-checking stored runs is safe; demoted entries keep "demoted_from".
+    """
+    centers = [xy for xy in (_hole_xy(hole) for hole in table.get("holes", [])) if xy is not None]
+    diameters = [hole["diameter_mm"] for hole in table.get("holes", [])
+                 if isinstance(hole.get("diameter_mm"), (int, float))]
+    by_name = {part["name"]: part for part in parts}
+    checked = []
+    for part in parts:
+        entry = dict(part)
+        if part.get("basis") == "measured" and not _measured_backed(part, by_name, centers, diameters,
+                                                                    winner_params):
+            entry["basis"] = "estimated"
+            entry["demoted_from"] = "measured"
+        checked.append(entry)
+    return checked
+
+
+def verified_stored_parts(run_folder, data):
+    """Stored PARTS with measured claims re-checked (old runs keep Wonder's raw labels).
+
+    Falls back to the stored list when the table or the winner program cannot be read.
+    """
+    try:
+        table = json.loads((Path(run_folder) / "3_measurements.json").read_text(encoding="utf-8"))["table"]
+        if not data.get("winner"):
+            return data.get("parts")
+        winner = next(Path(run_folder).glob("**/" + data["winner"]))
+        winner_params = {name: value for name, value in program_parameters(winner.read_text(encoding="utf-8"))
+                         if isinstance(value, (int, float)) and not isinstance(value, bool)}
+    except (OSError, ValueError, KeyError, StopIteration):
+        return data.get("parts")
+    return verify_parts(data.get("parts") or [], table, winner_params)
+
+
 def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues=None, source=DEFAULT_INPUT,
                        folder_name=FOLDER):
     """Ask Wonder for a completion of the run's result when break cues exist; check it; save and return it.
@@ -164,6 +233,9 @@ def suggest_completion(out, winner_path, winner_mask, builder, client=None, cues
     save_json(folder / "response.json", response)
     usage_ledger.record_response(out, usage_ledger.WONDER, f"completion ({source})", response, seconds)
     answer = parse_answer(None if "error" in response else response["choices"][0]["message"]["content"])
+    winner_params = {name: value for name, value in program_parameters(winner_code)
+                     if isinstance(value, (int, float)) and not isinstance(value, bool)}
+    answer["parts"] = verify_parts(answer["parts"], table, winner_params)
     result = {"cues": cues["cues"], "winner": Path(winner_path).name, "broken": answer["broken"],
               "suggestion": answer["suggestion"], "rationale": answer["rationale"], "parts": answer["parts"],
               "input": source, "seconds": seconds, "usage": response.get("usage"),
