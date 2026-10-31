@@ -112,10 +112,12 @@ alignment, then the mirror fallback:
 
 | Method | Position mm | Centre err vs intact (36.85, 37.28) | Shown as |
 |---|---|---|---|
-| (a) arc fit | refused: the ragged arc covers ~40° of the circle, under the 60° bar | – | – |
+| (a) arc fit | (37.27, 37.62), 60° of inlier circle | 0.60 mm | Measured |
 | (b) aligned with neighbours | (38.74, 38.94): x from the BR-column hole, y from the TL-row hole | 2.56 mm | Estimated |
 | (c) mirrored | (42.66, 39.16): Wonder's mirror of the top-left hole | 6.19 mm | Estimated |
 
-Method (b) is chosen. Diameter is the shared 6.11 vs 5.97 mm (+0.14) under every
-method. The mirror misses by 6 mm because the hand-punched layout is itself
-asymmetric; alignment halves that twice over by reading the actual rows/columns.
+Method (a) is chosen. Diameter is the shared 6.11 vs 5.97 mm (+0.14) under every
+method. The ragged arc shows only 40° around the true centre (torn points fall outside
+the band) but 60° around the fitted one — exactly the acceptance bar; the fit is
+stable (neighbouring starts converge to the same centre or refuse). The mirror misses
+by 6 mm because the hand-punched layout is itself asymmetric.

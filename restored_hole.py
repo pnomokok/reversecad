@@ -40,12 +40,19 @@ def median_hole_radius(table):
 
 
 def _fit_fixed_radius(points, start, radius, rounds=50):
-    """Circle center for a fixed radius by Gauss-Newton from `start` (least squares)."""
+    """Circle center for a fixed radius by Huber-robust Gauss-Newton from `start`.
+
+    The window also holds straight cut-edge points whose large squared residuals would drag
+    a plain fit off the arc; residuals past the inlier band count linearly instead.
+    """
     center = np.array(start, float)
     for _ in range(rounds):
         dist = np.linalg.norm(points - center, axis=1)
         dist = np.where(dist < 1e-9, 1e-9, dist)
-        step, *_ = np.linalg.lstsq(-(points - center) / dist[:, None], -(dist - radius), rcond=None)
+        residual = dist - radius
+        weight = np.minimum(1.0, ARC_INLIER_MM / np.maximum(np.abs(residual), 1e-9))
+        step, *_ = np.linalg.lstsq(-(points - center) / dist[:, None] * weight[:, None],
+                                   -residual * weight, rcond=None)
         center = center + step
         if float(np.linalg.norm(step)) < 1e-6:
             break
@@ -55,11 +62,10 @@ def _fit_fixed_radius(points, start, radius, rounds=50):
 def fit_arc_center(contour_mm, near_xy, radius_mm):
     """((x, y), coverage_deg) of the remaining hole arc near `near_xy`, fixed `radius_mm`.
 
-    Fits the outline points in the search window, refits the inliers, and keeps the fit
-    only if the inliers cover at least MIN_ARC_COVERAGE_DEG (60°) of the circle; else None.
-    Below that the fixed-radius center is underconstrained: BREAK2's ragged 40° arc drifts
-    2.5 mm even when started at the true center, so fitting it would be worse than honest
-    alignment. A straight cut edge can only cover a short chord, never the minimum.
+    Fits the outline points in the search window (Huber-robust to straight cut-edge points),
+    refits the inliers, and keeps the fit only if the inliers cover at least
+    MIN_ARC_COVERAGE_DEG (60°) of the circle; else None. Below that the fixed-radius center
+    is underconstrained, and a straight cut edge can only cover a short chord anyway.
     """
     points = _points(contour_mm)
     window = points[np.linalg.norm(points - np.array(near_xy, float), axis=1) <= ARC_SEARCH_MM]
