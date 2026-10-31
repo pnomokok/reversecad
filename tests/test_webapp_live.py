@@ -75,3 +75,58 @@ def test_live_candidates_stream_offline(cleanup, monkeypatch):
     # Saved like any run: screens 4-5 read it.
     assert replay.winner(name)["parameters"]
     assert Path(folder / f"5_summary_{live.ROUND}.json").exists()
+
+
+def _scene_run(cleanup):
+    """A fake live run dir with scene A's saved measurement files."""
+    name = "live-20260101-000001-abcdef"
+    cleanup.append(name)
+    folder = replay.RUNS_DIR / name
+    folder.mkdir()
+    for file in ("1_scene.png", "2_sam_attempts.json", "3_measurements.json", "3_part_mask_topdown.png",
+                 "3_mask_card.png", "3_mask_color.png"):
+        shutil.copy(SOURCE / file, folder / file)
+    return name, folder
+
+
+def _saved_answers(view, image, count, reasoning_effort=None, thickness=3.0):
+    for index in range(1, count + 1):
+        response = json.loads((SOURCE_ROUND / f"cand_{index}_response.json").read_text(encoding="utf-8"))
+        yield "prompt", index, response
+
+
+@pytest.mark.skipif(not SOURCE_ROUND.exists(), reason="needs scene A's saved medium round")
+def test_candidates_job_records_durations(cleanup, monkeypatch):
+    name, folder = _scene_run(cleanup)
+    monkeypatch.setattr(live, "iter_candidates", _saved_answers)
+    events = []
+    live.candidates_job(name, 3, 3.0, run_candidate, events.append)
+    done = events[-1]
+    assert done["type"] == "done" and done["durations"]["search_seconds"] >= 0
+    assert done["durations"]["measure_seconds"] is None and done["durations"]["total_seconds"] is None
+    (folder / "2_timing.json").write_text(json.dumps({"measure_seconds": 41.2}), encoding="utf-8")
+    events = []
+    live.candidates_job(name, 3, 3.0, run_candidate, events.append)
+    done = events[-1]
+    assert done["durations"]["measure_seconds"] == 41.2
+    assert done["durations"]["total_seconds"] == round(41.2 + done["durations"]["search_seconds"], 1)
+    saved = json.loads((folder / f"5_summary_{live.ROUND}.json").read_text(encoding="utf-8"))
+    assert saved["durations"] == done["durations"]
+
+
+def test_measure_job_records_timing(cleanup, monkeypatch):
+    name = "live-20260101-000003-abcdef"
+    cleanup.append(name)
+    folder = replay.RUNS_DIR / name
+    folder.mkdir()
+    Image.new("RGB", (20, 20), "white").save(folder / "1_scene.png")
+    monkeypatch.setattr(live, "find_masks", lambda *args: (None, None, None, None))
+    monkeypatch.setattr(live, "measure", lambda *args: None)
+    fake = lambda name: {"outline_mm": [80.0, 40.0]}  # noqa: E731
+    fake.cache_clear = lambda: None
+    monkeypatch.setattr(replay, "analysis", fake)
+    events = []
+    live.measure_job(name, (10, 10), events.append)
+    timing = json.loads((folder / "2_timing.json").read_text(encoding="utf-8"))
+    assert timing["measure_seconds"] >= 0
+    assert any(event["type"] == "analysis" for event in events)

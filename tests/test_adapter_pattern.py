@@ -108,5 +108,6 @@ def test_interpret_uses_the_mocked_model_and_validates_its_answer():
     answer = interpret_pattern("2 x M5, 60 apart", client=_FakeClient(
         '{"holes": [{"x": -30, "y": 0, "d": 5.5}, {"x": 30, "y": 0, "d": 5.5}], "label": "2 x M5"}'))
     assert answer["summary"] == "2 holes · Ø5.5 · 60 mm apart"
+    assert answer["pattern"]["label"] == answer["summary"]  # the overlay shows the summary, not "2 x M5"
     with pytest.raises(RuntimeError, match="could not read"):
         interpret_pattern("make it prettier", client=_FakeClient("make it prettier"))

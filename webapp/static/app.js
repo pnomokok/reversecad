@@ -71,11 +71,72 @@ function updateHeader() {
   if (!searching) return;
   const total = state.done ? state.done.candidate_count : state.expected;
   const count = state.seen.filter((e) => !e.label).length;  // requested candidates only, not repairs (R1, R2)
-  $("progress-label").textContent = state.done ? "Search finished"
-    : state.live ? "Generating with Muse Spark · Checking against the SAM 3.1 mask" : "Replaying a saved candidate round";
+  $("progress-label").textContent = state.done ? "Search finished · Muse Spark Open"
+    : state.live ? "Generating with Muse Spark Open · Checking against the SAM 3.1 mask" : "Replaying a saved candidate round";
   $("progress-count").textContent = total ? `${Math.round((100 * count) / total)}% | ${count} / ${total}` : `${count}`;
   $("progress-fill").style.width = total ? `${(100 * count) / total}%` : "0";
 }
+
+// Live stopwatch (header): ticks while a live stage runs; replay shows the run's recorded durations.
+const watch = {
+  elapsed: 0, since: null, timer: null,
+  format(seconds) {
+    const total = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  },
+  show(text, title, ticking) {
+    const el = $("stopwatch");
+    el.classList.toggle("hidden", !text);
+    el.classList.toggle("ticking", !!ticking);
+    if (text) el.textContent = text;
+    el.title = title || "";
+  },
+  current() { return this.elapsed + (this.since == null ? 0 : (performance.now() - this.since) / 1000); },
+  tick() {
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.show(this.format(this.current()), "", true), 250);
+    this.show(this.format(this.current()), "", true);
+  },
+  start() { this.elapsed = 0; this.since = performance.now(); this.tick(); },
+  pause() {
+    if (this.since == null) return;
+    this.elapsed = this.current();
+    this.since = null;
+    clearInterval(this.timer);
+    this.timer = null;
+    this.show(this.format(this.elapsed), "", false);
+  },
+  resume() {
+    if (!state.live || this.since != null) return;
+    this.since = performance.now();
+    this.tick();
+  },
+  finish(durations) {
+    this.pause();
+    const total = durations && durations.total_seconds;
+    const search = durations && durations.search_seconds;
+    if (state.live) {
+      if (total != null) this.show(this.format(total), this.tip(durations), false);
+      return;  // else the frozen client value stays: measured, never invented
+    }
+    if (total != null) this.show(`Recorded run · ${this.format(total)}`, this.tip(durations), false);
+    else if (search != null) this.show(`Recorded search · ${this.format(search)}`, "", false);
+    else this.reset();
+  },
+  tip(durations) {
+    const parts = [];
+    if (durations.measure_seconds != null) parts.push(`measure ${this.format(durations.measure_seconds)}`);
+    if (durations.search_seconds != null) parts.push(`search ${this.format(durations.search_seconds)}`);
+    return parts.join(" · ");
+  },
+  reset() {
+    clearInterval(this.timer);
+    this.timer = null;
+    this.elapsed = 0;
+    this.since = null;
+    this.show("", "", false);
+  },
+};
 
 // ---------- capture: photo and overlay ----------
 function scale() {
@@ -416,6 +477,7 @@ async function chooseRun(name) {
   setLive(false);
   state.run = name;
   resetResults();
+  watch.reset();
   document.querySelectorAll("#example-list button").forEach((b) => b.classList.toggle("active", b.dataset.run === name));
   state.image = await loadImage(`/api/runs/${name}/photo`);
   state.click = (await getJSON(`/api/runs/${name}/info`)).click_px;  // the example's own click
@@ -437,6 +499,7 @@ $("photo-upload").addEventListener("change", async (event) => {
   setLive(true);
   state.run = name;
   resetResults();
+  watch.reset();
   document.querySelectorAll("#example-list button").forEach((b) => b.classList.remove("active"));
   state.click = null;  // live: the user clicks the part
   state.image = await loadImage(`/api/runs/${name}/photo`);
@@ -450,7 +513,7 @@ canvas.addEventListener("click", (event) => {
   const box = canvas.getBoundingClientRect();
   state.click = [Math.round((event.clientX - box.left) * (canvas.width / box.width)),
                  Math.round((event.clientY - box.top) * (canvas.height / box.height))];
-  if (state.analysis) resetResults();  // a new click means a new measurement
+  if (state.analysis) { resetResults(); watch.reset(); }  // a new click means a new measurement
   render();
   updateProcedure();
   $("analyze").disabled = false;
@@ -486,11 +549,13 @@ function measureLive() {
       stream.close();
       status.textContent = "";
       showAnalysis(JSON.parse(m.data));
+      watch.pause();
       resolve();
     });
     stream.addEventListener("error", (m) => {
       stream.close();
       status.textContent = m.data ? `Failed: ${JSON.parse(m.data).message}` : "The connection was lost.";
+      watch.pause();
       resolve();
     });
   });
@@ -499,7 +564,7 @@ function measureLive() {
 async function measure() {
   $("analyze").disabled = true;
   $("analyze-label").textContent = "Measuring…";
-  if (state.live) await measureLive();
+  if (state.live) { watch.start(); await measureLive(); }
   else showAnalysis(await getJSON(`/api/runs/${state.run}/analysis`));
   $("analyze-label").textContent = "Measure";
   $("analyze").disabled = false;
@@ -538,7 +603,8 @@ function resultRows(event) {
   return rows;
 }
 
-const MODEL_NAMES = { "sam-3.1": "SAM 3.1", "meta-models/muse-spark-open-1026": "Muse Spark Open", "muse-wonder-1.0": "Muse Wonder" };
+const MODEL_NAMES = { "sam-3.1": "SAM 3.1", "meta-models/muse-spark-open-1026": "Muse Spark Open", "muse-wonder-1.0": "Muse Wonder", "muse-voice-transcribe-1.0": "Muse Voice Transcribe" };
+const sourceLabel = (source) => (source === "candidate" ? "candidate · Muse Spark Open" : source);
 
 function usageRows(usage) {
   // One row per model this run called (from the run's usage ledger), then the total of the known prices.
@@ -665,6 +731,7 @@ function streamCandidates() {
     layoutGrid();
     updateSummary();
     const count = $("candidate-count").value;
+    if (state.live) watch.resume();
     state.stream = new EventSource(state.live
       ? `/api/live/${state.run}/candidates/stream?count=${count}&thickness=${thickness() ?? 3}`
       : `/api/runs/${state.run}/candidates/stream${state.round ? `?round=${state.round}` : ""}`);
@@ -693,6 +760,7 @@ function streamCandidates() {
     state.stream.addEventListener("done", (m) => {
       state.stream.close();
       state.done = JSON.parse(m.data);
+      watch.finish(state.done.durations);
       $("search-round").innerHTML = `Round <strong>${state.done.round}</strong>`;
       const chosen = state.seen.find((e) => e.candidate === state.done.winner);
       if (chosen) {
@@ -712,6 +780,7 @@ function streamCandidates() {
     state.stream.addEventListener("error", (m) => {
       state.stream.close();
       streamItem("ERROR", "tag-bad", m.data ? JSON.parse(m.data).message : "The candidate stream stopped unexpectedly.");
+      watch.pause();
       resolve();
     });
   });
@@ -915,7 +984,7 @@ async function showModel(sliderValues = {}) {
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
   $("model-program").textContent = `Program ${w.name}.py`;  // display name; w.program is the internal file
-  $("model-source").textContent = w.note || `Source: ${w.source}`;
+  $("model-source").textContent = w.note || `Source: ${sourceLabel(w.source)}`;
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
   $("fit-iou").textContent = w.iou == null ? "" : `IoU ${w.iou.toFixed(4)}`;
   // The program's own values (before any slider moves) against the measurements and, if known, the truth.
@@ -938,6 +1007,7 @@ function setMatchingLayout(info) {
   $("matching-bar").classList.toggle("hidden", !info);
   $("matching-choices").classList.add("hidden");
   $("matching-status").textContent = "";
+  $("matching-status").classList.remove("warning");
   $("model-title").textContent = info ? `MATCHING · ${info.title}` : "ACTIVE MODEL";
   $("matching-name").textContent = info ? info.title : "";
   $("overlay-name").textContent = info ? info.title : "";
@@ -955,6 +1025,7 @@ async function showMatching(kind) {
   const failed = async (response) => {
     $("model-status").textContent = "";
     $("matching-status").textContent = `Not built: ${(await response.json()).detail}`;
+    $("matching-status").classList.add("warning");
   };
   const info = await postJSON(`/api/runs/${state.run}/matching/${kind}`, { base });
   if (!info.ok) return failed(info);
@@ -966,7 +1037,7 @@ async function showMatching(kind) {
   const w = state.winner;
   setMatchingLayout(w);
   $("model-program").textContent = `Program ${w.program}`;
-  $("model-source").textContent = `Source: ${w.source}`;
+  $("model-source").textContent = `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
   state.viewer.showSuggestion(null);
@@ -1032,8 +1103,8 @@ function drawOverlay(original, matching, holesB, labelB) {
   const view = $("overlay-view");
   view.setAttribute("viewBox", `${x0 - margin} ${-y1 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`);
   const bPath = (holesB || []).map((h) => circle([h.x, h.y], h.d)).join("");
-  const bLabel = holesB?.length ? `<text class="overlay-b-label" x="${holesB[0].x}" y="${-holesB[0].y - holesB[0].d / 2 - 1}" text-anchor="middle">${esc(labelB || "")}</text>` : "";
-  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/>${bLabel}`;
+
+  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/>`;
   $("overlay-b-item").classList.toggle("hidden", !holesB?.length);
   if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB}`;
   $("overlay-matching-item").classList.toggle("hidden", split);
@@ -1059,7 +1130,9 @@ async function showAdapterPanel() {
   if (panel.classList.contains("hidden")) return;
   clearAdapterPreview();
   $("adapter-status").textContent = "";
+  $("adapter-status").classList.remove("warning");
   $("matching-status").textContent = "";
+  $("matching-status").classList.remove("warning");
   if (!adapterPresets) {
     adapterPresets = (await getJSON("/api/adapter/presets")).presets;
     const box = $("adapter-presets");
@@ -1096,8 +1169,9 @@ $("adapter-form").addEventListener("submit", async (event) => {
   adapterPattern = answer.pattern;
   $("adapter-summary").textContent = answer.summary;
   $("adapter-parsed").classList.remove("hidden");
-  $("adapter-status").textContent = "";
-});
+  $("adapter-status").textContent = "Parsed by Muse Spark Open";
+  $("adapter-status").classList.remove("warning");
+});;
 $("adapter-apply").addEventListener("click", () => { if (adapterPattern) runAdapter(adapterPattern); });
 $("adapter-dismiss").addEventListener("click", () => {
   clearAdapterPreview();
@@ -1109,17 +1183,20 @@ async function transcribePattern(blob) {
   // The same speech endpoint as voice editing; the transcript lands in the pattern box and is
   // parsed like typed text (shown back, needs Apply).
   $("adapter-status").textContent = "Transcribing · Muse Voice Transcribe";
+  $("adapter-status").classList.remove("warning");
   const form = new FormData();
   form.append("audio", await toWav(blob), "command.wav");
   const response = await fetch(`/api/runs/${state.run}/voice/transcribe`, { method: "POST", body: form });
   if (!response.ok) {
     $("adapter-status").textContent = `Not transcribed: ${(await response.json()).detail}`;
+    $("adapter-status").classList.add("warning");
     return;
   }
   const { transcript } = await response.json();
   $("adapter-input").value = transcript;
   if (transcript) $("adapter-form").requestSubmit();
-  else $("adapter-status").textContent = "No speech was heard.";
+  else $("adapter-status").textContent = "No speech was heard · Muse Voice Transcribe";
+  $("adapter-status").classList.remove("warning");
 }
 
 $("adapter-mic").addEventListener("click", async () => {
@@ -1128,11 +1205,13 @@ $("adapter-mic").addEventListener("click", async () => {
     return;
   }
   $("adapter-status").textContent = "Listening · press again to stop";
+  $("adapter-status").classList.remove("warning");
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (error) {
     $("adapter-status").textContent = `No microphone: ${error.message}`;
+    $("adapter-status").classList.add("warning");
     return;
   }
   const chunks = [];
@@ -1154,12 +1233,15 @@ $("adapter-mic").addEventListener("click", async () => {
 async function runAdapter(pattern) {
   const base = currentValues();
   clearAdapterPreview();
+  $("matching-status").textContent = "";
+  $("matching-status").classList.remove("warning");
   $("adapter-panel").classList.add("hidden");
   $("model-status").textContent = "Placing the patterns…";
   const placed = await postJSON(`/api/runs/${state.run}/matching/adapter/place`, { base, pattern });
   if (!placed.ok) {
     $("model-status").textContent = "";
     $("matching-status").textContent = (await placed.json()).detail;
+    $("matching-status").classList.add("warning");
     return;
   }
   const place = await placed.json();
@@ -1170,12 +1252,14 @@ async function runAdapter(pattern) {
   if (!outline.ok) {
     $("model-status").textContent = "";
     $("matching-status").textContent = `Not built: ${(await outline.json()).detail}`;
+    $("matching-status").classList.add("warning");
     return;
   }
   const original = await postJSON(`/api/runs/${state.run}/model`, { parameters: base });
   if (!original.ok) {
     $("model-status").textContent = "";
     $("matching-status").textContent = `Not built: ${(await original.json()).detail}`;
+    $("matching-status").classList.add("warning");
     return;
   }
   clearVoicePreview();
@@ -1184,7 +1268,7 @@ async function runAdapter(pattern) {
   const w = state.winner;
   setMatchingLayout(w);
   $("model-program").textContent = `Program ${w.program}`;
-  $("model-source").textContent = `Source: ${w.source}`;
+  $("model-source").textContent = `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
   state.viewer.showSuggestion(null);
@@ -1477,7 +1561,7 @@ async function transcribeRecording(blob) {
   const { transcript } = await response.json();
   $("voice-input").value = transcript;
   if (transcript) await interpretCommand(transcript);
-  else $("voice-note").textContent = "No speech was heard.";
+  else { $("voice-state").textContent = "Voice edit · Muse Voice Transcribe + Spark Open"; $("voice-note").textContent = "No speech was heard."; }
 }
 
 $("voice-mic").addEventListener("click", async () => {
@@ -1535,6 +1619,7 @@ function applyConfig(config) {
   } else if (!config.speech) {  // typing works; speaking also needs MODEL_API_KEY
     $("voice-mic").remove();
     $("adapter-mic").remove();
+    $("adapter-mic-hint").remove();
     $("voice-said").textContent = "Type a command, for example \"make the holes 2 mm bigger\".";
   } else {
     $("voice-mic").disabled = false;
@@ -1721,7 +1806,10 @@ async function openDeepLink(run, params) {
   await streamCandidates();
   if (step !== "edit" && step !== "export") return;
   await showModel();
-  if (params.get("match")) await showMatching(params.get("match"));
+  if (params.get("match") === "adapter") {  // &pattern=N picks the preset (screenshots, videos)
+    await showAdapterPanel();
+    await runAdapter(adapterPresets[Number(params.get("pattern")) || 0] || adapterPresets[0]);
+  } else if (params.get("match")) await showMatching(params.get("match"));
   if (step === "export") {
     await showExport();
     return;

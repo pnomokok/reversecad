@@ -80,9 +80,11 @@ def measure_job(name, click, emit):
         (folder / "sam" / stale).unlink(missing_ok=True)
     image = load_photo(folder / "1_scene.png")
     sam = ProgressSam(folder / "sam", emit)
+    started = time.perf_counter()
     card, part, crop_mask, _ = find_masks(folder, image, sam, click, folder / "1_scene.png")
     emit({"type": "progress", "message": "Measuring the outline and the holes…"})
     measure(folder, image, card, part, crop_mask)
+    save_json(folder / "2_timing.json", {"measure_seconds": round(time.perf_counter() - started, 1)})
     replay.analysis.cache_clear()
     emit({"type": "analysis", **replay.analysis(name)})
 
@@ -98,6 +100,7 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
     reference = cv2.imread(str(folder / "3_part_mask_topdown.png"), cv2.IMREAD_GRAYSCALE) > 0
     round_dir = folder / ROUND
     round_dir.mkdir(exist_ok=True)
+    started = time.perf_counter()
     emit({"type": "progress", "message": f"Asking Muse Spark Open for {count} candidates…"})
 
     rows, stopped_early = [], False
@@ -146,6 +149,13 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
             program = Path(result["file"])
             suggest_completion(folder, program, np.load(program.with_suffix(".default.mask.npy")), builder, cues=cues)
     summary["usage"] = usage_ledger.summarize(folder)
+    try:
+        measured = json.loads((folder / "2_timing.json").read_text(encoding="utf-8"))["measure_seconds"]
+    except (OSError, ValueError, KeyError):
+        measured = None
+    search = round(time.perf_counter() - started, 1)
+    summary["durations"] = {"measure_seconds": measured, "search_seconds": search,
+                            "total_seconds": round(measured + search, 1) if measured is not None else None}
     save_json(folder / f"5_summary_{ROUND}.json", summary)
     emit(replay.done_event(summary, ROUND, replay.result_note(name, summary), name))
 

@@ -47,6 +47,7 @@
       <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
     </div>
     <div class="run-chip hidden" id="run-chip"></div>
+    <span class="stopwatch hidden" id="stopwatch" title=""></span>
   </header>
 
   <main class="app">
@@ -242,7 +243,7 @@
             <div class="break-head"><span class="break-title"><span class="icon accent">warning</span>Possible break detected</span><span class="chip-muted chip-small">Muse Wonder</span></div>
             <p class="break-suggestion" id="break-suggestion"></p>
             <div class="break-parts" id="break-parts"></div>
-            <details class="break-why"><summary>Why</summary><p class="break-rationale" id="break-rationale"></p></details>
+            <details class="break-why" open><summary>Why</summary><p class="break-rationale" id="break-rationale"></p></details>
             <p class="break-note" id="break-note"></p>
             <div class="break-actions">
               <button class="break-apply" id="break-apply"><span class="icon">check</span>Apply</button>
@@ -267,6 +268,7 @@
                   <input type="text" id="adapter-input" maxlength="300" placeholder="2 × M5, 60 mm apart" aria-label="hole pattern description">
                   <button type="submit">Parse</button>
                 </form>
+                <p class="mic-hint" id="adapter-mic-hint">Say 'metric five' for M5</p>
               </div>
               <div class="adapter-parsed hidden" id="adapter-parsed">
                 <span id="adapter-summary" class="adapter-summary"></span>

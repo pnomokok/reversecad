@@ -155,4 +155,6 @@ def interpret_pattern(text, ledger_folder=None, client=None):
     pattern, error = parse_pattern_answer(response.choices[0].message.content)
     if pattern is None:
         raise RuntimeError(error)
-    return {"pattern": pattern, "summary": summarize_pattern(pattern), "seconds": seconds}
+    summary = summarize_pattern(pattern)
+    pattern["label"] = summary  # the overlay and summary show this: the computed summary, never the raw sentence
+    return {"pattern": pattern, "summary": summary, "seconds": seconds}

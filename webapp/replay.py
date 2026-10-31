@@ -217,6 +217,7 @@ def done_event(summary, round_name, note=None, name=None):
     return {"type": "done", "round": round_name, "winner": winner, "note": note, "fallback": fallback,
             "result_source": summary.get("result_source", "candidate" if winner else None),
             "compiled": summary["compiled"], "candidate_count": summary["candidate_count"],
+            "durations": summary.get("durations"),  # measured stage seconds; runs before them have none
             "usage": summary.get("usage")}  # model calls, tokens and cost; runs before the ledger have none
 
 
