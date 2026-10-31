@@ -162,3 +162,9 @@ table unmirrored).
 Findings (reported, not fixed): two breaks need two cue regions and two hole
 pairs — the pipeline found one of each and restored zero holes; a mirrored
 notch entered the restored corner unchallenged.
+
+After fix (completions may not add unmeasured features; run
+`live-20261031-205032-a27d72`, held-out numbers above unchanged): one
+suggestion, valid, restores the big corner with no notch and no hole positions.
+Same physical fit (rms 0.052): extents 106.24 × 96.16, identical; outline
+deviation max 12.36 (unchanged), mean 0.72 mm (was 1.21).
