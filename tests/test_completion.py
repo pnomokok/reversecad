@@ -70,6 +70,17 @@ def test_a_completion_may_add_or_drill_but_not_take_away_the_part(tmp_path, buil
         assert result["added_volume_mm3"] > 0 and (tmp_path / "added.stl").exists()
 
 
+def test_rejection_names_the_unmeasured_feature(tmp_path, builder):
+    winner = write(tmp_path, "winner", WINNER_STUB)
+    notched = check_completion(write(tmp_path, "notched", NOTCHED_TAB), winner, tmp_path, builder, [])
+    assert notched["ok"] is False
+    assert "arc" in " ".join(notched["reasons"]), notched
+    winner = write(tmp_path, "winner", WINNER)
+    hole = check_completion(write(tmp_path, "hole", ADDS_THE_MISSING_HOLE), winner, tmp_path, builder, [])
+    assert hole["ok"] is False
+    assert "hole" in " ".join(hole["reasons"]), hole
+
+
 def test_parts_say_what_is_measured_estimated_or_optional():
     answer = parse_answer(
         'BROKEN: yes\nSUGGESTION: restore the tab\nRATIONALE: rough edge.\n'
@@ -147,3 +158,56 @@ def test_stored_runs_are_rechecked_on_read(tmp_path, monkeypatch):
     parts = replay.completion("broken")["parts"]
     assert [(p["name"], p["basis"]) for p in parts] == [
         ("restored_hole_x", "estimated"), ("restored_hole_y", "estimated"), ("chamfer_top", "measured")]
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _stored_run(run):
+    folder = ROOT / "outputs" / "e2e" / run
+    return folder if (folder / "6_completion" / "completion.json").exists() else None
+
+
+def _stored_check_files(run):
+    """(completed program, winner program, parts) from a saved live run's completion."""
+    data = json.loads((run / "6_completion" / "completion.json").read_text(encoding="utf-8"))
+    winner = next(run.glob("**/" + data["winner"]))
+    return run / "6_completion" / "completed.py", winner, data["parts"]
+
+
+def test_break1_stored_completion_still_valid(tmp_path, builder):
+    run = _stored_run("live-20261031-173851-7490f8")
+    if run is None:
+        pytest.skip("needs the saved BREAK1 live run")
+    program, winner, parts = _stored_check_files(run)
+    result = check_completion(program, winner, tmp_path, builder, parts)
+    assert result["ok"] is True, result
+
+
+def test_break2_stored_completion_with_restored_hole_still_valid(tmp_path, builder):
+    """The current pipeline on BREAK2's saved inputs: arc fit wins, and the check passes."""
+    run = _stored_run("live-20261031-175232-b9869e")
+    if run is None:
+        pytest.skip("needs the saved BREAK2 live run")
+    table = json.loads((run / "3_measurements.json").read_text(encoding="utf-8"))["table"]
+    program, winner, parts = _stored_check_files(run)
+    checked, defaults = apply_restored_positions(parts, table)
+    methods = {part["name"]: part.get("method") for part in checked}
+    assert (methods["restored_hole_x"], methods["restored_hole_y"]) == ("arc fit", "arc fit")
+    x, y = defaults["restored_hole_x"], defaults["restored_hole_y"]
+    assert ((x - 37.27) ** 2 + (y - 37.62) ** 2) ** 0.5 <= 0.5, (x, y)
+    rewritten = tmp_path / "completed.py"
+    rewritten.write_text(replace_defaults(program.read_text(encoding="utf-8"), defaults), encoding="utf-8")
+    result = check_completion(rewritten, winner, tmp_path, builder, checked)
+    assert result["ok"] is True, result
+
+
+def test_break3_stored_completion_with_mirrored_notch_is_rejected(tmp_path, builder):
+    run = _stored_run("live-20261031-200739-677d2d")
+    photo = ROOT / "data" / "private" / "real" / "IMG20261031195823.jpg"
+    if run is None or not photo.exists():
+        pytest.skip("needs the private BREAK3 photo and its saved live run")
+    program, winner, parts = _stored_check_files(run)
+    result = check_completion(program, winner, tmp_path, builder, parts)
+    assert result["ok"] is False, result
+    assert "arc" in " ".join(result["reasons"]), result
