@@ -93,3 +93,14 @@ intact part's own holes are hand-punched asymmetric (left |x| ≈ 41–42 mm, ri
 37–38 mm), so mirroring the top-left hole across u = 0 cannot land on the true
 top-right hole. The same asymmetry is what rejected every Spark candidate's hole
 positions on the intact photo (§4).
+
+## 7. BREAK1 restored corner is a clean rectangle
+
+The completion used one parameter (`restored_corner_length` = 14) for an asymmetric
+cut (ruler legs 15–16 and 13 mm). After Apply the built outline has 4 points, all
+turns exactly 90°, and its area equals its bounding box (10284.3 mm²): a clean
+rectangle with no sliver. Reason: with `chamfer` == `restored_corner_length`, the
+restored point lands exactly on the corner — the intersection of the extended bottom
+and right edges — and the collinear middle point merges away. The cut's asymmetry
+only moves where the winner drew the break line, not the restored corner. No change
+needed.
