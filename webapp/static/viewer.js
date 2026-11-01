@@ -120,19 +120,19 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     dimension(group, "width", `${(y1 - y0).toFixed(2)} mm`, [x1, y0, z0], [x1, y1, z0], [gap, 0, 0]);
     dimension(group, "thickness", `${(z1 - z0).toFixed(2)} mm`, [x0, y0, z0], [x0, y0, z1], [-gap * 0.7, -gap * 0.7, 0]);
 
-    // Holes: one label per diameter. Every label is pinned to the single hole nearest the viewer's
-    // side and stacked above it (up plus a step sideways), so labels cannot cover each other.
+    // Holes: one label per diameter, each pinned to that diameter's hole nearest the viewer's
+    // side and stacked with a two-gap step, so no two labels overlap in the iso view.
     const groups = new Map();
     for (const hole of features.holes) {
       const key = hole.diameter.toFixed(2);
       groups.set(key, [...(groups.get(key) || []), hole]);
     }
     if (!features.holes.length) return group;
-    const anchor = features.holes.reduce((a, b) => (b.center[0] - b.center[1] > a.center[0] - a.center[1] ? b : a));
-    const [hx, hy, hz] = anchor.center;
+    const nearest = (holes) => holes.reduce((a, b) => (b.center[0] - b.center[1] > a.center[0] - a.center[1] ? b : a));
     let lift = 0;
     for (const [diameter, holes] of groups) {
-      const end = [hx + gap * (0.5 + 1.1 * lift), hy + gap * 0.2, hz + gap * (1.1 + 1.1 * lift)];
+      const [hx, hy, hz] = nearest(holes).center;
+      const end = [hx + gap * (0.5 + 2.2 * lift), hy + gap * 0.2, hz + gap * (1.1 + 2.2 * lift)];
       group.add(line([[hx, hy, hz], end], dimensionMaterial));
       group.add(label("hole", `${holes.length > 1 ? `${holes.length}× ` : ""}Ø${Number(diameter).toFixed(2)} mm`, end));
       lift += 1;

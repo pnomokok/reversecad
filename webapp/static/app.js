@@ -1306,7 +1306,8 @@ async function runAdapter(pattern) {
   const w = state.winner;
   setMatchingLayout(w);
   $("model-program").textContent = `Program ${w.program}`;
-  $("model-source").textContent = `Source: ${sourceLabel(w.source)}`;
+  // The adapter source is already a full label ("Outline: …"); other sources get the "Source:" prefix.
+  $("model-source").textContent = w.source.startsWith("Outline:") ? w.source : `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
   state.viewer.showSuggestion(null);
