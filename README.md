@@ -2,13 +2,17 @@
 
 One photo of a flat part → an editable CAD program with real millimeter dimensions.
 
+![ReverseCAD result](reports/ui/A_light_edit.png)
+
+Demo video: <!-- TODO: video link, Nov 3 -->
+
 Built during the Meta Global AI Developer Hackathon (Oct 26 – Nov 4); the repo history starts Oct 27. Everything below was written during the hackathon.
 
 **Live demo (no install, saved samples):** https://zeynepsdklc--reversecad-demo-web.us-east.modal.run
 
 ## The problem
 
-A flat bracket, cover, or gasket breaks or is discontinued, and the device it belongs to cannot be repaired without a replacement. Cutting a new one needs a CAD model, and today people measure the old part with calipers or trace a photo with a ruler by hand. ReverseCAD turns that manual step into one photo: the part next to a bank card becomes an editable CAD program with real millimeter dimensions — not a dead mesh.
+A flat bracket, cover, or gasket breaks or is discontinued, and the device it belongs to cannot be repaired without a replacement. Cutting a new one needs a CAD model, and today people measure the old part with calipers or trace a photo with a ruler by hand. Phone 3D-scanning apps give a mesh, with no named dimensions to edit, and its scale has to be set by hand. ReverseCAD turns that manual step into one photo: the part next to a bank card becomes an editable CAD program with real millimeter dimensions — not a dead mesh.
 
 ### Why this matters
 
@@ -209,7 +213,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 
 ## Built with
 
-Muse Code is the main coding agent ([muse-code] commits, starting with the adapter 2dba37f..8ebaa30).
+Muse Code is the main coding agent (43 [muse-code] commits, from the adapter 2dba37f..8ebaa30 on); the earlier 58 commits were written with Claude Code.
 
 ## License
 
