@@ -1,36 +1,111 @@
 # ReverseCAD
+
+One photo of a flat part → an editable CAD program with real millimeter dimensions.
+
+Built during the Meta Global AI Developer Hackathon (Oct 26 – Nov 4); the repo history starts Oct 27. Everything below was written during the hackathon.
+
 **Live demo (no install, saved samples):** https://zeynepsdklc--reversecad-demo-web.us-east.modal.run
 
-ReverseCAD turns one top-down photo of a flat part into an **editable CAD program with real millimeter dimensions**. Put the part next to a bank card, click the part, and get CadQuery code whose parameters (length, hole diameter, edge margin, tab width, ...) can be changed with sliders, plus STL and STEP files.
+## The problem
 
-Built for the Meta Global AI Developer Hackathon with Meta's SAM 3.1, Muse Spark Open and Muse Wonder.
+A flat bracket, cover, or gasket breaks or is discontinued, and the device it belongs to cannot be repaired without a replacement. Cutting a new one needs a CAD model, and today people measure the old part with calipers or trace a photo with a ruler by hand. ReverseCAD turns that manual step into one photo: the part next to a bank card becomes an editable CAD program with real millimeter dimensions — not a dead mesh.
+
+### Why this matters
+
+- ["what im not sure about is the scaling."](https://forum.prusaprinters.org/forum/original-prusa-i3-mk3s-mk3-how-do-i-print-this-printing-help/designing-from-a-photo/)
+- ["This seems the perfect answer to a discontinued part."](https://hubs.com/talk/t/in-baltimore-area-need-item-scanned-then-printed/6079)
+- ["How do I accurately measure the distance between these two holes?"](https://www.reddit.com/r/3Dprinting/comments/1vwv5zy/how_do_i_accurately_measure_the_distance_between/)
+
+## Scope
+
+Flat parts with holes, by choice: brackets, mounting plates, gaskets, covers, adapter plates — the parts laser cutters, CNC mills, and 3D printers make. One top-down photo with an ID-1 card (85.60 × 53.98 mm) next to the part sets the scale; thickness is entered by hand, since a top view cannot show it. Output is an editable CadQuery program plus STL, STEP, DXF, and a 1:1 print template.
 
 ## How it works
 
-1. **Photo**: the part lies next to an ID-1 card (bank or transit card, 85.60 × 53.98 mm), shot from above.
+Code measures, the model decides the structure, every program is checked against the photo.
+
+1. **Photo**: the part lies next to an ID-1 card (bank or transit card), shot from above.
 2. **Masks (SAM 3.1)**: the card is found by name, the part by the user's click (a SAM point prompt).
-3. **Measurements (deterministic code, no language model)**: the card gives the pixel-to-millimeter scale; the code measures the outline, its corners and arcs, and every hole (circle, rectangle, slot, ellipse or polygon) in millimeters.
-4. **Candidates (Muse Spark Open on Baseten)**: the model gets the measurement table and the part's black-and-white silhouette and writes several CadQuery programs, asked in turn with three approaches (fewest parameters, feature based, symmetry first). It decides the structure and the parameter names; every number comes from the table. The live search stops once three passing candidates build the same shape.
-5. **Checks**: each program is screened (only `cadquery`, `math` and the helper library `partkit` may be imported), built in a separate process, rendered from above and compared with the photo's mask (IoU), and checked against the measurements (holes within 0.5 mm, outline within max(1 mm, 2%)).
-6. **Repair (Muse Wonder)**: if no program passes every check, Wonder sees the failed programs with their difference images and rejection reasons, explains what is wrong and writes a corrected program, which goes through the same checks (at most 2 rounds).
+3. **Measurements (deterministic code, no language model)**: the card gives the pixel-to-millimeter scale (simple mean scale, or a homography when the card's opposite edges differ by more than 2%); the code measures the outline, its corners and arcs, and every hole (circle, rectangle, slot, ellipse, or polygon) in millimeters.
+4. **Candidates (Muse Spark Open)**: the model gets the measurement table and the part's black-and-white silhouette and writes several CadQuery programs, asked in turn with three approaches (fewest parameters, feature based, symmetry first). It decides the structure and the parameter names; every number comes from the table. The live search stops once three passing candidates build the same shape.
+5. **Checks**: each program is screened (only `cadquery`, `math`, and the helper library `partkit` may be imported), built in a separate process, rendered from above and compared with the photo's mask (IoU), and checked against the measurements (holes within 0.5 mm, outline within max(1 mm, 2%)).
+6. **Repair (Muse Wonder)**: if no program passes every check, Wonder sees the failed programs with their difference images and rejection reasons, explains what is wrong, and writes a corrected program, which goes through the same checks (at most 2 rounds).
 7. **Result**: the best program wins. If none passes, a baseline built straight from the measurements is returned, clearly marked as `fallback: measured shape, no design intent`, and the app says why (for example "The edges are irregular; the measured shape is shown.").
-8. **Completion (Muse Wonder)**: if the code finds signs that the part itself is broken (a zigzag edge, material missing against its mirror image, a gap or a half hole in a hole pattern), Wonder suggests how the intact part was designed. The suggestion is a separate, checked program. The card says which added numbers are measured and which are estimated, asks for the estimated ones (with a suggested value) and asks whether to add features the photo cannot show; the user applies or ignores it.
+8. **Completion (Muse Wonder)**: if the code finds signs that the part itself is broken (a zigzag edge, material missing against its mirror image, a gap or a half hole in a hole pattern), Wonder suggests how the intact part was designed. The suggestion is a separate, checked program. The card says which added numbers are measured and which are estimated, asks for the estimated ones (with a suggested value), and asks whether to add features the photo cannot show; the user applies or ignores it.
 
-## Meta models
+![Measurements](reports/ui/A_light_measure.png)
+*Card, outline, and holes drawn over the photo with their sizes.*
 
-| Model | What it does here | Files |
-|---|---|---|
-| **SAM 3.1** (Meta Model API) | Finds the card by name and the part by the user's click (point prompt); a second, zoomed-in request on the part | `sam_client.py`, `e2e_pipeline.py` (`find_masks`, `segment_crop`) |
-| **Muse Spark Open** (Baseten, `meta-models/muse-spark-open-1026`, reasoning effort `medium`) | Writes the candidate CadQuery programs from the measurement table and the part's silhouette; suggests SAM names for the part if the click finds nothing | `candidates.py`, `prompt_suggestions.py`, `baseten_client.py` |
-| **Muse Wonder** (Meta Model API, `muse-wonder-1.0`, reasoning effort `medium`): repair | When no candidate passes: diagnoses the failed programs from their code, difference images and rejection reasons, and writes a corrected program | `repair.py`, `repair_inputs.py` |
-| **Muse Wonder**: completion of broken parts | Only when the code finds break cues: reads the cues, the rectified photo and the winning program, and suggests the missing part (a parameter or feature) with its reason | `completion.py`, `break_cues.py` |
-| **Muse Voice Transcribe** (Meta Model API, `muse-voice-transcribe-1.0`) and **Muse Spark Open**: voice editing | A short spoken command ("make the holes 2 mm bigger") becomes text, then a proposed change of the named parameters (hole_diameter 6.0 → 8.0), shown on the sliders and applied only on Apply; commands can also be typed | `voice_edit.py` |
+![Candidate search](reports/ui/A_light_search.png)
+*Programs arrive one by one with their silhouette, IoU, and rejection reasons.*
 
-## Online demo
+![Result in 3D](reports/ui/A_light_edit.png)
+*The result with one slider per named parameter.*
 
-**https://zeynepsdklc--reversecad-demo-web.us-east.modal.run** replays the saved synthetic samples in the browser, nothing to install: the whole flow (`A_light`), a Muse Wonder repair (`A_light_repair`), the "no design found" state (`A_torn_fallback`) and a broken part with its completion card (`D_tab_broken`); the drawing, STEP/STL/DXF/.py downloads and the 1:1 print template work. Live mode, repair and voice editing need API keys, so they are off there; run the app locally for them. The first request after a quiet spell takes a little longer (the server starts).
+## Where Meta models are used
 
-## Quick start
+| Model | Where | What it does in ReverseCAD | Files |
+|---|---|---|---|
+| SAM 3.1 | Meta Model API | Card, part and crop masks (text, box and point prompts); the part mask is the reference every candidate is validated against | sam_client.py, e2e_pipeline.py, webapp/live.py |
+| Muse Spark Open | Baseten (`meta-models/muse-spark-open-1026`) | Candidate CadQuery programs; part-name suggestions for SAM; spoken/typed edit commands to JSON parameter changes; adapter outline programs; free-text adapter patterns to JSON | candidates.py, prompt_suggestions.py, voice_edit.py, adapter_outline.py, adapter_pattern.py |
+| Muse Wonder | Meta Model API (`muse-wonder-1.0`) | Repair of failed candidates; break completion; adapter outline repair (text-only) | repair.py, completion.py, adapter_outline.py |
+| Muse Voice Transcribe | Meta Model API (`muse-voice-transcribe-1.0`) | Speech to text for voice editing | voice_edit.py, webapp/server.py |
+| Muse Code | Development (not called by the app) | Main coding agent | [muse-code] commits, starting with the adapter 2dba37f..8ebaa30 |
+
+Three concrete examples:
+
+1. **Spark Open names the part for SAM.** When the click finds nothing, Spark Open suggests names; every suggestion is tried on SAM and the most confident mask wins (about half the suggestions find nothing). It once called a tabbed part a "camera icon" — and the part still segmented as "camera icon" at 0.82 confidence.
+2. **Wonder explains and repairs a failed candidate.** On a plate with one hole moved 4 mm, Wonder diagnosed "shifted about 4 mm in u" and wrote a corrected program in round 1 (IoU 0.988, $0.043).
+3. **Voice command to adapter outline.** "2 × M5, 60 mm apart", spoken or typed, becomes text (Muse Voice Transcribe), then a hole pattern in JSON (Spark Open), which deterministic code places by trying fixed candidates (centred, rotated 90°, then ±10/20/30 mm); Spark Open then designs the plate outline around both hole patterns (9/9 outlines passed on the first try, about $0.10).
+
+## Results
+
+Synthetic and real-photo results are kept apart: on real photos only a ruler gives the truth (about ±0.5 mm), while synthetic scenes are rendered from parts whose true size is known exactly. Model-dependent results vary between runs; every run made is reported in the notes linked below, never just the best.
+
+### Synthetic (true size known)
+
+| What | Result |
+|---|---|
+| **300 random parts** (plates, L's, tabbed bodies up to 100 mm, 77 of them broken), whole pipeline against their true design | Design found for 295 (98.3%), 1 of them by repair; intact parts: right topology 220/223, length errors median 0.73% / p90 0.96% / max 1.22%, width median 0.57% / p90 0.81% / max 1.33%, none over 2%; hole diameters median 0.05 / p90 0.11 / max 0.27 mm; IoU p10 0.970. Broken parts: cues found 48/77 (intact parts wrongly flagged 2/223); 43 of the 46 with an applied completion end with the right topology. $25.29 in total (Spark Open at its unverified price), about $0.08 and 108 s per part |
+| **Repair** with Muse Wonder: 6 deliberately broken candidates (a hole moved 4 mm, a corner cut 8 mm) plus the hand-cut cardboard | 6/6 repaired in round 1, each diagnosis naming the injected fault (9–25 s, $0.04–0.08 each; $0.61 and 189 s of Wonder time in total). The cardboard was not repaired: both tries missed the limits by 0.6–0.8 mm |
+| **Completion** with Muse Wonder on 4 broken parts with a known design | 4/4 suggestions valid and closer to the true design (IoU 0.918 → 0.980, 0.859 → 0.975, 0.968 → 0.980, and 0.784 → 0.874 for the snapped tab). The tab came back 3 mm too long (40.1 mm instead of 37) without its 6 mm hole, which nothing in the photo shows; answered with the true values, it reaches IoU 0.974 with both holes |
+| **Design intent**, winner vs the no-model baseline | 5 parameters instead of 21 (−76%), 7 instead of 15 (−53%), 6 instead of 19 (−68%), 7 instead of 23 (−70%), 8 instead of 19 on the shaped-hole part. One parameter resizes every equal hole; symmetry and edge margins survive a length change. The baseline copies measurement noise and has no length parameter at all |
+| Reasoning effort | `medium` keeps the default level's topology and design intent at 3–6× fewer tokens and 2–5× less time |
+
+### Real photos (compared with a ruler)
+
+From [reports/real_parts.md](reports/real_parts.md): a hand-cut, hand-punched cardboard part (ruler 106.5 × 96.0 mm, holes Ø6, punch pairs 80 mm centre-to-centre), shot twice at original quality.
+
+| Photo | Outline vs ruler | Holes vs ruler | Hole spacing vs 80 mm punch |
+|---|---|---|---|
+| Parallel (tilt 1.10%, simple scale) | bbox +0.09 / +0.06 mm (+0.1 / +0.1%); one hand-cut edge −2.5% | Ø +0.09 … −0.12 mm (+1.5 … −2.0%) | −0.96 (−1.2%) and −1.28 mm (−1.6%) |
+| Tilted (tilt 2.72%, warned, homography) | bbox +4.63 / +4.71 mm (+4.3 / +4.9%) | Ø +0.06 … +0.30 mm (+1.0 … +5.0%) | +2.28 (+2.9%) and +2.66 mm (+3.3%) |
+
+On both photos all 5 Spark candidates were rejected on hole positions (the hand-punched layout is asymmetric by up to ~2.7 mm) and the Muse Wonder repair passed in round 1 (tilted: IoU 0.9953, 52.7 s, $0.174 — "the measured holes form an asymmetric quadrilateral and the outline corners are skewed").
+
+Broken corners of the same part: BREAK1 (corner cut, holes intact) restored to −0.05 / +0.47 mm (−0.0 / +0.5%) of the intact extents; BREAK2 (cut through a hole) to +0.93 / +1.12 mm (+0.9 / +1.2%), with the restored hole 6.19 mm off by mirroring but 0.60 mm off by arc fit. BREAK3 (a second broken corner, held out: no code changed before or during its run) restored the big corner only — extents −0.35 / −0.3% and +0.10 / +0.1%, outline deviation max 12.36 / mean 1.21 mm, 2 of 4 holes — because the small cut was invisible to every cue. After the scope fix (after-fix, not held-out), two runs both restored the corner with no invented notch: max/mean 12.36/0.72 and 13.09/1.43 mm.
+
+<!-- TODO: cardboard test parts, Nov 2 -->
+
+Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the project's working notes).
+
+## Parts gallery
+
+The Parts screen shows every finished run as a card with a rotating 3D preview — samples always, local real-photo runs only when marked public — and a click opens the run.
+
+![Parts gallery](reports/ui/A_parts.png)
+
+## Known limits
+
+- **Real-photo hole spacing** reads about 1–1.6% short on the parallel shot (−0.96 / −1.28 mm against the 80 mm punch); the tilted shot reads 3–5% large and is flagged by the tilt warning.
+- **Transparent materials and blind holes** look like through-holes from above (tested on a blister pack with 4 blind Ø23 pockets closed by clear domes); a single top view cannot tell them apart.
+- **Hand-cut or torn parts** are a hard input: on a hand-cut cardboard part with a torn edge, 7 of 10 candidates returned no code and the result was the measured shape (IoU 0.953).
+- **Snapped-off tabs** come back as guesses (restored lengths +9 to +11% in the large test, median IoU 0.915); 4 of 9 had no break cue at all.
+- **Break cues miss small chips**: a third of broken parts in the large test were never flagged, mostly small chipped corners.
+- **Model results vary between runs** (see the two BREAK3 after-fix runs above); never trust a single run for a critical dimension.
+- **The Muse Spark Open price is unverified** ($1.25 / $4.25 per million tokens from a third-party listing); all Spark costs above use it.
+
+## Run it
 
 Tested with **Python 3.13 on Windows 11**. The web page loads three.js from a CDN, so the browser needs internet access.
 
@@ -44,7 +119,7 @@ python -m venv .venv
 
 On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe` (not tested there yet).
 
-Open **http://127.0.0.1:8000**. Three saved synthetic runs replay **without API keys**: `A_light` (an 80 × 40 mm plate with four holes, the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder) and `D_tab_broken` (a part with a snapped-off tab and Muse Wonder's completion card).
+Open **http://127.0.0.1:8000**. Four saved synthetic runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), and `D_tab_broken` (a snapped-off tab with its completion card).
 
 ### Live mode (your own photos)
 
@@ -59,33 +134,38 @@ copy .env.example .env      # then write your keys into .env
 | `MODEL_API_KEY` | Meta Model API (SAM 3.1, Muse Wonder, Muse Voice Transcribe) |
 | `BASETEN_API_KEY` | Baseten (Muse Spark Open, model `meta-models/muse-spark-open-1026`) |
 
-`.env` is in `.gitignore` and never committed. Check the setup with `.venv\Scripts\python.exe check_env.py` (it reports keys as set or missing, never their values).
+`.env` is in `.gitignore` and never committed. Check the setup with `.venv\Scripts\python.exe check_env.py` (it reports keys as set or missing, never their values). A live run takes about 45 s end to end with 3 candidates.
 
 **What leaves your machine:**
 - The photo goes to SAM (Meta).
 - The candidate requests (Muse Spark Open) send only the part's black-and-white top-down mask, never the photo. Only if your click finds nothing is the photo also sent to Muse Spark Open, to suggest names for the part.
 - Voice editing sends the recorded command (as a WAV) to Muse Voice Transcribe (Meta), and its text with the parameter names and values to Muse Spark Open.
-- A repair (Muse Wonder) sends the mask, the failed programs' code and their black, white, red and blue difference images; no photo.
-- A completion (Muse Wonder) sends the part's top-down mask, the winning program and its silhouette; no photo (the mask gave the same results as the photo on all four test parts). It only runs when the code finds signs of a break.
+- A repair (Muse Wonder) sends the mask, the failed programs' code and their difference images; no photo.
+- A completion (Muse Wonder) sends the part's top-down mask, the winning program and its silhouette; no photo. It only runs when the code finds signs of a break.
 
 Every model call is logged per run with its tokens and estimated cost (`usage.jsonl`, shown on the search screen).
+
+Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the four samples in the browser; live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
 
 ## Taking a photo
 
 - Put an ID-1 card (bank card, transit card) **right next to the part**: the scale is exact at the card and gets worse with distance from it.
-- Shoot straight down from 60-70 cm with 2× zoom, the part and the card fully in the frame.
+- Shoot straight down from 60–70 cm with zoom, the part and the card fully in the frame.
 - A dark, even background with a lighter part works best; a dark part on a lighter background works too.
 - Send photos at **original quality** (messenger apps shrink them; 1080 × 1920 left the card only about 430 px long).
 - Cover any personal data on the card; only its edges are needed.
 
 ## Using the app
 
-1. **Photo**: pick a saved run or upload a photo, click the part (not a hole), enter its thickness (a top view cannot show it).
-2. **Measurements**: card, outline and holes are drawn over the photo with their sizes; the table shows the numbers the model will get.
+1. **Photo**: pick a saved run or upload a photo, click the part (not a hole), enter its thickness.
+2. **Measurements**: card, outline, and holes are drawn over the photo with their sizes; the table shows the numbers the model will get.
 3. **Candidates**: programs arrive one by one with their silhouette, IoU, parameter count and, if rejected, why.
 4. **Model**: the result in 3D; one slider per named parameter rebuilds the part when released (about 0.3 s).
-5. **Download**: STL (mesh), STEP (solid) or the CadQuery program (`.py`) with the slider values as its defaults.
-6. **Make a matching part** (on the model screen, no model call, no API key): a **cover** (same outline and holes, own thickness) or a **spacer / gasket** (same holes, outline offset, 1 mm thick). It gets its own named parameters and every export above; the original stays next to it, and a top-view overlay and a computed line ("Holes aligned: 4/4, max offset 0.000 mm") show that the holes line up.
+5. **Download**: STL, STEP, DXF, the 1:1 print template, or the CadQuery program (`.py`) with the slider values as its defaults.
+6. **Make a matching part** (on the model screen): a **cover** (same outline and holes, own thickness), a **spacer / gasket** (same holes, outline offset), or an **adapter plate** (the original's holes plus a new pattern such as "2 × M5 · 60 mm", placed by fixed rules, outline by Muse Spark Open). A computed line ("Holes aligned: 4/4, max offset 0.000 mm") shows that the holes line up.
+
+![Adapter plate](reports/ui/A_light_adapter.png)
+*A cover, spacer, or adapter plate made from the built result.*
 
 ## Command-line scripts
 
@@ -97,10 +177,9 @@ All scripts run from the repository root with the virtual environment's Python. 
 | `run_real_photos.py [carton key blister]` | The pipeline on real photos in `data/private/` (git-ignored), compared with ruler values | yes (cached) |
 | `run_repair_tests.py` | The repair loop on deliberately broken candidates and the cardboard (`outputs/repair_tests/`) | yes (Muse Wonder) |
 | `run_broken_scenes.py` | Synthetic broken parts end to end, then a completion suggestion compared with the true design | yes |
+| `run_random_parts.py` | The 300-part large test (`outputs/random_test/report.json`) | yes |
 | `compare_rounds.py` | Compile rate, correct topology, tokens and time per candidate round | no |
 | `make_sample.py A_light A_light_repair D_tab_broken` | Copies synthetic runs into `samples/` in compact form | no |
-| `make_repair_run.py` | Builds the `A_light_repair` run (A_light with only broken candidates) | yes (Muse Wonder) |
-| `compare_completion_inputs.py` | Completion from the photo vs from the mask only, against the true design | yes (Muse Wonder) |
 | `try_sam.py`, `try_two_cards.py`, `try_homography.py`, `try_baseten.py` | The measurement experiments recorded in `CLAUDE.md` | some |
 
 ## Tests
@@ -109,57 +188,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 .venv\Scripts\python.exe -m pytest
 ```
 
-The tests never call an API. A few need runs saved under `outputs/` and are skipped in a fresh clone; the sample run in `samples/` covers the web app.
-
-## Results so far
-
-Real photos and synthetic tests are kept apart: on real photos only a ruler gives the truth (about ±0.5 mm), while synthetic scenes are rendered from parts whose true size is known exactly.
-
-### Real photos (compared with a ruler)
-
-| Photo | Ruler | Measured | Error |
-|---|---|---|---|
-| Brass key next to a card | 57 × 22.5 mm, elliptical hole 12 × 6 mm | outline 56.6 × 23.2 mm, hole 11.8 × 6.2 mm (an ellipse) | length −0.7%, **width +3.1%**; hole −1.9% / +3.0% |
-| Hand-cut cardboard, part far from a small card | 188 × 91 mm, holes 20 × 8 and 13 × 7 mm | 191.6 × 93.7 mm, holes 19.7 × 8.5 and 13.4 × 7.2 mm | length +1.9%, **width +3.0%** |
-| Blister pack (rests on its domes, above the card's plane) | 70.5 × 52 mm | 72.8 × 55.4 mm | length +3.3%, **width +6.5%** |
-| A second ID-1 card measured with the first as the scale (3 photos, both directions) | 85.60 × 53.98 mm | | mean error 0.48% (max 1.44%) |
-
-**Systematic width error on real photos.** On all three real parts the width (the shorter side) came out **3% to 6.5% too large**, while the lengths were between −0.7% and +3.3%. The synthetic scenes do not show this (width error median 0.57%, maximum 1.33% over 219 parts), so it comes from something real photos have and the renders do not, such as edge shadows, blur or the part not lying in the card's plane. It is not explained yet; the measurement code is frozen until it is examined on new real parts.
-
-On the real cardboard no candidate passed, and the Muse Wonder repair missed the limits twice by 0.6-0.8 mm; the result was the measured shape.
-
-### Synthetic tests (true size known)
-
-| What | Result |
-|---|---|
-| **300 random parts** (plates, L's, tabbed bodies, 77 of them broken), whole pipeline, against their true design | design found for 295 (98.3%); intact parts: right topology 220/223, length and width errors at most 1.33% (median 0.73% / 0.57%), hole diameters within 0.27 mm (median 0.05 mm); broken parts: break cues found 48/77, and 43 of the 46 with an applied completion end with the right topology; $25.29 in total, about $0.08 and 2 minutes per part |
-| Selected model vs ground truth, plate `A_light` (true 80 × 40 mm, 4 × Ø6 mm) | 79.30 × 40.20 mm (−0.9% / +0.5%), hole diameters within 0.02 mm; fit to measurements 0.03 mm |
-| Holes (color method) | diameter within 0.15 mm, centers within 0.7 mm |
-| Candidates on parts A-D (plate, asymmetric plate, L plate, tabbed part), 10 each | 100% compiled with correct topology, IoU 0.98-0.99 |
-| Repair with Muse Wonder: 6 deliberately broken candidates on parts A, C and D (a hole moved 4 mm, a corner cut 8 mm) | 6/6 repaired in the first round, each diagnosis naming the injected fault; $0.04-0.08 and 9-25 s per repair |
-| Completion with Muse Wonder on 4 broken parts with a known design (A with a chipped corner, A broken through a hole, A with a hole never drilled, D with its tab snapped off) | 4/4 suggestions valid and closer to the true design (IoU 0.78-0.97 before, 0.87-0.98 after; the three A parts reach about 0.98). D is partly right: the tab is restored 3 mm too long, and the 6 mm hole that was in the lost tab is not invented, since nothing in the photo shows it. The card asks for both; answered with the true values, D reaches IoU 0.974 with both holes |
-| Design intent of the winner vs the baseline | 5-8 named parameters instead of 15-23; shared hole diameter, symmetry and edge margins kept when a dimension changes |
-
-### Other measurements
-
-| What | Result |
-|---|---|
-| Reasoning effort | `medium` (the default here) keeps the default level's quality at 3-6× fewer tokens |
-| Live run, end to end (3 candidates) | about 45 s |
-
-Two different numbers appear in the app. **Fit to measurements** is how closely a candidate follows the measured outline (the largest distance from a measured corner or arc point to the candidate's outline); it says nothing about whether the measurements were right. **vs ground truth** compares the model with the part's true size and is only shown for synthetic scenes, where that size is known; it includes the photo measurement's own error.
-
-Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the project's working notes).
-
-## Known limits
-
-- **Transparent materials and blind holes** look like through-holes from above (tested on a blister pack); a single top view cannot tell them apart.
-- **Hand-cut or torn parts** are hard: on a hand-cut cardboard part no candidate passed and the result was the measured baseline.
-- **Flat, prismatic parts only** (plates, brackets, covers, tabs); thickness is entered by the user.
-- **Repair and completion are tested mostly on synthetic parts**: the only real case so far (the cardboard) was not repaired, and completion has not been tried on a real broken part.
-- **A completion can only restore what the photo hints at**: features lost with the broken piece (such as a hole in a snapped-off tab) are not suggested.
-- The scale rule is temporary: the homography is used only when the card looks tilted (opposite edges differ by more than 2%), otherwise the simple card scale.
-- **On real photos the width comes out 3-6.5% too large** (key +3.1%, cardboard +3.0%, blister +6.5%); lengths are within −0.7% to +3.3%. Not yet explained (see Results).
+255 passed, 1 skipped; the frontend files also pass `node --check`. The tests never call an API. A few need runs saved under `outputs/` and are skipped in a fresh clone; the samples in `samples/` cover the web app.
 
 ## Project layout
 
@@ -169,14 +198,18 @@ Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the
 | `model_view.py`, `candidates.py`, `partkit.py`, `prompt_suggestions.py` | What the model sees, the prompt, and the helper library the programs use |
 | `run_candidate.py`, `candidate_runner.py`, `build_worker.py` | Screened execution of generated programs in separate processes |
 | `iou.py`, `deviation_check.py`, `design_intent.py`, `baseline_cad.py` | Scoring, limits, design-intent test and the no-model baseline |
-| `matching_part.py` | Covers and spacers generated from a built part, and the hole alignment check |
+| `matching_part.py`, `adapter_pattern.py`, `adapter_place.py`, `adapter_outline.py` | Covers, spacers and adapter plates from a built part, with the hole alignment check |
 | `e2e_pipeline.py` | The whole pipeline for one scene or photo |
-| `repair.py`, `repair_inputs.py`, `break_cues.py`, `completion.py` | Muse Wonder: repair of failed candidates, break cues and completion suggestions |
+| `repair.py`, `repair_inputs.py`, `break_cues.py`, `completion.py`, `restored_hole.py` | Muse Wonder: repair of failed candidates, break cues, completion suggestions and restored-hole positions |
 | `sam_decode.py`, `usage_ledger.py` | Fast SAM mask decoding (identical to the library's), per-run model usage and cost |
-| `webapp/` | FastAPI back end (`server.py`, `replay.py`, `live.py`, `builder.py`) and the page (`static/`; all styling variables in `tokens.css`) |
+| `webapp/` | FastAPI back end (`server.py`, `replay.py`, `live.py`, `builder.py`, `gallery.py`) and the page (`static/`; all styling variables in `tokens.css`) |
 | `parts/`, `synthetic_scene.py` | Template test parts with ground truth, broken versions with their intact design, and their synthetic photos |
-| `samples/` | Compact saved synthetic runs for replay without API keys (the whole flow, a repair, a completion) |
+| `samples/` | Compact saved synthetic runs for replay without API keys |
 | `tests/` | pytest suite |
+
+## Built with
+
+Muse Code is the main coding agent ([muse-code] commits, starting with the adapter 2dba37f..8ebaa30).
 
 ## License
 
