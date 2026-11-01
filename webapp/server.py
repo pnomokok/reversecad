@@ -30,7 +30,7 @@ import adapter_place
 import drawing_export
 import matching_part
 import voice_edit
-from webapp import live, replay
+from webapp import gallery, live, replay
 from webapp.builder import Builder
 
 load_dotenv()  # API keys from .env (never printed); live mode and repair need them
@@ -77,6 +77,12 @@ def config():
 def runs():
     """Saved runs that can be replayed."""
     return {"runs": replay.list_runs()}
+
+
+@app.get("/api/parts")
+def parts():
+    """Parts gallery: every finished, non-private run as a card (folder scan, no code per run)."""
+    return {"parts": gallery.gallery_runs()}
 
 
 @app.get("/api/runs/{name}/photo")

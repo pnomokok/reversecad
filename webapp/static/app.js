@@ -7,6 +7,7 @@
 // with step=edit, &set=<parameter>:<value>,... also moves sliders; with step=edit or export, &match=cover|spacer
 // opens that matching part first.
 import { createViewer } from "./viewer.js";
+import { showParts } from "./parts.js";
 
 const state = {
   screen: "capture", run: null, live: false, image: null, click: null, analysis: null,
@@ -43,7 +44,7 @@ const mm = (value, digits = 2) => `${Number(value).toFixed(digits)} mm`;
 function setScreen(screen) {
   state.screen = screen;
   document.querySelectorAll("#steps button, #rail button").forEach((b) => b.classList.toggle("active", b.dataset.screen === screen));
-  ["capture", "search", "edit", "export"].forEach((name) => $(`screen-${name}`).classList.toggle("hidden", name !== screen));
+  ["capture", "search", "edit", "export", "parts"].forEach((name) => $(`screen-${name}`).classList.toggle("hidden", name !== screen));
   if (screen === "capture") render();
   if (screen === "edit" && state.viewer) state.viewer.resize();
   updateHeader();
@@ -59,6 +60,7 @@ document.querySelectorAll("#steps button, #rail button").forEach((button) =>
   button.addEventListener("click", () => {
     if (button.dataset.screen === "export") showExport();
     else if (button.dataset.screen === "edit" && !state.winner) showModel();
+    else if (button.dataset.screen === "parts") openParts();
     else setScreen(button.dataset.screen);
   }));
 
@@ -1828,12 +1830,25 @@ function drawingSVG(data) {
   $("example-list").innerHTML = examples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
   document.querySelectorAll("#example-list button").forEach((b) => b.addEventListener("click", () => chooseRun(b.dataset.run)));
 
-  // Deep link for screenshots and recordings: ?run=A_light&step=search
+  // Deep link for screenshots and recordings: ?run=A_light&step=search (?step=parts needs no run)
   const params = new URLSearchParams(location.search);
   const run = params.get("run");
-  if (run && runs.includes(run)) await openDeepLink(run, params);
+  if (params.get("step") === "parts") await openParts();
+  else if (run && runs.includes(run)) await openDeepLink(run, params);
   document.body.dataset.ready = "true";  // webapp/screenshot.py waits for this
 })();
+
+async function openRunFromParts(name) {
+  // A gallery card opens the run where the work happens: the existing replay flow's edit screen.
+  await chooseRun(name);
+  await measure();
+  await streamCandidates();
+  await showModel();
+}
+
+function openParts() {
+  return showParts($("parts-grid"), $("parts-status"), { setScreen, openRun: openRunFromParts });
+}
 
 async function openDeepLink(run, params) {
   const step = params.get("step") || "capture";

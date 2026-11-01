@@ -319,3 +319,104 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     },
     reset: () => { framedRadius = null; } };
 }
+
+// ---------- card previews: small turntables for the Parts gallery ----------
+// Each card owns a small renderer (created when scrolled into view), but one shared
+// requestAnimationFrame loop rotates and renders every visible one, so 10+ cards stay
+// smooth. With prefers-reduced-motion a card renders one static iso frame, never looping.
+const turntables = new Set();
+let turntableFrame = null;
+const TURNTABLE_PERIOD_S = 14;  // one slow revolution
+
+function tickTurntables() {
+  turntableFrame = null;
+  let alive = false;
+  for (const turn of turntables) alive = turn.tick() || alive;
+  if (alive) turntableFrame = requestAnimationFrame(tickTurntables);
+}
+
+function pokeTurntables() {
+  if (!turntableFrame && !reducedMotion()) turntableFrame = requestAnimationFrame(tickTurntables);
+}
+
+export function createTurntable(container) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  container.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -5000, 5000);
+  camera.up.set(0, 0, 1);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f44, 2.2));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.position.set(0.6, -1, 1.6);
+  scene.add(sun);
+  const material = new THREE.MeshStandardMaterial({ color: css("--color-model"), metalness: 0, roughness: 0.75 });
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: css("--color-model-edge") });
+  let part = null;
+  let center = new THREE.Vector3();
+  let radius = 1;
+  let visible = true;
+  const t0 = performance.now();
+  const api = { show, setVisible, resize, dispose, tick };
+
+  function fit() {
+    const width = container.clientWidth || 300;
+    const height = container.clientHeight || 170;
+    renderer.setSize(width, height);
+    const half = radius * 1.2;  // air around the part; no labels to fit
+    Object.assign(camera, { left: -half * width / height, right: half * width / height, top: half, bottom: -half });
+    camera.updateProjectionMatrix();
+  }
+
+  function render(now) {
+    if (!part || !visible) return;
+    // The camera circles the part around the Z axis, starting from the iso direction.
+    const angle = reducedMotion() ? 0 : ((now - t0) / 1000 / TURNTABLE_PERIOD_S) * Math.PI * 2;
+    camera.position.copy(center).addScaledVector(
+      ISO.clone().applyAxisAngle(new THREE.Vector3(0, 0, 1), angle), radius * 4);
+    camera.lookAt(center);
+    renderer.render(scene, camera);
+  }
+
+  function show(stlBuffer) {
+    const geometry = new STLLoader().parse(stlBuffer);
+    geometry.computeVertexNormals();
+    part = new THREE.Group();
+    part.add(new THREE.Mesh(geometry, material));
+    part.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
+    const box = new THREE.Box3().setFromObject(part);
+    center = box.getCenter(new THREE.Vector3());
+    radius = box.getSize(new THREE.Vector3()).length() / 2;
+    scene.add(part);
+    fit();
+    render(performance.now());
+    pokeTurntables();
+  }
+
+  function tick() {
+    if (!part || !visible || reducedMotion()) return false;
+    render(performance.now());
+    return true;
+  }
+
+  function setVisible(value) {
+    visible = value;
+    if (value && part) { fit(); render(performance.now()); pokeTurntables(); }
+  }
+
+  function resize() {
+    if (part) { fit(); render(performance.now()); }
+  }
+
+  function dispose() {
+    turntables.delete(api);
+    window.removeEventListener("resize", resize);
+    if (part) part.traverse((o) => o.geometry && o.geometry.dispose());
+    part = null;
+    renderer.dispose();
+    renderer.domElement.remove();
+  }
+
+  turntables.add(api);
+  window.addEventListener("resize", resize);
+  return api;
+}

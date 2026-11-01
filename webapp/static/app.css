@@ -478,3 +478,14 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .off-note a { color: var(--color-text-strong); text-decoration: underline; text-underline-offset: 2px; }
 .source .off-note { grid-column: 1 / -1; order: 2; }
 .source:has(.off-note) { grid-template-columns: 1fr; }
+
+/* ---------- parts gallery ---------- */
+.parts-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-4); padding: var(--space-5); align-content: start; }
+.part-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-container); text-align: left; border: var(--border-width) solid transparent; }
+.part-card:hover { border-color: var(--color-selected); }
+.part-preview { height: 170px; background: var(--color-lowest); position: relative; overflow: hidden; }
+.part-preview canvas { display: block; }
+.preview-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text-muted); }
+.part-name { font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part-facts { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); }
+.part-chips { display: flex; gap: var(--space-1); }

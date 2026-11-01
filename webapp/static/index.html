@@ -31,6 +31,7 @@
       <button data-screen="search" title="Search" disabled><span class="icon">travel_explore</span></button>
       <button data-screen="edit" title="Edit" disabled><span class="icon">architecture</span></button>
       <button data-screen="export" title="Export" disabled><span class="icon">output</span></button>
+      <button data-screen="parts" title="Parts"><span class="icon">grid_view</span></button>
     </nav>
   </aside>
 
@@ -355,6 +356,17 @@
           <p class="status-line" id="export-status">STEP + STL + DXF + Python + PDF template</p>
         </aside>
       </div>
+    </section>
+    <!-- ================= PARTS ================= -->
+    <section class="screen hidden" id="screen-parts">
+      <div class="subbar">
+        <span class="subbar-title"><span class="dot-accent"></span>PARTS</span>
+        <span class="subbar-text">Every finished run · click a card to open it</span>
+        <span class="subbar-right">
+          <span class="subbar-status" id="parts-status"></span>
+        </span>
+      </div>
+      <div class="parts-grid" id="parts-grid"></div>
     </section>
   </main>
 
