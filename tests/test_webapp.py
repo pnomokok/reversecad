@@ -170,7 +170,10 @@ def test_sample_run_replays_like_a_fresh_clone(monkeypatch):
 @needs_saved_run
 def test_saved_run_analysis():
     assert "A_light" in client.get("/api/runs").json()["runs"]
-    assert client.get("/api/runs/A_light/photo").headers["content-type"] == "image/png"
+    # PNG from a local outputs/ run, JPEG from the sample: the endpoint must serve whichever source resolves.
+    photo = replay.photo_path("A_light")
+    expected = "image/png" if photo.suffix == ".png" else "image/jpeg"
+    assert client.get("/api/runs/A_light/photo").headers["content-type"] == expected
     data = client.get("/api/runs/A_light/analysis").json()
     assert len(data["card_corners_px"]) == 4
     assert len(data["holes"]) == data["table"]["hole_count"] == 4
