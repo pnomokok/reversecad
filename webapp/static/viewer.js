@@ -354,15 +354,44 @@ export function createTurntable(container) {
   let part = null;
   let center = new THREE.Vector3();
   let radius = 1;
+  let frame = null;  // largest projected half-extents of the bounding box over a revolution
   let visible = true;
   const t0 = performance.now();
   const api = { show, setVisible, resize, dispose, tick };
+
+  function measureFrame() {
+    // How large the bounding box ever appears while the camera circles it: project its
+    // corners at 16 angles and keep the largest half-width (hw) and half-height (hh).
+    const box = new THREE.Box3().setFromObject(part);
+    const corners = [];
+    for (const x of [box.min.x, box.max.x])
+      for (const y of [box.min.y, box.max.y])
+        for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z).sub(center));
+    const probe = new THREE.OrthographicCamera(-1, 1, 1, -1, -5000, 5000);
+    probe.up.set(0, 0, 1);
+    const corner = new THREE.Vector3();
+    let hw = 0;
+    let hh = 0;
+    for (let i = 0; i < 16; i++) {
+      probe.position.copy(center).addScaledVector(
+        ISO.clone().applyAxisAngle(new THREE.Vector3(0, 0, 1), (i / 16) * Math.PI * 2), radius * 4);
+      probe.lookAt(center);
+      probe.updateMatrixWorld();
+      for (const offset of corners) {
+        corner.copy(offset).applyMatrix4(probe.matrixWorldInverse);
+        hw = Math.max(hw, Math.abs(corner.x));
+        hh = Math.max(hh, Math.abs(corner.y));
+      }
+    }
+    frame = { hw, hh };
+  }
 
   function fit() {
     const width = container.clientWidth || 300;
     const height = container.clientHeight || 170;
     renderer.setSize(width, height);
-    const half = radius * 1.2;  // air around the part; no labels to fit
+    // The widest projected extent fills 80% of the preview; nothing clips at any angle.
+    const half = Math.max(frame.hh, (frame.hw * height) / width) / 0.8;
     Object.assign(camera, { left: -half * width / height, right: half * width / height, top: half, bottom: -half });
     camera.updateProjectionMatrix();
   }
@@ -387,6 +416,7 @@ export function createTurntable(container) {
     center = box.getCenter(new THREE.Vector3());
     radius = box.getSize(new THREE.Vector3()).length() / 2;
     scene.add(part);
+    measureFrame();
     fit();
     render(performance.now());
     pokeTurntables();

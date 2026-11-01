@@ -11,7 +11,7 @@ from webapp.server import app
 TABLE = {"outline": {"length_mm": 80.0, "width_mm": 40.0}, "holes": [{}, {}, {}]}
 
 
-def _write_run(folder, source="candidate", private=False, summary=True):
+def _write_run(folder, source="candidate", private=False, public=False, summary=True):
     folder.mkdir(parents=True)
     (folder / "3_measurements.json").write_text(json.dumps({"table": TABLE}), encoding="utf-8")
     if summary:
@@ -20,6 +20,8 @@ def _write_run(folder, source="candidate", private=False, summary=True):
                         "result_source": source}), encoding="utf-8")
     if private:
         (folder / "private.txt").write_text("Private: test marker\n", encoding="utf-8")
+    if public:
+        (folder / "public.txt").write_text("Public: test marker\n", encoding="utf-8")
 
 
 def test_card_fields_come_from_saved_files(tmp_path, monkeypatch):
@@ -41,8 +43,33 @@ def test_source_labels(tmp_path, monkeypatch):
 
 def test_live_name_means_real_photo(tmp_path, monkeypatch):
     monkeypatch.setattr(replay, "SOURCES", [tmp_path])
-    _write_run(tmp_path / "live-20990101-000000-abcdef")
+    _write_run(tmp_path / "live-20990101-000000-abcdef", public=True)
     assert gallery.card("live-20990101-000000-abcdef")["kind"] == "Real photo"
+
+
+def test_live_run_needs_public_marker(tmp_path, monkeypatch):
+    """Privacy is opt-in: a local upload without public.txt stays out of the gallery."""
+    monkeypatch.setattr(replay, "SOURCES", [tmp_path])
+    _write_run(tmp_path / "live-20990101-000000-abcdef")
+    _write_run(tmp_path / "live-20990102-000000-abcdef", public=True)
+    assert gallery.card("live-20990101-000000-abcdef") is None
+    assert gallery.card("live-20990102-000000-abcdef")["kind"] == "Real photo"
+    assert [c["name"] for c in gallery.gallery_runs()] == ["live-20990102-000000-abcdef"]
+
+
+def test_private_wins_over_public(tmp_path, monkeypatch):
+    """Both markers: the run stays out."""
+    monkeypatch.setattr(replay, "SOURCES", [tmp_path])
+    _write_run(tmp_path / "live-20990101-000000-abcdef", private=True, public=True)
+    assert gallery.card("live-20990101-000000-abcdef") is None
+    assert gallery.gallery_runs() == []
+
+
+def test_template_run_needs_no_marker(tmp_path, monkeypatch):
+    """A local template-scene run (not live-*) shows without any marker."""
+    monkeypatch.setattr(replay, "SOURCES", [tmp_path])
+    _write_run(tmp_path / "plate")
+    assert gallery.card("plate")["kind"] == "Synthetic"
 
 
 def test_private_marker_excludes(tmp_path, monkeypatch):

@@ -1,10 +1,12 @@
 """Parts gallery: every finished run as a card (GET /api/parts).
 
-Samples are always listed; local runs too, unless their folder holds a private.txt
-marker (a photo from data/private/ must never appear in the gallery). In demo mode
-this is samples-only, because the server narrows replay.SOURCES to samples/.
-New run folders show up with no code changes. Only values saved in the run are
-shown; unfinished runs (no result program) are skipped, never guessed.
+Samples are always listed. Local template-scene runs too, unless their folder holds
+a private.txt marker. A local live-* run (an uploaded photo) is shown only when its
+folder holds a public.txt marker: privacy is opt-in. private.txt always wins over
+public.txt. In demo mode this is samples-only, because the server narrows
+replay.SOURCES to samples/. New run folders show up with no code changes. Only
+values saved in the run are shown; unfinished runs (no result program) are
+skipped, never guessed.
 """
 import json
 from pathlib import Path
@@ -12,11 +14,22 @@ from pathlib import Path
 from webapp import replay
 
 PRIVATE_MARKER = "private.txt"  # a run folder holding this file stays out of the gallery
+PUBLIC_MARKER = "public.txt"  # a local live-* run needs this file to be shown
 
 
 def is_private(folder):
     """A run is private when its folder carries the marker (see module docstring)."""
     return (Path(folder) / PRIVATE_MARKER).exists()
+
+
+def is_public(folder):
+    """A run is opted in when its folder carries the public marker (live-* runs only)."""
+    return (Path(folder) / PUBLIC_MARKER).exists()
+
+
+def _is_sample(folder):
+    """A run folder inside samples/ (committed examples, always listed)."""
+    return Path(folder).resolve().parent == replay.SAMPLES_DIR.resolve()
 
 
 def source_label(source):
@@ -39,7 +52,9 @@ def card(name):
     try:
         folder = replay.run_dir(name)
         if is_private(folder):
-            return None
+            return None  # private wins over public
+        if name.startswith("live-") and not _is_sample(folder) and not is_public(folder):
+            return None  # a local upload stays out unless opted in with public.txt
         table = json.loads((folder / "3_measurements.json").read_text(encoding="utf-8"))["table"]
         # result_program raises when there is no result, so a missing source means a plain
         # winner (the same default as done_event).
