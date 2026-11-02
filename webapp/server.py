@@ -563,7 +563,8 @@ async def adapter_slotted(name: str, request: Request):
         return {**_matching_info(name, "adapter", slotted),
                 "parameters": matching_part.slider_parameters(slotted.read_text(encoding="utf-8")),
                 "pattern": meta["pattern"], "placement": meta["placement"], "hole_style": "slotted",
-                "outline_source": meta["outline_source"], "mating": meta.get("mating"), "cached": True}
+                "outline_source": meta["outline_source"], "mating": meta.get("mating"),
+                "hole_counts": meta.get("hole_counts"), "cached": True}
     profile, error = await asyncio.to_thread(_adapter_build, program)
     if error:
         raise HTTPException(422, f"the Exact program did not build with its defaults: {error.splitlines()[-1]}")
@@ -576,10 +577,12 @@ async def adapter_slotted(name: str, request: Request):
         raise HTTPException(422, refusal)
     source = adapter_outline.slotted_source(profile["outline"], specs, profile["thickness"],
                                             pattern["label"], f"{name}_adapter.py")
+    counts = {"slots": sum("slot" in spec for tag in ("a", "b") for spec in specs[tag]),
+              "shaped": sum("slot" not in spec for tag in ("a", "b") for spec in specs[tag])}
     meta = {"pattern": exact_meta["pattern"], "placement": exact_meta["placement"],
             "margin_default": exact_meta["margin_default"], "thickness": profile["thickness"],
             "outline_source": f"{exact_meta['outline_source']} · slotted",
-            "mating": exact_meta.get("mating"), "exact_key": key}
+            "mating": exact_meta.get("mating"), "exact_key": key, "hole_counts": counts}
     MATCHING_DIR.mkdir(parents=True, exist_ok=True)
     for path, text in ((slotted_meta, json.dumps(meta)), (slotted, source)):
         temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
@@ -588,7 +591,8 @@ async def adapter_slotted(name: str, request: Request):
     return {**_matching_info(name, "adapter", slotted),
             "parameters": matching_part.slider_parameters(source),
             "pattern": meta["pattern"], "placement": meta["placement"], "hole_style": "slotted",
-            "outline_source": meta["outline_source"], "mating": meta["mating"], "cached": False}
+            "outline_source": meta["outline_source"], "mating": meta["mating"],
+            "hole_counts": counts, "cached": False}
 
 
 def _tagged_adapter_holes(built_holes, holes_b):
@@ -762,7 +766,9 @@ async def adapter_assembly(name: str, request: Request):
             continue
         for entry in sorted(groups[key]["holes"], key=lambda e: (e["center"][0], e["center"][1])):
             tag = entry["tag"]
+            axis = axis_a if tag == "A" else axis_b
             screws.append({"pattern": tag, "group": key, "x": entry["center"][0], "y": entry["center"][1],
+                           "shift": [1.0, 0.0] if axis == 0.0 else [0.0, 1.0],
                            "d": assembly_check.SHANK_DIAMETER_MM[size], "size": size,
                            "z0": -assembly_check.SCREW_PROTRUDE_MM if tag == "A" else t_o,
                            "z1": t_o + t_a if tag == "A" else t_o + t_a + t_m + assembly_check.SCREW_PROTRUDE_MM,
@@ -771,7 +777,7 @@ async def adapter_assembly(name: str, request: Request):
         screw["id"] = f"A{position}"
     for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "B"], key=lambda s: (s["x"], s["y"])), 1):
         screw["id"] = f"B{position}"
-    spec = {"version": 1, "plates": plates, "screws": screws}  # versioned: worker logic changes retire old checks
+    spec = {"version": 2, "plates": plates, "screws": screws}  # versioned: worker logic changes retire old checks
     check_id = hashlib.sha256(json.dumps(spec, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     folder = MATCHING_DIR / f"asm_{check_id}"
     report_path = folder / "report.json"
@@ -783,7 +789,9 @@ async def adapter_assembly(name: str, request: Request):
     watched = []
     for screw in report["screws"]:
         watched.append({"id": screw["id"], "pattern": screw["pattern"], "size": screw["size"], "d": screw["d"],
+                        "x": screw["x"], "y": screw["y"],
                         "overlap_mm3": round(screw["total_mm3"], 3),
+                        "depth_mm": round(max(screw["penetration_mm"].values()), 3),
                         "verdict": ("blocked" if screw["total_mm3"] > assembly_check.INTERFERENCE_EPS_MM3
                                     else "pass")})
     watched.sort(key=lambda s: (s["pattern"], int(s["id"][1:])))

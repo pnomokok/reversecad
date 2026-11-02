@@ -47,7 +47,8 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     const height = container.clientHeight || 600;
     renderer.setSize(width, height);
     labels.setSize(width, height);
-    if (framedRadius) setFrustum(framedRadius);
+    if (assembly && part) fitProjected(framedBox(), framedBox().getCenter(new THREE.Vector3()));
+    else if (framedRadius) setFrustum(framedRadius);
   }
 
   function setFrustum(radius) {
@@ -59,8 +60,9 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   }
 
   function framedBox() {
-    // What the view frames: the assembly stack in sim view, else the part and its ghosts.
-    if (assembly) return new THREE.Box3().setFromObject(assembly);
+    // What the view frames: the assembly stack in sim view (padded for its outside tags),
+    // else the part and its ghosts.
+    if (assembly) return new THREE.Box3().setFromObject(assembly).expandByScalar(10);
     const box = new THREE.Box3().setFromObject(part);
     if (companion) box.expandByObject(companion);
     if (mating) box.expandByObject(mating);
@@ -72,18 +74,50 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
     framedRadius = radius;
-    setFrustum(radius);
     camera.zoom = 1;
     controls.target.copy(center);
     if (view === "top") {
       camera.up.set(0, 1, 0);
       camera.position.copy(center).add(new THREE.Vector3(0, 0, radius * 4));
+      camera.lookAt(center);  // orient first: fitProjected reads the camera's orientation
     } else if (view === "iso") {
       camera.up.set(0, 0, 1);
       camera.position.copy(center).addScaledVector(ISO, radius * 4);
+      camera.lookAt(center);
     }
+    if (assembly) fitProjected(box, center);
+    else setFrustum(radius);
     camera.updateProjectionMatrix();
     controls.update();
+    if (assembly) layoutSimLabels();  // tags follow the current view, screws stay put
+  }
+
+  function fitProjected(box, center) {
+    // As in the gallery turntables: project the box's corners and fit so the largest extent fills
+    // 80% of the viewer. The sim camera stays where the user left it, so only the current view is
+    // fitted (the Fit button refits after orbiting); the picture shifts right of the left overlay.
+    camera.updateMatrixWorld();
+    const centerCam = center.clone().applyMatrix4(camera.matrixWorldInverse);
+    const corner = new THREE.Vector3();
+    let hw = 0;
+    let hh = 0;
+    for (const x of [box.min.x, box.max.x])
+      for (const y of [box.min.y, box.max.y])
+        for (const z of [box.min.z, box.max.z]) {
+          corner.set(x, y, z).applyMatrix4(camera.matrixWorldInverse).sub(centerCam);
+          hw = Math.max(hw, Math.abs(corner.x));
+          hh = Math.max(hh, Math.abs(corner.y));
+        }
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 600;
+    const half = Math.max(hh, (hw * height) / width) / 0.8;
+    camera.aspect = width / height;
+    camera.left = (-half * width) / height;
+    camera.right = (half * width) / height;
+    camera.top = half;
+    camera.bottom = -half;
+    if (shiftRight) camera.setViewOffset(width, height, -shiftRight, 0, width, height);
+    camera.updateProjectionMatrix();
   }
 
   function line(points, lineMaterial) {
@@ -279,6 +313,9 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   const SIM_BLOCKED = 0xe5484d;
   let assembly = null;
   let assemblyToken = 0;
+  let assemblyPlates = [];  // plate groups (tags are re-placed on every view change)
+  let assemblyScrewLabels = [];  // blocked-screw CSS2DObjects: obstacles when placing tags
+  let assemblyTags = [];  // {group, tag, leader} of the current plate tags, for re-layout
 
   const clashMaterial = () => new THREE.MeshStandardMaterial({
     color: SIM_BLOCKED, emissive: SIM_BLOCKED, emissiveIntensity: 0.55, transparent: true,
@@ -295,6 +332,9 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       if (o.isMesh && o.userData.ownedMaterial) o.material.dispose?.();
     });
     assembly = null;
+    assemblyPlates = [];
+    assemblyScrewLabels = [];
+    assemblyTags = [];
   }
 
   function simLabel(text, position, small = false) {
@@ -314,8 +354,79 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     });
   }
 
+  function layoutSimLabels() {
+    // (Re)place the plate tags for the current camera: each tag gets its own outside corner of
+    // the stack with a leader to its plate's nearest corner (like the dimension labels), skipping
+    // the corner nearest the floating overlay panel. Tags are then clamped into the visible strip
+    // and lifted past screw labels and each other, so no two labels overlap in any view.
+    for (const { group, tag, leader } of assemblyTags) {
+      group.remove(tag);
+      tag.element.remove();
+      group.remove(leader);
+      leader.geometry.dispose();
+    }
+    assemblyTags = [];
+    if (!assemblyPlates.length) return;
+    const stack = new THREE.Box3();
+    for (const group of assemblyPlates) stack.union(group.userData.box);
+    camera.updateMatrixWorld();
+    const mid = { x: (stack.min.x + stack.max.x) / 2, y: (stack.min.y + stack.max.y) / 2, z: (stack.min.z + stack.max.z) / 2 };
+    const viewRect = container.getBoundingClientRect();
+    const insetRect = document.querySelector(".fit-inset")?.getBoundingClientRect();
+    const clearLeft = (insetRect ? insetRect.right - viewRect.left : 0) + 78;
+    const clearRight = viewRect.width - 78;
+    const camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const camUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    const mmPerPxX = (camera.right - camera.left) / (container.clientWidth || 800);
+    const mmPerPxY = (camera.top - camera.bottom) / (container.clientHeight || 600);
+    const project = (p) => {
+      const v = new THREE.Vector3(...p).project(camera);
+      return [(v.x * 0.5 + 0.5) * viewRect.width, (-v.y * 0.5 + 0.5) * viewRect.height];
+    };
+    const screenX = ([cx, cy]) => new THREE.Vector3(cx, cy, mid.z).project(camera).x;
+    const stackCorners = [[stack.min.x, stack.min.y], [stack.max.x, stack.min.y],
+      [stack.min.x, stack.max.y], [stack.max.x, stack.max.y]]
+      .sort((a, b) => screenX(b) - screenX(a)).slice(0, 3);
+    // Label half-sizes on screen (px): plate tags are wide, screw labels small; screws never move.
+    const placed = assemblyScrewLabels.map((o) => [...project(o.position.toArray()), 20, 14]);
+    assemblyPlates.forEach((group, i) => {
+      const box = group.userData.box;
+      const corner = stackCorners[i % 3];
+      const outward = new THREE.Vector2(corner[0] - mid.x, corner[1] - mid.y).normalize();
+      const tagAt = [corner[0] + outward.x * 8, corner[1] + outward.y * 8, box.max.z + 1.5];
+      for (let nudge = 0; nudge < 24; nudge++) {
+        const sx = project(tagAt)[0];
+        if (sx >= clearLeft && sx <= clearRight) break;
+        const step = Math.sign(sx < clearLeft ? clearLeft - sx : clearRight - sx) * mmPerPxX * 8;
+        tagAt[0] += camRight.x * step;
+        tagAt[1] += camRight.y * step;
+        tagAt[2] += camRight.z * step;
+      }
+      for (let lift = 0; lift < 12; lift++) {
+        const [sx, sy] = project(tagAt);
+        const hit = placed.find(([px, py, pw, ph]) =>
+          Math.abs(sx - px) < pw + 58 + 6 && Math.abs(sy - py) < ph + 16 + 6);
+        if (!hit) break;
+        const dir = sy <= hit[1] ? 1 : -1;  // lift away from the label underneath
+        const step = ((hit[3] + 16 + 6) - Math.abs(sy - hit[1]) + 2) * mmPerPxY * dir;
+        tagAt[0] += camUp.x * step;
+        tagAt[1] += camUp.y * step;
+        tagAt[2] += camUp.z * step;
+      }
+      placed.push([...project(tagAt), 58, 16]);
+      const own = [box.min.x, box.min.y, box.max.x, box.max.y];
+      const foot = [(Math.abs(own[0] - tagAt[0]) < Math.abs(own[2] - tagAt[0]) ? own[0] : own[2]),
+        (Math.abs(own[1] - tagAt[1]) < Math.abs(own[3] - tagAt[1]) ? own[1] : own[3]), box.max.z];
+      const leader = line([foot, tagAt], dimensionMaterial);
+      const tag = simLabel(group.userData.tag, tagAt);
+      group.add(leader);
+      group.add(tag);
+      assemblyTags.push({ group, tag, leader });
+    });
+  }
+
   function showAssembly(data, { intro = true, onDone = null } = {}) {
-    // data: {plates: [{buffer, tag}], screws: [{id, buffer, verdict, clashes: [buffers]}]}.
+    // data: {plates: [{buffer, tag}], screws: [{id, x, y, buffer, verdict, clashes: [buffers]}]}.
     // With intro the parts start exploded along Z and ease together, then the screws slide in
     // one by one and take their verdict colors; without intro everything starts assembled and
     // only the colors animate (toggle re-runs). onDone runs last, after the colors settle.
@@ -342,14 +453,14 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       group.add(mesh);
       group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
       geometry.computeBoundingBox();
-      const box = geometry.boundingBox;
-      // Each plate's tag gets its own corner so the three never sit on each other.
-      const corner = [[box.min.x, box.min.y], [box.max.x, box.min.y], [box.min.x, box.max.y]][i % 3];
-      group.add(simLabel(tag, [corner[0], corner[1], box.max.z + 1.5]));
+      group.userData.box = geometry.boundingBox.clone();
+      group.userData.tag = tag;
       group.userData.explode = i * 16;  // mm above its stacked seat, eased to 0
       assembly.add(group);
       return group;
     });
+    assemblyPlates = plates;
+    assemblyScrewLabels = [];
     const screws = data.screws.map(({ id, buffer, verdict, clashes }) => {
       const geometry = new STLLoader().parse(buffer);
       geometry.computeVertexNormals();
@@ -362,7 +473,12 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       group.add(bolt);
       geometry.computeBoundingBox();
       const box = geometry.boundingBox;
-      group.add(simLabel(id, [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, box.max.z + 1.5], true));
+      // Only blocked screws are labeled; passing ones read clearly from their green color.
+      if (verdict === "blocked") {
+        const screwLabel = simLabel(id, [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, box.max.z + 1.5], true);
+        group.add(screwLabel);
+        assemblyScrewLabels.push(screwLabel);
+      }
       const overlays = (clashes || []).map((clash) => {
         const overlay = new THREE.Mesh(new STLLoader().parse(clash), clashMaterial());
         overlay.userData.ownedMaterial = true;
@@ -374,7 +490,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       return group;
     });
     scene.add(assembly);
-    setView(undefined, framedBox());
+    setView(undefined, framedBox());  // also (re)places the plate tags for this camera
     if (intro) {
       for (const group of plates) group.position.z = group.userData.explode;
       for (const group of screws) group.position.z = group.userData.drop;

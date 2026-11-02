@@ -935,13 +935,25 @@ async function rebuild() {
   if (features) {
     const [x0, y0, z0, x1, y1, z1] = features.box;
     $("model-size").innerHTML = `<strong>${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${(z1 - z0).toFixed(2)} mm</strong>`
-      + ` · ${features.holes.length} round holes`;
+      + ` · ${holeCountText(features)}`;
   }
   if (state.matching) await showAlignment(build);
   if (build !== state.builds) return;
   status.textContent = `Built in ${((performance.now() - started) / 1000).toFixed(1)} s`;
   // Slider moves in sim view re-run the check (the viewer animates the color change).
   if (assembly.view === "sim" && state.matching?.kind === "adapter") await runAssemblyCheck(false);
+}
+
+function holeCountText(features) {
+  // The slotted adapter counts its slots (the /slotted answer says how many are slots vs shaped
+  // copies); everywhere else the built round holes are counted.
+  const counts = state.matching?.kind === "adapter" && state.matching.holeStyle === "slotted"
+    ? state.matching.slottedInfo?.hole_counts : null;
+  if (!counts) return `${features.holes.length} round holes`;
+  const parts = [];
+  if (counts.slots) parts.push(`${counts.slots} slot${counts.slots === 1 ? "" : "s"}`);
+  if (counts.shaped) parts.push(`${counts.shaped} shaped hole${counts.shaped === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "no holes";
 }
 
 function slider(parameter) {
@@ -1638,7 +1650,7 @@ function updateVerdictBadge(data) {
   verdict.classList.toggle("bad", data.verdict === "blocked");
   verdict.innerHTML = esc(data.message)
     + data.screws.filter((s) => s.verdict === "blocked").map((s) =>
-      `<span class="verdict-sub">Hole ${esc(s.id)} blocked · overlap ${s.overlap_mm3.toFixed(2)} mm³</span>`).join("")
+      `<span class="verdict-sub">Hole ${esc(s.id)} blocked · ${s.depth_mm.toFixed(2)} mm overlap (${s.overlap_mm3.toFixed(2)} mm³)</span>`).join("")
     + data.skipped.map((g) => `<span class="verdict-sub">${esc(g.message)}</span>`).join("");
 }
 
@@ -1664,7 +1676,8 @@ async function showSim(intro) {
   state.viewer.showAssembly({
     plates: parts.filter((p) => p.kind === "plate").map((p) => ({ buffer: p.buffer, tag: simPlateTag(p.plate) })),
     screws: parts.filter((p) => p.kind === "screw").map((p) => (
-      { id: p.screw.id, buffer: p.buffer, verdict: p.screw.verdict, clashes: p.clashes })),
+      { id: p.screw.id, x: p.screw.x, y: p.screw.y, buffer: p.buffer, verdict: p.screw.verdict,
+        clashes: p.clashes })),
   }, { intro, onDone: () => updateVerdictBadge(assembly.data) });
 }
 

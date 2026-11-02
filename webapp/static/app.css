@@ -505,7 +505,7 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .assembly-verdict { font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); line-height: 1.5; }
 .assembly-verdict.hidden { display: none; }
 .assembly-verdict.bad { color: var(--color-bad); }
-.assembly-verdict .verdict-sub { display: block; font-weight: 400; }
+.assembly-verdict .verdict-sub { display: block; font-weight: 400; font-size: var(--font-size-label); }
 .assembly-caption { margin: 0; font-size: var(--font-size-label); color: var(--color-text-muted); line-height: 1.45; }
 .sim-screw-label { font-size: var(--font-size-label); }
 

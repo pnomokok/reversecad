@@ -86,7 +86,7 @@ def assembly(spec, report_path):
 
     folder = Path(report_path).parent
     folder.mkdir(parents=True, exist_ok=True)
-    volume = lambda part: sum(solid.Volume() for solid in part.solids().vals())  # noqa: E731
+    plate_mid = {plate["name"]: plate["z0"] + plate["thickness"] / 2 for plate in spec["plates"]}
     plates = {}
     for plate in spec["plates"]:
         part = pk.outline_from_points(plate["outline"], plate["thickness"]).translate((0, 0, plate["z0"]))
@@ -106,21 +106,57 @@ def assembly(spec, report_path):
         x, y, d, z0, z1 = (screw[key] for key in ("x", "y", "d", "z0", "z1"))
         solid = cq.Workplane("XY", origin=(x, y, z0)).circle(d / 2).extrude(z1 - z0)
         cq.exporters.export(solid, str(folder / f"screw_{screw['id']}.stl"))
-        interference = {}
+        interference, penetration = {}, {}
         for name in plates:  # every screw with every plate (a screw only reaches the plates it joins)
-            clash = solid.intersect(plates[name])
-            amount = volume(clash)
+            overlap = solid.intersect(plates[name])
+            clash = overlap.solids().vals()
+            amount = sum(part.Volume() for part in clash)
             interference[name] = amount
+            depth = 0.0
             if amount > 1e-9:
-                cq.exporters.export(clash, str(folder / f"clash_{screw['id']}_{name}.stl"))
+                depth = clash_depth(clash, (x, y), screw["shift"], plate_mid[name])
+                cq.exporters.export(overlap, str(folder / f"clash_{screw['id']}_{name}.stl"))
+            penetration[name] = depth
         screws.append({"id": screw["id"], "size": screw["size"], "pattern": screw["pattern"],
                        "x": x, "y": y, "d": d, "z0": z0, "z1": z1,
                        "interference_mm3": {name: round(value, 4) for name, value in interference.items()},
+                       "penetration_mm": {name: round(value, 4) for name, value in penetration.items()},
                        "total_mm3": round(sum(interference.values()), 4)})
     with open(report_path, "w", encoding="utf-8") as file:
         json.dump({"screws": screws, "plates": [
             {"name": p["name"], "label": p["label"], "thickness": p["thickness"], "z0": p["z0"]}
             for p in spec["plates"]]}, file)
+
+
+def clash_depth(solids, center_xy, shift_xy, z):
+    """Penetration depth (mm): the length of the clash inside the line through the screw center
+    along the shift direction. The line's section with the clash solids gives entry/exit vertices;
+    sorted along the line and paired in order, their spans add up (a lone tangent graze has none)."""
+    import cadquery as cq
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
+    from OCP.TopAbs import TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    direction = cq.Vector(shift_xy[0], shift_xy[1], 0).normalized()
+    middle = cq.Vector(center_xy[0], center_xy[1], z)
+    edge = cq.Edge.makeLine(middle - direction * 1000, middle + direction * 1000)
+    params = []
+    for solid in solids:
+        section = BRepAlgoAPI_Section(edge.wrapped, solid.wrapped)
+        section.Build()
+        if not section.IsDone():
+            continue
+        explorer = TopExp_Explorer(section.Shape(), TopAbs_VERTEX)
+        while explorer.More():
+            point = BRep_Tool.Pnt_s(TopoDS.Vertex_s(explorer.Current()))
+            params.append((point.X() - middle.x) * direction.x + (point.Y() - middle.y) * direction.y)
+            explorer.Next()
+    params.sort()
+    if len(params) % 2:
+        params = params[:-1]
+    return sum(b - a for a, b in zip(params[::2], params[1::2]))
 
 
 def profile(result):

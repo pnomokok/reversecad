@@ -157,6 +157,7 @@ def test_slotted_variant_keeps_the_outline_with_slot_widths():
     assert answer["outline_source"] == "fallback · slotted"
     params = {p["name"]: p["default"] for p in answer["parameters"]}
     assert (params["thickness"], params["slot_width_a"], params["slot_width_b"]) == (3.0, 6.0, 5.5)
+    assert answer["hole_counts"] == {"slots": 6, "shaped": 0}
     second = client.post("/api/runs/A_light/matching/adapter/slotted", json=_outline_body())
     assert second.json()["cached"] is True
     stl = client.post("/api/runs/A_light/model?match=adapter",
@@ -191,6 +192,10 @@ def test_exact_with_error_blocks_every_screw():
     assert check["verdict"] == "blocked" and check["message"] == "6 of 6 screws blocked"
     assert all(s["verdict"] == "blocked" and s["overlap_mm3"] > 0 for s in check["screws"])
     assert check["artifacts"]["B2"]["clashes"] != []
+    # Penetration depth from the clash solids: 0.64 mm shift minus the radial slack.
+    depths = {s["id"]: s["depth_mm"] for s in check["screws"]}
+    assert all(depths[f"A{i}"] == pytest.approx(0.14, abs=0.02) for i in (1, 2, 3, 4))
+    assert all(depths[f"B{i}"] == pytest.approx(0.39, abs=0.02) for i in (1, 2))
 
 
 def test_slotted_with_error_passes():
