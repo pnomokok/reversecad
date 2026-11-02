@@ -12,7 +12,9 @@ import asyncio
 import hashlib
 import io
 import json
+import math
 import os
+import re
 import threading
 import uuid
 import zipfile
@@ -27,6 +29,8 @@ from fastapi.staticfiles import StaticFiles
 import adapter_outline
 import adapter_pattern
 import adapter_place
+import assembly_check
+import baseline_cad
 import drawing_export
 import matching_part
 import mating_measure
@@ -247,9 +251,14 @@ async def _target(name, request, match):
     body = await request.json()
     if match == "adapter":
         key, _, _, _, _ = await _adapter_key(name, body)
-        program = MATCHING_DIR / f"{key}.py"
+        style = body.get("hole_style", "exact")
+        if style not in assembly_check.HOLE_STYLES:
+            raise HTTPException(400, f"hole_style must be one of: {', '.join(assembly_check.HOLE_STYLES)}")
+        program = MATCHING_DIR / (f"{key}.py" if style == "exact" else f"slotted_{key}.py")
         if not program.exists():
-            raise HTTPException(404, "no adapter outline for these inputs yet (run the outline search first)")
+            hint = ("run the outline search first" if style == "exact"
+                    else "switch the hole style to Slotted first")
+            raise HTTPException(404, f"no adapter outline for these inputs yet ({hint})")
         allowed = {p["name"] for p in matching_part.slider_parameters(program.read_text(encoding="utf-8"))}
         return program, _checked(body.get("parameters"), allowed), f"{name}_adapter"
     program, _ = await _matching(name, match, body.get("base"))
@@ -318,13 +327,19 @@ async def adapter_check(name: str, request: Request):
     """
     program, overrides, _ = await _target(name, request, "adapter")
     meta = json.loads(program.with_suffix(".json").read_text(encoding="utf-8"))
+    style = (await request.json()).get("hole_style", "exact")
     _, original = await _matching(name, "cover", (await request.json()).get("base"))
     matching = await _profile(program, overrides)
     margins = [adapter_place.hole_to_outline(adapter_place.profile_hole(h), matching["outline"])
                for h in matching["holes"]]
+    holes_b = meta["placement"]["holes_b"]
+    if style == "slotted":  # the dashed B overlay follows the slots, not the round holes
+        axis = assembly_check.pattern_long_axis([[h["x"], h["y"]] for h in holes_b])
+        holes_b = [{**h, "length": round(h["d"] + 2 * assembly_check.SHIFT_MM, 3),
+                    "width": h["d"], "angle": axis} for h in holes_b]
     return {"original": original, "matching": matching,
             "alignment": matching_part.hole_alignment(original, matching),
-            "holes_b": meta["placement"]["holes_b"], "label_b": meta["pattern"]["label"],
+            "holes_b": holes_b, "label_b": meta["pattern"]["label"],
             "min_margin_mm": round(min(margins), 3) if margins else None,
             "outline_source": meta["outline_source"]}
 
@@ -525,6 +540,337 @@ async def adapter_outline_program(name: str, request: Request):
             "parameters": matching_part.slider_parameters(source),
             "pattern": pattern, "placement": placed, "winner": meta["winner"], "outline_source": outline_source,
             "mating": meta["mating"], "candidates": rows, "cached": False}
+
+
+@app.post("/api/runs/{name}/matching/adapter/slotted")
+async def adapter_slotted(name: str, request: Request):
+    """The Slotted hole style for a searched outline: the Exact outline with every round hole of
+    pattern A and pattern B as a slot along its pattern's long axis (2 x SHIFT_MM longer).
+
+    Body: {"base", "pattern", "outline"}. The variant is derived from the Exact program built with
+    its defaults, so it is cached by the same inputs. 422 names which wall or margin the slots
+    break (then the caller keeps Exact); 404 when no outline was searched for these inputs yet.
+    No model is called; works in the demo.
+    """
+    body = await request.json()
+    key, pattern, _, _, _ = await _adapter_key(name, body)
+    program = MATCHING_DIR / f"{key}.py"
+    if not program.exists():
+        raise HTTPException(404, "no adapter outline for these inputs yet (run the outline search first)")
+    slotted, slotted_meta = MATCHING_DIR / f"slotted_{key}.py", MATCHING_DIR / f"slotted_{key}.json"
+    if slotted.exists():
+        meta = json.loads(slotted_meta.read_text(encoding="utf-8"))
+        return {**_matching_info(name, "adapter", slotted),
+                "parameters": matching_part.slider_parameters(slotted.read_text(encoding="utf-8")),
+                "pattern": meta["pattern"], "placement": meta["placement"], "hole_style": "slotted",
+                "outline_source": meta["outline_source"], "mating": meta.get("mating"), "cached": True}
+    profile, error = await asyncio.to_thread(_adapter_build, program)
+    if error:
+        raise HTTPException(422, f"the Exact program did not build with its defaults: {error.splitlines()[-1]}")
+    exact_meta = json.loads(program.with_suffix(".json").read_text(encoding="utf-8"))
+    slots_a = [t["form"] for t in _tagged_adapter_holes(profile["holes"], exact_meta["placement"]["holes_b"])
+               if t["tag"] == "A"]
+    specs, refusal = assembly_check.check_slotted_walls(
+        profile["outline"], slots_a, exact_meta["placement"]["holes_b"])
+    if specs is None:
+        raise HTTPException(422, refusal)
+    source = adapter_outline.slotted_source(profile["outline"], specs, profile["thickness"],
+                                            pattern["label"], f"{name}_adapter.py")
+    meta = {"pattern": exact_meta["pattern"], "placement": exact_meta["placement"],
+            "margin_default": exact_meta["margin_default"], "thickness": profile["thickness"],
+            "outline_source": f"{exact_meta['outline_source']} · slotted",
+            "mating": exact_meta.get("mating"), "exact_key": key}
+    MATCHING_DIR.mkdir(parents=True, exist_ok=True)
+    for path, text in ((slotted_meta, json.dumps(meta)), (slotted, source)):
+        temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+    return {**_matching_info(name, "adapter", slotted),
+            "parameters": matching_part.slider_parameters(source),
+            "pattern": meta["pattern"], "placement": meta["placement"], "hole_style": "slotted",
+            "outline_source": meta["outline_source"], "mating": meta["mating"], "cached": False}
+
+
+def _tagged_adapter_holes(built_holes, holes_b):
+    """A built adapter profile's holes tagged A or B: each placed B hole takes its nearest built
+    hole (closest pairs first); the rest are pattern A. [{"tag", "center", "size", "form"}]."""
+    tagged = []
+    for hole in built_holes:
+        if hole["type"] == "circle":
+            tagged.append({"center": list(hole["center"]), "size": hole["diameter"],
+                           "form": {"circle": (*hole["center"], hole["diameter"])}})
+        else:
+            xs = [p[0] for p in hole["points"]]
+            ys = [p[1] for p in hole["points"]]
+            tagged.append({"center": [round(sum(xs) / len(xs), 3), round(sum(ys) / len(ys), 3)],
+                           "size": round(min(max(xs) - min(xs), max(ys) - min(ys)), 3),
+                           "form": {"polygon": [tuple(p) for p in hole["points"]]}})
+    pairs = sorted((math.dist(t["center"], [h["x"], h["y"]]), i, j)
+                   for i, t in enumerate(tagged) for j, h in enumerate(holes_b))
+    used_built, used_placed = set(), set()
+    for _, i, j in pairs:
+        if i not in used_built and j not in used_placed:
+            used_built.add(i)
+            used_placed.add(j)
+            tagged[i]["tag"] = "B"
+    for entry in tagged:
+        entry.setdefault("tag", "A")
+    return tagged
+
+
+def _screw_groups(tagged):
+    """Adapter holes grouped by size for the screw selects: {key: {"size", "default", "holes"}}."""
+    groups = {}
+    for entry in tagged:
+        key = f"{entry['size']:.2f}"
+        groups.setdefault(key, {"size": entry["size"],
+                                "default": assembly_check.screw_for_diameter(entry["size"]), "holes": []})
+        groups[key]["holes"].append(entry)
+    return groups
+
+
+def _resolve_mating(name, body, meta):
+    """(measured_table, mating_json) for the mating run, or (None, None) for a stand-in plate."""
+    run = body.get("mating") or (meta.get("mating") or {}).get("run")
+    if run is None:
+        return None, None
+    try:
+        folder = live.live_dir(run if isinstance(run, str) else "")
+    except FileNotFoundError:
+        raise HTTPException(404, f"no mating photo run named {run!r}")
+    measurements, mating = folder / "3_measurements.json", folder / "4_mating.json"
+    if not measurements.exists() or not mating.exists():
+        raise HTTPException(422, "the mating photo has not been measured yet — click the mating part first")
+    return (json.loads(measurements.read_text(encoding="utf-8"))["table"],
+            json.loads(mating.read_text(encoding="utf-8")))
+
+
+def _record_to_spec(record):
+    """A baseline hole record as a worker spec hole (circle, slot or sampled polygon)."""
+    u, v = record["center_from_part_center_mm"]
+    if record["shape"] == "circle":
+        return {"circle": (u, v, record["diameter_mm"])}
+    if record["shape"] == "slot":
+        return {"slot": (u, v, record["length_mm"], record["width_mm"], record["angle_deg"])}
+    if record["shape"] == "rectangle":
+        angle = math.radians(record["angle_deg"])
+        ux, uy = math.cos(angle), math.sin(angle)
+        half_l, half_w = record["length_mm"] / 2, record["width_mm"] / 2
+        return {"polygon": [(round(u + su * half_l * ux - sv * half_w * uy, 3),
+                             round(v + su * half_l * uy + sv * half_w * ux, 3))
+                            for su, sv in ((1, 1), (-1, 1), (-1, -1), (1, -1))]}
+    if record["shape"] == "ellipse":
+        angle = math.radians(record["angle_deg"])
+        ux, uy = math.cos(angle), math.sin(angle)
+        points = []
+        for i in range(32):
+            arc = 2 * math.pi * i / 32
+            lx, ly = math.cos(arc) * record["length_mm"] / 2, math.sin(arc) * record["width_mm"] / 2
+            points.append((round(u + lx * ux - ly * uy, 3), round(v + lx * uy + ly * ux, 3)))
+        return {"polygon": points}
+    return {"polygon": [tuple(p) for p in record["polygon_mm"]]}
+
+
+@app.post("/api/runs/{name}/matching/adapter/assembly")
+async def adapter_assembly(name: str, request: Request):
+    """The assembly check: stack original + adapter + mating plate, put each screw through the
+    plates it joins, and report every screw's interference volume per plate (computed by CadQuery).
+
+    Body: {"base", "pattern", "outline", "parameters", "hole_style" (exact/slotted),
+    "error_case" ("as_measured"/"with_error"), "mating"? (else the outline's, else a stand-in plate),
+    "screws"? ({size-group: "M3"-"M6" or null to skip})}. Screws sit fixed at the adapter's hole
+    centers; A-screws join original + adapter, B-screws adapter + mating. No model is called;
+    works in the demo. Cached by inputs; artifacts served under .../assembly/<check_id>/.
+    """
+    body = await request.json()
+    error_case = body.get("error_case", "as_measured")
+    if error_case not in assembly_check.ERROR_CASES:
+        raise HTTPException(400, f"error_case must be one of: {', '.join(assembly_check.ERROR_CASES)}")
+    program, overrides, _ = await _target(name, request, "adapter")
+    style = body.get("hole_style", "exact")
+    meta = json.loads(program.with_suffix(".json").read_text(encoding="utf-8"))
+    adapter = await _profile(program, overrides)
+    _, original = await _matching(name, "cover", body.get("base"))
+    holes_b = meta["placement"]["holes_b"]
+    tagged = _tagged_adapter_holes(adapter["holes"], holes_b)
+    axis_a = assembly_check.pattern_long_axis([t["center"] for t in tagged if t["tag"] == "A"] or [[0, 0]])
+    axis_b = assembly_check.pattern_long_axis([[h["x"], h["y"]] for h in holes_b])
+
+    def shifted(holes, axis):
+        """Final hole forms: error case moves each hole SHIFT_MM / 2 outward from its pattern's
+        centroid along the axis; slotted style turns rounds into slots."""
+        centers = [adapter_place.hole_center(hole) for hole in holes]
+        moved = (assembly_check.error_shifted_centers(centers, axis) if error_case == "with_error"
+                 else [list(c) for c in centers])
+        final = []
+        for hole, center in zip(holes, moved):
+            if "circle" in hole and style == "slotted":
+                _, _, diameter = hole["circle"]
+                final.append({"slot": (*center, round(diameter + 2 * assembly_check.SHIFT_MM, 3),
+                                       diameter, axis)})
+            elif "circle" in hole:
+                final.append({"circle": (*center, hole["circle"][2])})
+            else:
+                dx = center[0] - adapter_place.hole_center(hole)[0]
+                dy = center[1] - adapter_place.hole_center(hole)[1]
+                final.append({"polygon": [(round(x + dx, 3), round(y + dy, 3)) for x, y in hole["polygon"]]})
+        return final
+
+    measured_table, mating_json = _resolve_mating(name, body, meta)
+    if measured_table is None:
+        mating_records = [{"shape": "circle", "center_from_part_center_mm": [h["x"], h["y"]],
+                           "diameter_mm": h["d"]} for h in holes_b]
+        table, mating_thickness = assembly_check.stand_in_table(holes_b, adapter["thickness"])
+        mating_label = assembly_check.STAND_IN_LABEL
+    else:
+        table, _ = assembly_check.mating_table(measured_table, mating_json, meta["placement"],
+                                               meta["pattern"], mating_json["thickness_mm"])
+        mating_records, mating_thickness = table["holes"], mating_json["thickness_mm"]
+        mating_label = assembly_check.MATING_LABEL
+    if style == "slotted":
+        mating_records = [assembly_check.as_slot_record(h["center_from_part_center_mm"], h["diameter_mm"], axis_b)
+                          if h["shape"] == "circle" else h for h in mating_records]
+    if error_case == "with_error":
+        moved = assembly_check.error_shifted_centers(
+            [h["center_from_part_center_mm"] for h in mating_records], axis_b)
+        for record, center in zip(mating_records, moved):
+            dx, dy = center[0] - record["center_from_part_center_mm"][0], center[1] - record["center_from_part_center_mm"][1]
+            record["center_from_part_center_mm"] = center
+            if record["shape"] == "polygon":
+                record["polygon_mm"] = [[round(x + dx, 3), round(y + dy, 3)] for x, y in record["polygon_mm"]]
+
+    t_o, t_a, t_m = original["thickness"], adapter["thickness"], mating_thickness
+    plates = [
+        {"name": "original", "label": "original", "outline": original["outline"], "thickness": t_o,
+         "z0": 0.0, "holes": shifted([adapter_place.profile_hole(h) for h in original["holes"]], axis_a)},
+        {"name": "adapter", "label": f"adapter ({style})", "outline": adapter["outline"],
+         "thickness": t_a, "z0": t_o, "holes": [t["form"] for t in tagged]},
+        {"name": "mating", "label": mating_label, "outline": table["outline"]["polygon_mm"],
+         "thickness": t_m, "z0": t_o + t_a, "holes": [_record_to_spec(h) for h in mating_records]},
+    ]
+    groups, screw_overrides = _screw_groups(tagged), body.get("screws") or {}
+    for key, size in screw_overrides.items():
+        if size is not None and size not in assembly_check.SHANK_DIAMETER_MM:
+            raise HTTPException(400, f"unknown screw size for group {key}: {size!r} (M3-M6 or null)")
+    screws, skipped = [], []
+    for key in sorted(groups):
+        size = screw_overrides.get(key, groups[key]["default"])
+        if size is None:
+            skipped.append({"group": key, "size": groups[key]["size"], "message":
+                            f"no metric screw fits the Ø{groups[key]['size']} mm holes "
+                            f"(smallest clearance is M3 = {adapter_pattern.ISO_273_MEDIUM['M3']} mm) — skipped"})
+            continue
+        for entry in sorted(groups[key]["holes"], key=lambda e: (e["center"][0], e["center"][1])):
+            tag = entry["tag"]
+            screws.append({"pattern": tag, "group": key, "x": entry["center"][0], "y": entry["center"][1],
+                           "d": assembly_check.SHANK_DIAMETER_MM[size], "size": size,
+                           "z0": -assembly_check.SCREW_PROTRUDE_MM if tag == "A" else t_o,
+                           "z1": t_o + t_a if tag == "A" else t_o + t_a + t_m + assembly_check.SCREW_PROTRUDE_MM,
+                           "plates": ["original", "adapter"] if tag == "A" else ["adapter", "mating"]})
+    for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "A"], key=lambda s: (s["x"], s["y"])), 1):
+        screw["id"] = f"A{position}"
+    for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "B"], key=lambda s: (s["x"], s["y"])), 1):
+        screw["id"] = f"B{position}"
+    spec = {"version": 1, "plates": plates, "screws": screws}  # versioned: worker logic changes retire old checks
+    check_id = hashlib.sha256(json.dumps(spec, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    folder = MATCHING_DIR / f"asm_{check_id}"
+    report_path = folder / "report.json"
+    if not report_path.exists():
+        error = await asyncio.to_thread(builder.assembly, spec, report_path)
+        if error:
+            raise HTTPException(422, f"the assembly did not build: {error.splitlines()[-1]}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    watched = []
+    for screw in report["screws"]:
+        watched.append({"id": screw["id"], "pattern": screw["pattern"], "size": screw["size"], "d": screw["d"],
+                        "overlap_mm3": round(screw["total_mm3"], 3),
+                        "verdict": ("blocked" if screw["total_mm3"] > assembly_check.INTERFERENCE_EPS_MM3
+                                    else "pass")})
+    watched.sort(key=lambda s: (s["pattern"], int(s["id"][1:])))
+    blocked = [s for s in watched if s["verdict"] == "blocked"]
+    message = (f"All {len(watched)} screws pass" if not blocked
+               else f"{len(blocked)} of {len(watched)} screws blocked")
+    base = f"/api/runs/{name}/matching/adapter/assembly/{check_id}"
+    return {"check_id": check_id, "verdict": "blocked" if blocked else "pass", "message": message,
+            "hole_style": style, "error_case": error_case, "screws": watched, "skipped": skipped,
+            "groups": [{"key": key, "size": groups[key]["size"], "default": groups[key]["default"],
+                        "holes": sorted(s["id"] for s in screws if s["group"] == key)}
+                       for key in sorted(groups)],
+            "plates": [{"name": p["name"], "label": p["label"], "thickness": p["thickness"], "z0": p["z0"],
+                        "stl": f"{base}/plate_{p['name']}.stl"} for p in report["plates"]],
+            "artifacts": {screw["id"]: {"stl": f"{base}/screw_{screw['id']}.stl",
+                                        "clashes": [f"{base}/clash_{screw['id']}_{plate}.stl"
+                                                    for plate, amount in screw["interference_mm3"].items()
+                                                    if amount > 1e-9]}
+                          for screw in report["screws"]}}
+
+
+@app.get("/api/runs/{name}/matching/adapter/assembly/{check_id}/{artifact}")
+async def assembly_artifact(name: str, check_id: str, artifact: str):
+    """One assembly STL: plate_<name>, screw_<id> or clash_<id>_<plate> of a computed check."""
+    if not re.fullmatch(r"[0-9a-f]{24}", check_id or ""):
+        raise HTTPException(404, "unknown assembly check")
+    if not re.fullmatch(r"(plate_[a-z]+|screw_[AB][0-9]+|clash_[AB][0-9]+_[a-z]+)\.stl", artifact or ""):
+        raise HTTPException(404, "unknown assembly artifact")
+    try:
+        replay.run_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    path = MATCHING_DIR / f"asm_{check_id}" / artifact
+    if not path.exists():
+        raise HTTPException(404, "this check has no such artifact (re-run the assembly check)")
+    return FileResponse(path, media_type="model/stl")
+
+
+@app.post("/api/runs/{name}/matching/adapter/mating/plate")
+async def mating_plate(name: str, request: Request):
+    """The mating plate as an STL in adapter coordinates: the measured mating part (baseline built
+    from its measured outline, holes and entered thickness) or the stand-in plate for presets.
+
+    Body: {"base", "pattern", "outline", "mating"?}. No model is called; works in the demo.
+    """
+    body = await request.json()
+    key, _, _, _, _ = await _adapter_key(name, body)
+    program = MATCHING_DIR / f"{key}.py"
+    if not program.exists():
+        raise HTTPException(404, "no adapter outline for these inputs yet (run the outline search first)")
+    meta = json.loads(program.with_suffix(".json").read_text(encoding="utf-8"))
+    measured_table, mating_json = _resolve_mating(name, body, meta)
+    if measured_table is None:
+        _, original = await _matching(name, "cover", body.get("base"))
+        adapter = await _profile(program, {})
+        table, thickness = assembly_check.stand_in_table(meta["placement"]["holes_b"], adapter["thickness"])
+        label = assembly_check.STAND_IN_LABEL
+    else:
+        adapter = await _profile(program, {})
+        table, _ = assembly_check.mating_table(measured_table, mating_json, meta["placement"],
+                                               meta["pattern"], mating_json["thickness_mm"])
+        thickness, label = mating_json["thickness_mm"], assembly_check.MATING_LABEL
+    plate_id = hashlib.sha256(json.dumps([table, thickness], sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    source_path, stl_path = MATCHING_DIR / f"ghost_{plate_id}.py", MATCHING_DIR / f"ghost_{plate_id}.stl"
+    if not stl_path.exists():
+        MATCHING_DIR.mkdir(parents=True, exist_ok=True)
+        source_path.write_text(baseline_cad.baseline_code(table, thickness), encoding="utf-8")
+        error = await asyncio.to_thread(builder.build, source_path, stl_path, {})
+        if error:
+            raise HTTPException(422, f"the mating plate did not build: {error.splitlines()[-1]}")
+    return {"plate_id": plate_id, "label": label, "thickness": thickness,
+            "stl": f"/api/runs/{name}/matching/adapter/mating/plate/{plate_id}.stl"}
+
+
+@app.get("/api/runs/{name}/matching/adapter/mating/plate/{plate_id}.stl")
+async def mating_plate_stl(name: str, plate_id: str):
+    """The mating plate STL built above."""
+    if not re.fullmatch(r"[0-9a-f]{24}", plate_id or ""):
+        raise HTTPException(404, "unknown mating plate")
+    try:
+        replay.run_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    path = MATCHING_DIR / f"ghost_{plate_id}.stl"
+    if not path.exists():
+        raise HTTPException(404, "no such mating plate (build it first)")
+    return FileResponse(path, media_type="model/stl")
 
 
 @app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])

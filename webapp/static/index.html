@@ -229,6 +229,7 @@
             <button data-view="top" title="Top view"><span class="icon">crop_square</span></button>
             <button data-view="fit" title="Fit to view"><span class="icon">fit_screen</span></button>
             <button data-labels class="active" title="Toggle dimension labels"><span class="icon">label</span></button>
+            <button data-assembly class="hidden" id="view-assembly" title="Assembly check simulation"><span class="icon">stacks</span></button>
           </div>
           <div class="model-status" id="model-status"></div>
         </div>
@@ -298,6 +299,24 @@
               </div>
               <p class="status-line" id="adapter-status"></p>
             </div>
+          </div>
+          <div class="assembly-block hidden" id="assembly-block">
+            <span class="label">Assembly check · simulation</span>
+            <div class="assembly-row" id="assembly-style-row">
+              <span class="assembly-name">Holes</span>
+              <button type="button" data-style="exact" class="active">Exact</button>
+              <button type="button" data-style="slotted">Slotted</button>
+            </div>
+            <div class="assembly-row" id="assembly-error-row">
+              <span class="assembly-name">Error case</span>
+              <button type="button" data-error="as_measured" class="active">As measured</button>
+              <button type="button" data-error="with_error">With measured error</button>
+            </div>
+            <span class="label">Estimated screw size</span>
+            <div class="assembly-screws" id="assembly-screws"></div>
+            <p class="status-line" id="assembly-status"></p>
+            <div class="assembly-verdict hidden" id="assembly-verdict"></div>
+            <p class="assembly-caption">Models built from the measurements; error shift = largest hole-spacing error measured on a real photo (1.28 mm). Material flex, printer tolerance and the entered thicknesses are not simulated.</p>
           </div>
           <div class="voice-card" id="voice-card">
             <div class="voice-top">

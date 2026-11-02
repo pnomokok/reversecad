@@ -35,6 +35,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
 
   let part = null;
   let companion = null;
+  let mating = null;
   let annotations = null;
   let framedRadius = null;
   let labelsVisible = true;  // dimension labels on/off (toolbar toggle, default on)
@@ -58,9 +59,12 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   }
 
   function framedBox() {
-    // What the view frames: the part and, if shown, the see-through original next to it.
+    // What the view frames: the assembly stack in sim view, else the part and its ghosts.
+    if (assembly) return new THREE.Box3().setFromObject(assembly);
     const box = new THREE.Box3().setFromObject(part);
-    return companion ? box.expandByObject(companion) : box;
+    if (companion) box.expandByObject(companion);
+    if (mating) box.expandByObject(mating);
+    return box;
   }
 
   function setView(view, box = part && framedBox()) {
@@ -154,10 +158,10 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     part = new THREE.Group();
     part.add(new THREE.Mesh(geometry, material));
     part.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
-    scene.add(part);
+    if (!assembly) scene.add(part);  // in sim view the rebuilt part waits detached
     if (features) {
       annotations = annotate(features);
-      scene.add(annotations);
+      if (!assembly) scene.add(annotations);
     }
     if (annotations) annotations.visible = labelsVisible;
     if (!framedRadius) {  // first show: the part rises from its flat outline while the camera swings down
@@ -175,36 +179,55 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     color: css("--color-model"), transparent: true, opacity: 0.3, metalness: 0, roughness: 0.75, depthWrite: false,
   });
 
-  function showCompanion(stlBuffer, labelText = null) {
-    // The original next to a matching part: see-through, behind it along +Y, clear of the largest outline
-    // offset the slider allows (+10 mm on both parts' facing edges); null hides it.
-    if (companion) {
-      scene.remove(companion);
-      companion.traverse((o) => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.isCSS2DObject) o.element.remove();
-      });
-      companion = null;
-    }
-    if (!stlBuffer) return;
+  function clearGhost(group) {
+    if (!group) return null;
+    scene.remove(group);
+    group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.isCSS2DObject) o.element.remove();
+    });
+    return null;
+  }
+
+  function makeGhost(stlBuffer, labelText, liftZ) {
     const geometry = new STLLoader().parse(stlBuffer);
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     const box = geometry.boundingBox;
-    const size = box.getSize(new THREE.Vector3());
-    companion = new THREE.Group();
-    companion.add(new THREE.Mesh(geometry, companionMaterial));
-    companion.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
-    companion.position.y = size.y + Math.max(size.y * 0.4, 16);
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(geometry, companionMaterial));
+    group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
+    group.position.z = liftZ;
     if (labelText) {
       const element = document.createElement("div");
       element.className = "dim-label";
       element.textContent = labelText;
       const tag = new CSS2DObject(element);
       tag.position.set(box.getCenter(new THREE.Vector3()).x, box.max.y, box.max.z);
-      companion.add(tag);
+      group.add(tag);
     }
-    scene.add(companion);
+    if (!assembly) scene.add(group);
+    return group;
+  }
+
+  function showCompanion(stlBuffer, labelText = null, { overlay = false, liftZ = 0 } = {}) {
+    // The original next to a matching part: see-through, behind it along +Y, clear of the largest outline
+    // offset the slider allows (+10 mm on both parts' facing edges); null hides it. With overlay (the
+    // adapter), it sits at the same XY instead, lifted by liftZ, so it covers its pattern exactly.
+    companion = clearGhost(companion);
+    if (!stlBuffer) return;
+    companion = makeGhost(stlBuffer, labelText, overlay ? liftZ : 0);
+    if (!overlay) {
+      const size = new THREE.Box3().setFromObject(companion).getSize(new THREE.Vector3());
+      companion.position.y = size.y + Math.max(size.y * 0.4, 16);
+    }
+  }
+
+  function showMating(stlBuffer, labelText = null, liftZ = 0) {
+    // The mating plate over an adapter's pattern B: same XY as built, lifted by liftZ; null hides it.
+    mating = clearGhost(mating);
+    if (!stlBuffer) return;
+    mating = makeGhost(stlBuffer, labelText, liftZ);
   }
 
   let suggestion = null;
@@ -244,7 +267,170 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       tag.position.copy(end);
       suggestion.add(tag);
     }
-    scene.add(suggestion);
+    if (!assembly) scene.add(suggestion);
+  }
+
+  // ---------- assembly check simulation ----------
+  // The stack (original + adapter + mating plate) with its screws, built from the check's STLs
+  // (all in stack coordinates). Screws start as steel and take their verdict color: green passes,
+  // red glows with the computed clash solids. Task-specified sim colors, not theme variables.
+  const SIM_STEEL = 0x9aa0a6;
+  const SIM_PASS = 0x46a758;
+  const SIM_BLOCKED = 0xe5484d;
+  let assembly = null;
+  let assemblyToken = 0;
+
+  const clashMaterial = () => new THREE.MeshStandardMaterial({
+    color: SIM_BLOCKED, emissive: SIM_BLOCKED, emissiveIntensity: 0.55, transparent: true,
+    opacity: 0, metalness: 0, roughness: 0.5, depthWrite: false,
+  });
+
+  function clearAssembly() {
+    assemblyToken += 1;  // stale animation frames stop themselves
+    if (!assembly) return;
+    scene.remove(assembly);
+    assembly.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.isCSS2DObject) o.element.remove();
+      if (o.isMesh && o.userData.ownedMaterial) o.material.dispose?.();
+    });
+    assembly = null;
+  }
+
+  function simLabel(text, position, small = false) {
+    const element = document.createElement("div");
+    element.className = small ? "dim-label sim-screw-label" : "dim-label";
+    element.textContent = text;
+    const object = new CSS2DObject(element);
+    object.position.set(...position);
+    return object;
+  }
+
+  function setDomLabels(group, visible) {
+    // CSS2DRenderer only updates labels it traverses, so a group leaving the scene would leave
+    // its labels behind; hide them by hand (showing again is the renderer's job after re-attach).
+    group.traverse((o) => {
+      if (o.isCSS2DObject) o.element.style.display = visible ? "" : "none";
+    });
+  }
+
+  function showAssembly(data, { intro = true, onDone = null } = {}) {
+    // data: {plates: [{buffer, tag}], screws: [{id, buffer, verdict, clashes: [buffers]}]}.
+    // With intro the parts start exploded along Z and ease together, then the screws slide in
+    // one by one and take their verdict colors; without intro everything starts assembled and
+    // only the colors animate (toggle re-runs). onDone runs last, after the colors settle.
+    // Plates are see-through so the screws and clashes inside the stack stay visible.
+    clearAssembly();
+    for (const group of [part, annotations, companion, mating, suggestion]) {
+      if (group) {
+        setDomLabels(group, false);
+        scene.remove(group);
+      }
+    }
+    const token = assemblyToken;
+    assembly = new THREE.Group();
+    const plates = data.plates.map(({ buffer, tag }, i) => {
+      const geometry = new STLLoader().parse(buffer);
+      geometry.computeVertexNormals();
+      const shell = new THREE.MeshStandardMaterial({
+        color: 0xd7d3d0, metalness: 0.6, roughness: 0.4, transparent: true, opacity: 0.32,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geometry, shell);
+      mesh.userData.ownedMaterial = true;
+      const group = new THREE.Group();
+      group.add(mesh);
+      group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
+      // Each plate's tag gets its own corner so the three never sit on each other.
+      const corner = [[box.min.x, box.min.y], [box.max.x, box.min.y], [box.min.x, box.max.y]][i % 3];
+      group.add(simLabel(tag, [corner[0], corner[1], box.max.z + 1.5]));
+      group.userData.explode = i * 16;  // mm above its stacked seat, eased to 0
+      assembly.add(group);
+      return group;
+    });
+    const screws = data.screws.map(({ id, buffer, verdict, clashes }) => {
+      const geometry = new STLLoader().parse(buffer);
+      geometry.computeVertexNormals();
+      const paint = new THREE.MeshStandardMaterial({
+        color: SIM_STEEL, metalness: 0.85, roughness: 0.35, emissive: SIM_STEEL, emissiveIntensity: 0,
+      });
+      const group = new THREE.Group();
+      const bolt = new THREE.Mesh(geometry, paint);
+      bolt.userData.ownedMaterial = true;
+      group.add(bolt);
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
+      group.add(simLabel(id, [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, box.max.z + 1.5], true));
+      const overlays = (clashes || []).map((clash) => {
+        const overlay = new THREE.Mesh(new STLLoader().parse(clash), clashMaterial());
+        overlay.userData.ownedMaterial = true;
+        group.add(overlay);
+        return overlay;
+      });
+      group.userData = { paint, overlays, verdict, drop: 34 };
+      assembly.add(group);
+      return group;
+    });
+    scene.add(assembly);
+    setView(undefined, framedBox());
+    if (intro) {
+      for (const group of plates) group.position.z = group.userData.explode;
+      for (const group of screws) group.position.z = group.userData.drop;
+    }
+    const finish = () => {
+      if (token !== assemblyToken) return;
+      for (const group of [...plates, ...screws]) group.position.z = 0;
+      for (const group of screws) paintVerdict(group, 1);
+      if (onDone) onDone();
+    };
+    if (reducedMotion()) { finish(); return; }
+    const t0 = performance.now();
+    const eased = (t) => 1 - Math.pow(1 - t, 3);
+    const screwStart = intro ? 750 : 0;
+    const step = (now) => {
+      if (token !== assemblyToken) return;
+      const elapsed = now - t0;
+      let busy = false;
+      plates.forEach((group, i) => {
+        const t = intro ? Math.min(1, Math.max(0, (elapsed - 90 * i) / 700)) : 1;
+        group.position.z = group.userData.explode * (1 - eased(t));
+        if (t < 1) busy = true;
+      });
+      screws.forEach((group, i) => {
+        const begin = screwStart + 170 * i;
+        const t = Math.min(1, Math.max(0, (elapsed - begin) / (intro ? 380 : 450)));
+        if (intro) group.position.z = group.userData.drop * (1 - eased(t));
+        paintVerdict(group, intro ? (t >= 1 ? 1 : 0) : eased(t));
+        if (t < 1) busy = true;
+      });
+      if (busy) requestAnimationFrame(step);
+      else finish();
+    };
+    requestAnimationFrame(step);
+  }
+
+  function paintVerdict(group, k) {
+    // A screw's steel fades to its verdict color; a blocked screw also glows with its clashes.
+    const { paint, overlays, verdict } = group.userData;
+    const target = new THREE.Color(verdict === "blocked" ? SIM_BLOCKED : SIM_PASS);
+    paint.color.copy(new THREE.Color(SIM_STEEL).lerp(target, k));
+    paint.emissive.copy(target);
+    paint.emissiveIntensity = verdict === "blocked" ? 0.55 * k : 0.12 * k;
+    for (const overlay of overlays) overlay.material.opacity = 0.75 * k;
+  }
+
+  function hideAssembly() {
+    // Back to the part view: the sim group goes away, the part and its company come back.
+    clearAssembly();
+    for (const group of [part, annotations, companion, mating, suggestion]) {
+      if (group) {
+        scene.add(group);
+        setDomLabels(group, true);
+      }
+    }
+    if (part) setView();
   }
 
   function previewLabel(key, text) {
@@ -309,7 +495,8 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   loop();
   // Triangles of the shown part's mesh (the STL the viewer loaded).
   const triangleCount = () => (part ? part.children[0].geometry.attributes.position.count / 3 : 0);
-  return { show, showCompanion, showSuggestion, resize, setView, setChanged, previewLabel, triangleCount,
+  return { show, showCompanion, showMating, showSuggestion, showAssembly, hideAssembly,
+    assemblyActive: () => !!assembly, resize, setView, setChanged, previewLabel, triangleCount,
     setLabelsVisible: (visible) => {
       // CSS2DRenderer only honours each label's own visibility, never a parent group's, so the HTML
       // labels are hidden via their container; the drawn dimension/leader lines via the group itself.

@@ -910,7 +910,8 @@ function postJSON(url, body) {
 // What the model, drawing and download requests add for a matching part (nothing for the original).
 const matchQuery = (separator = "?") => (state.matching ? `${separator}match=${state.matching.kind}` : "");
 const modelBody = () => (state.matching?.kind === "adapter"
-  ? { parameters: currentValues(), base: state.matching.base, pattern: state.matching.pattern, outline: state.matching.outline }
+  ? { parameters: currentValues(), base: state.matching.base, pattern: state.matching.pattern,
+      outline: state.matching.outline, hole_style: state.matching.holeStyle || "exact" }
   : { parameters: currentValues(), base: state.matching?.base });
 
 async function rebuild() {
@@ -939,6 +940,8 @@ async function rebuild() {
   if (state.matching) await showAlignment(build);
   if (build !== state.builds) return;
   status.textContent = `Built in ${((performance.now() - started) / 1000).toFixed(1)} s`;
+  // Slider moves in sim view re-run the check (the viewer animates the color change).
+  if (assembly.view === "sim" && state.matching?.kind === "adapter") await runAssemblyCheck(false);
 }
 
 function slider(parameter) {
@@ -1021,6 +1024,7 @@ async function showModel(sliderValues = {}) {
   updateSplitButtons();
   setMatchingLayout(null);
   state.viewer.showCompanion(null);
+  state.viewer.showMating(null);
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
   $("model-program").textContent = `Program ${w.name}.py`;  // display name; w.program is the internal file
@@ -1057,6 +1061,14 @@ function setMatchingLayout(info) {
     $("fit-title").textContent = "TOP VIEW OVERLAY";
     $("fit-iou").textContent = "";
   }
+  // The assembly panel and sim view belong to the adapter only; leaving it resets both.
+  const adapter = !!info && state.matching?.kind === "adapter";
+  if (!adapter && state.viewer?.assemblyActive?.()) state.viewer.hideAssembly();
+  if (!adapter) resetAssembly();
+  else {
+    $("assembly-block").classList.remove("hidden");
+    $("view-assembly").classList.remove("hidden");
+  }
 }
 
 async function showMatching(kind) {
@@ -1082,6 +1094,7 @@ async function showMatching(kind) {
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
   state.viewer.showSuggestion(null);
   state.viewer.showCompanion(await original.arrayBuffer(), "ORIGINAL");
+  state.viewer.showMating(null);
   state.viewer.reset();  // frame both parts
   document.querySelectorAll(".view-tools button[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
   await rebuild();
@@ -1120,6 +1133,7 @@ async function showAlignment(build) {
     return;
   }
   drawOverlay(original, matching, answer.holes_b, answer.label_b);
+  if (state.matching.kind === "adapter" && matching) updateAdapterGhosts(matching.thickness);
   const breakouts = a.breakouts === 1 ? "1 hole breaks through the edge" : `${a.breakouts} holes break through the edge`;
   check.innerHTML = !a.total ? "No holes to align"
     : `Holes aligned: ${a.aligned}/${a.total}${a.max_offset_mm === null ? "" : `, max offset ${a.max_offset_mm.toFixed(3)} mm`}`
@@ -1133,6 +1147,24 @@ function drawOverlay(original, matching, holesB, labelB) {
   const closed = (points) => `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z`;
   const circle = ([x, y], d) => `M${x - d / 2},${-y}a${d / 2},${d / 2} 0 1,0 ${d},0a${d / 2},${d / 2} 0 1,0 ${-d},0Z`;
   const shape = (p) => closed(p.outline) + p.holes.map((h) => (h.type === "circle" ? circle(h.center, h.diameter) : closed(h.points))).join("");
+  const slotPath = (h) => {  // a capsule sampled as a polygon (slotted style: length/width/angle set)
+    const straight = (h.length - h.width) / 2;
+    const angle = (h.angle || 0) * Math.PI / 180;
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const points = [];
+    for (const [end, start] of [[1, -90], [-1, 90]]) {
+      const ex = h.x + ux * straight * end;
+      const ey = h.y + uy * straight * end;
+      for (let i = 0; i <= 8; i++) {
+        const arc = (start + 180 * i / 8) * Math.PI / 180;
+        const lx = Math.cos(arc) * h.width / 2;
+        const ly = Math.sin(arc) * h.width / 2;
+        points.push([ex + lx * ux - ly * uy, ey + lx * uy + ly * ux]);
+      }
+    }
+    return closed(points);
+  };
   const split = !matching;  // a split gasket hides its overlay: one piece must not pose as the whole
   matching = matching || { outline: [], holes: [], box: original.box };
   const x0 = Math.min(original.box[0], matching.box[0]);
@@ -1142,11 +1174,12 @@ function drawOverlay(original, matching, holesB, labelB) {
   const margin = 0.04 * Math.max(x1 - x0, y1 - y0);
   const view = $("overlay-view");
   view.setAttribute("viewBox", `${x0 - margin} ${-y1 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`);
-  const bPath = (holesB || []).map((h) => circle([h.x, h.y], h.d)).join("");
+  const bPath = (holesB || []).map((h) => (h.length === undefined ? circle([h.x, h.y], h.d) : slotPath(h))).join("");
 
   view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/>`;
   $("overlay-b-item").classList.toggle("hidden", !holesB?.length);
-  if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB}`;
+  // A photo pattern's full summary stays in the line below; the legend keeps only its source.
+  if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB.endsWith("from photo") ? "from photo" : labelB}`;
   $("overlay-matching-item").classList.toggle("hidden", split);
 }
 
@@ -1511,7 +1544,12 @@ async function runAdapter(pattern, matingRun = null) {
   }
   clearVoicePreview();
   state.winner = await outline.json();
-  state.matching = { kind: "adapter", base, pattern, outline: "auto", mating: matingRun };
+  state.matching = { kind: "adapter", base, pattern, outline: "auto", mating: matingRun, holeStyle: "exact",
+    exactInfo: state.winner, ghosts: { original: await original.arrayBuffer(), mating: null } };
+  resetAssembly();
+  const ghost = await postJSON(`/api/runs/${state.run}/matching/adapter/mating/plate`,
+    matingRun === null ? { base, pattern, outline: "auto" } : { base, pattern, outline: "auto", mating: matingRun });
+  if (ghost.ok) state.matching.ghosts.mating = await (await fetch((await ghost.json()).stl)).arrayBuffer();
   const w = state.winner;
   setMatchingLayout(w);
   $("model-program").textContent = `Program ${w.program}`;
@@ -1520,11 +1558,200 @@ async function runAdapter(pattern, matingRun = null) {
   $("sliders").innerHTML = "";
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
   state.viewer.showSuggestion(null);
-  state.viewer.showCompanion(await original.arrayBuffer(), "ORIGINAL");
-  state.viewer.reset();  // frame both parts
+  state.viewer.reset();  // frame the parts
   document.querySelectorAll(".view-tools button[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === "iso"));
   await rebuild();
+  runAssemblyCheck(false);  // the panel's verdict, in the background
 }
+
+function updateAdapterGhosts(thickness) {
+  // Both ghosts exactly over their patterns (same XY as built), resting on the adapter's top face.
+  const ghosts = state.matching?.ghosts;
+  if (!ghosts) return;
+  state.viewer.showCompanion(ghosts.original, "ORIGINAL", { overlay: true, liftZ: thickness });
+  state.viewer.showMating(ghosts.mating, ghosts.mating ? "MATING PART" : null, thickness);
+}
+
+// ---------- adapter plate: assembly check simulation ----------
+// Stacks the original, the adapter and the mating plate with fixed screws and reports every
+// screw's computed interference volume per plate. Hole style (Exact/Slotted) switches the built
+// adapter program; error case and screw sizes only re-run the check. All deterministic, no model.
+const assembly = { view: "part", errorCase: "as_measured", screws: {}, data: null, running: 0, selectSignature: "" };
+const stlCache = new Map();
+
+function resetAssembly() {
+  assembly.view = "part";
+  assembly.errorCase = "as_measured";
+  assembly.screws = {};
+  assembly.data = null;
+  assembly.selectSignature = "";
+  $("view-assembly").classList.add("hidden");
+  $("view-assembly").classList.remove("active");
+  $("assembly-block").classList.add("hidden");
+  $("assembly-verdict").classList.add("hidden");
+  $("assembly-screws").innerHTML = "";
+  $("assembly-status").textContent = "";
+  document.querySelectorAll("#assembly-style-row button").forEach((b) => b.classList.toggle("active", b.dataset.style === "exact"));
+  document.querySelectorAll("#assembly-error-row button").forEach((b) => b.classList.toggle("active", b.dataset.error === "as_measured"));
+}
+
+async function fetchSTL(url) {
+  if (!stlCache.has(url)) stlCache.set(url, (await fetch(url)).arrayBuffer());
+  return stlCache.get(url);
+}
+
+function buildScrewSelects(data) {
+  // One select per hole-size group; rebuilt only when the groups themselves change (not on every run).
+  const signature = JSON.stringify(data.groups);
+  if (signature === assembly.selectSignature) return;
+  assembly.selectSignature = signature;
+  const box = $("assembly-screws");
+  box.innerHTML = "";
+  for (const group of data.groups) {
+    const row = document.createElement("label");
+    row.className = "screw-row";
+    row.textContent = `Ø${group.size.toFixed(2)} · ${group.holes.join(", ")}`;
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", `screw size for holes ${group.holes.join(", ")}`);
+    for (const size of ["M3", "M4", "M5", "M6", "none"]) {
+      const option = document.createElement("option");
+      option.value = size;
+      option.textContent = size;
+      select.appendChild(option);
+    }
+    select.value = assembly.screws[group.key] ?? group.default ?? "none";
+    select.addEventListener("change", () => {
+      const value = select.value === "none" ? null : select.value;
+      if (value === group.default) delete assembly.screws[group.key];
+      else assembly.screws[group.key] = value;
+      runAssemblyCheck(false);
+    });
+    row.appendChild(select);
+    box.appendChild(row);
+  }
+}
+
+function updateVerdictBadge(data) {
+  // The verdict, last: the overall line, then one computed line per blocked screw and skip note.
+  const verdict = $("assembly-verdict");
+  verdict.classList.remove("hidden");
+  verdict.classList.toggle("bad", data.verdict === "blocked");
+  verdict.innerHTML = esc(data.message)
+    + data.screws.filter((s) => s.verdict === "blocked").map((s) =>
+      `<span class="verdict-sub">Hole ${esc(s.id)} blocked · overlap ${s.overlap_mm3.toFixed(2)} mm³</span>`).join("")
+    + data.skipped.map((g) => `<span class="verdict-sub">${esc(g.message)}</span>`).join("");
+}
+
+const simPlateTag = (plate) => (plate.name === "original" ? "ORIGINAL"
+  : plate.name === "adapter" ? "ADAPTER" : (plate.label === "stand-in plate" ? "STAND-IN" : "MATING PART"));
+
+async function showSim(intro) {
+  const data = assembly.data;
+  const jobs = [];
+  for (const plate of data.plates) jobs.push(fetchSTL(plate.stl).then((buffer) => ({ kind: "plate", plate, buffer })));
+  for (const screw of data.screws) {
+    const artifacts = data.artifacts[screw.id];
+    jobs.push(fetchSTL(artifacts.stl).then((buffer) => ({ kind: "screw", screw, buffer, clashes: [] })));
+    for (const clash of artifacts.clashes) {
+      jobs.push(fetchSTL(clash).then((buffer) => ({ kind: "clash", id: screw.id, buffer })));
+    }
+  }
+  const parts = await Promise.all(jobs);
+  const byId = {};
+  for (const part of parts) if (part.kind === "screw") byId[part.screw.id] = part;
+  for (const part of parts) if (part.kind === "clash") byId[part.id].clashes.push(part.buffer);
+  $("assembly-verdict").classList.add("hidden");
+  state.viewer.showAssembly({
+    plates: parts.filter((p) => p.kind === "plate").map((p) => ({ buffer: p.buffer, tag: simPlateTag(p.plate) })),
+    screws: parts.filter((p) => p.kind === "screw").map((p) => (
+      { id: p.screw.id, buffer: p.buffer, verdict: p.screw.verdict, clashes: p.clashes })),
+  }, { intro, onDone: () => updateVerdictBadge(assembly.data) });
+}
+
+async function runAssemblyCheck(intro) {
+  // Recompute the check for the current style, error case, screws and slider values; in sim view
+  // the viewer animates the result, else only the panel updates. Later runs cancel earlier ones.
+  const run = ++assembly.running;
+  $("assembly-status").textContent = "Checking the assembly…";
+  $("assembly-status").classList.remove("warning");
+  let response;
+  try {
+    response = await postJSON(`/api/runs/${state.run}/matching/adapter/assembly`,
+      { ...modelBody(), error_case: assembly.errorCase, screws: assembly.screws,
+        ...(state.matching.mating ? { mating: state.matching.mating } : {}) });
+  } catch (error) {
+    if (run !== assembly.running) return;
+    $("assembly-status").textContent = "The connection was lost.";
+    $("assembly-status").classList.add("warning");
+    return;
+  }
+  if (run !== assembly.running) return;
+  if (!response.ok) {
+    $("assembly-status").textContent = (await response.json()).detail;
+    $("assembly-status").classList.add("warning");
+    return;
+  }
+  const data = await response.json();
+  if (run !== assembly.running) return;
+  assembly.data = data;
+  buildScrewSelects(data);
+  $("assembly-status").textContent = "";
+  if (assembly.view === "sim") await showSim(intro);
+  else updateVerdictBadge(data);
+}
+
+document.querySelectorAll("#assembly-error-row button").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.error === assembly.errorCase) return;
+  assembly.errorCase = b.dataset.error;
+  document.querySelectorAll("#assembly-error-row button").forEach((o) => o.classList.toggle("active", o === b));
+  runAssemblyCheck(false);
+}));
+
+$("view-assembly").addEventListener("click", async () => {
+  if (assembly.view === "sim") {
+    assembly.view = "part";
+    $("view-assembly").classList.remove("active");
+    state.viewer.hideAssembly();
+    if (assembly.data) updateVerdictBadge(assembly.data);
+    return;
+  }
+  assembly.view = "sim";
+  $("view-assembly").classList.add("active");
+  if (assembly.data) await showSim(true);
+  else await runAssemblyCheck(true);
+});
+
+function loadAdapterProgram(info) {
+  // Swap the adapter program (Exact ↔ Slotted variant): new sliders, rebuilt, ghosts follow.
+  state.winner = info;
+  $("model-program").textContent = `Program ${info.program}`;
+  $("model-source").textContent = info.source.startsWith("Outline:") ? info.source : `Source: ${sourceLabel(info.source)}`;
+  $("sliders").innerHTML = "";
+  info.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
+  rebuild();
+}
+
+document.querySelectorAll("#assembly-style-row button").forEach((b) => b.addEventListener("click", async () => {
+  const style = b.dataset.style;
+  if (style === state.matching.holeStyle) return;
+  if (style === "slotted") {
+    $("assembly-status").textContent = "Checking the slots…";
+    $("assembly-status").classList.remove("warning");
+    const { base, pattern, outline } = state.matching;
+    const response = await postJSON(`/api/runs/${state.run}/matching/adapter/slotted`, { base, pattern, outline });
+    if (!response.ok) {
+      $("assembly-status").textContent = (await response.json()).detail;
+      $("assembly-status").classList.add("warning");
+      return;  // keep Exact, toggle untouched
+    }
+    state.matching.slottedInfo = await response.json();
+  }
+  state.matching.holeStyle = style;
+  document.querySelectorAll("#assembly-style-row button").forEach((o) => o.classList.toggle("active", o === b));
+  $("assembly-status").textContent = "";
+  loadAdapterProgram(style === "exact" ? state.matching.exactInfo : state.matching.slottedInfo);
+  if (assembly.view !== "sim") runAssemblyCheck(false);  // in sim view the rebuild re-runs it
+}));
 
 function adapterLine(answer) {
   // Pattern B as built: its label, hole count and the smallest edge margin, all computed.

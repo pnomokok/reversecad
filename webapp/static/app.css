@@ -492,6 +492,22 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .swatch-pattern-b { border: 2px dashed var(--color-selected); }
 .fit-check { margin: 0; font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); line-height: 1.35; }
 .fit-check.bad, .fit-warning { color: var(--color-bad); }
+.assembly-block { display: flex; flex-direction: column; gap: var(--space-2); }
+.assembly-block.hidden { display: none; }
+.assembly-row { display: flex; align-items: center; gap: var(--space-1); }
+.assembly-name { font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text-muted); margin-right: auto; }
+.assembly-row button { padding: var(--space-2) var(--space-3); background: var(--color-container); color: var(--color-text-strong); font-family: var(--font-mono); font-size: var(--font-size-label-lg); }
+.assembly-row button.active { background: var(--color-selected); color: var(--color-text-on-accent); font-weight: 700; }
+.assembly-screws { display: flex; flex-direction: column; gap: var(--space-1); }
+.assembly-screws:empty { display: none; }
+.screw-row { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text); }
+.screw-row select { margin-left: auto; background: var(--color-lowest); border: var(--border-width) solid var(--color-highest); color: var(--color-text-strong); font-family: var(--font-mono); font-size: var(--font-size-label-lg); padding: var(--space-1) var(--space-2); }
+.assembly-verdict { font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); line-height: 1.5; }
+.assembly-verdict.hidden { display: none; }
+.assembly-verdict.bad { color: var(--color-bad); }
+.assembly-verdict .verdict-sub { display: block; font-weight: 400; }
+.assembly-caption { margin: 0; font-size: var(--font-size-label); color: var(--color-text-muted); line-height: 1.45; }
+.sim-screw-label { font-size: var(--font-size-label); }
 
 /* a feature this server cannot run (no API keys): one calm line instead of its controls */
 .off-note { margin: 0; padding: var(--space-2) 0; font-size: var(--font-size-label-lg); color: var(--color-text-muted); line-height: 1.4; }

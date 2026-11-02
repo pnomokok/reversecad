@@ -81,6 +81,22 @@ class Builder:
                 return f"timed out after {TIMEOUT_SECONDS} s"
         return None if reply.get("ok") else reply.get("error", "build failed")
 
+    def assembly(self, spec, report_path):
+        """Stack the spec's plates and screws in the worker and write the interference report
+        (plus the plates', screws' and clashes' STLs next to it). Error or None. No program runs,
+        so there is nothing to screen: the spec is our own data (assembly_check.py)."""
+        with self.lock:
+            if self.process is None or self.process.poll() is not None:
+                self._start()
+            self.process.stdin.write(json.dumps({"assembly": spec, "output": str(report_path)}) + "\n")
+            self.process.stdin.flush()
+            try:
+                reply = self.replies.get(timeout=TIMEOUT_SECONDS)
+            except queue.Empty:
+                self._stop()
+                return f"timed out after {TIMEOUT_SECONDS} s"
+        return None if reply.get("ok") else reply.get("error", "build failed")
+
     def compare(self, code_path, base_path, added_path, removed_path, report_path):
         """Build both programs and write what code_path adds to / removes from base_path. Error or None."""
         problems = check_code(Path(base_path).read_text(encoding="utf-8"))

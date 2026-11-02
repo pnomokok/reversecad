@@ -170,6 +170,10 @@ Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-de
 
 ![Adapter plate](reports/ui/A_light_adapter.png)
 *A cover, spacer, or adapter plate made from the built result.*
+7. **Assembly check** (on the adapter screen): Exact or Slotted holes, As measured or With measured error, with estimated screw sizes per hole group; the 3D simulation stacks the plates, slides the screws in, and colors each screw by its computed interference volume. It checks rigid hole-vs-screw overlap only — material flex, printer tolerance, and thickness errors are not simulated.
+
+![Assembly check](reports/ui/A_light_assembly_exact_blocked.png)
+*With the worst measured spacing error (1.28 mm), all 6 exact-hole screws block; slots let them pass.*
 
 ## Command-line scripts
 

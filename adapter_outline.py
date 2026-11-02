@@ -139,6 +139,56 @@ def fallback_source(holes_a, holes_b, thickness, label_b, margin_default, displa
     ])
 
 
+def slotted_source(outline_points, specs, thickness, label_b, display_name="matching part"):
+    """The slotted adapter variant (text): the Exact outline with every round hole as a slot.
+
+    specs is check_slotted_walls' {"a", "b"}: each round hole a {"center", "width", "angle"} slot
+    along its pattern's long axis, shaped holes fixed polygons. Parameters are the thickness and
+    one slot width per (pattern, width, angle) group; each slot's length is its width plus the
+    baked extra (2 x SHIFT_MM from assembly_check.py: generated programs may only import
+    cadquery, partkit and math, like the fallback's baked margin base).
+    """
+    from assembly_check import SHIFT_MM
+
+    groups = {}
+    for tag in ("a", "b"):
+        for spec in specs[tag]:
+            if "slot" in spec:
+                groups.setdefault((tag, spec["width"], spec["angle"]), []).append(spec["center"])
+    shaped = [spec["polygon"] for tag in ("a", "b") for spec in specs[tag] if "slot" not in spec]
+    arguments = [f"    thickness={thickness!r},"]
+    data = [f"SLOT_EXTRA_LENGTH = {2 * SHIFT_MM!r}  # 2 x SHIFT_MM (assembly_check.py)",
+            *_points("OUTLINE", outline_points)]
+    body = ["    part = pk.outline_from_points(OUTLINE, thickness)"]
+    counters = {}
+    for (tag, width, angle), centers in groups.items():
+        counters[tag] = counters.get(tag, 0) + 1
+        same_tag = sum(1 for key in groups if key[0] == tag)
+        parameter = f"slot_width_{tag}" if same_tag == 1 else f"slot_width_{tag}_{counters[tag]}"
+        data += _points(f"SLOT_CENTERS_{tag.upper()}_{counters[tag]}", centers)
+        arguments.append(f"    {parameter}={width!r},")
+        body += [f"    for _cx, _cy in SLOT_CENTERS_{tag.upper()}_{counters[tag]}:",
+                 f"        part = pk.cut_slot(part, (_cx, _cy), {parameter} + SLOT_EXTRA_LENGTH, "
+                 f"{parameter}, {angle!r})"]
+    if shaped:
+        data += ["SHAPED_HOLES_A = [", *[f"    [{', '.join(map(_point, points))}]," for points in shaped], "]", ""]
+        body += ["    for corners in SHAPED_HOLES_A:", "        part = pk.cut_polygon(part, corners)"]
+    return "\n".join([
+        f'"""{display_name}: Adapter plate, pattern A plus pattern B ({label_b}).',
+        "Slotted variant by adapter_outline.py: the Exact outline with slotted holes.\"\"\"",
+        "import partkit as pk",
+        "",
+        *data,
+        "",
+        "def build_part(",
+        *arguments,
+        "):",
+        *body,
+        "    return part",
+        "",
+    ])
+
+
 def _describe(tag, index, hole):
     at = adapter_place.hole_center(hole)
     return f"pattern {tag} hole {index + 1} at ({at[0]:.2f}, {at[1]:.2f})"

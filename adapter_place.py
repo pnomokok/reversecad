@@ -123,9 +123,11 @@ def default_margin(profile):
 def place_pattern(profile, pattern):
     """Place pattern B's holes onto the profile's (absolute) coordinates.
 
-    Returns {"candidate", "holes_b": [{"x", "y", "d"}], "walls": {"aa", "ab", "bb", "min"}} or None
-    when no candidate keeps every wall at MIN_WALL_MM. profile is the built original's top face
-    (outline box, holes); pattern is a validated pattern B (holes relative to its centre).
+    Returns {"candidate", "holes_b": [{"x", "y", "d"}], "walls": {"aa", "ab", "bb", "min"},
+    "transform": {"dx", "dy", "rotated90"}} or None when no candidate keeps every wall at
+    MIN_WALL_MM. profile is the built original's top face (outline box, holes); pattern is a
+    validated pattern B (holes relative to its centre). The transform is the rigid motion the
+    winning candidate applied, so the mating part can be moved by the exact same motion.
     """
     holes_a = [profile_hole(h) for h in profile["holes"]]
     holes_b = [{"circle": (h["x"], h["y"], h["d"])} for h in pattern["holes"]]
@@ -161,5 +163,7 @@ def place_pattern(profile, pattern):
                      "ab": round(wall_ab, 3) if wall_ab is not None else None,
                      "bb": round(wall_bb, 3) if wall_bb is not None else None,
                      "min": round(min(present), 3) if present else None}
-            return {"candidate": name, "holes_b": moved, "walls": walls}
+            return {"candidate": name, "holes_b": moved, "walls": walls,
+                    "transform": {"dx": round(center[0] + long_axis[0] * offset, 3),
+                                  "dy": round(center[1] + long_axis[1] * offset, 3), "rotated90": rotated}}
     return None

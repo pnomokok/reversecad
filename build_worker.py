@@ -6,7 +6,9 @@ in a fresh namespace and the part is exported (STL/STEP by extension, or a top-v
 mask for .npy, with "mm_per_pixel"); with "features": path it also writes the bounding box and the
 top face's circular holes as JSON (for the 3D labels). With "compare_to": another program, it writes
 the material the program adds to that one (STL at "output"; what it removes at "removed_output") and
-the volumes as JSON at "features" (for a completion suggestion). The reply is one JSON
+the volumes as JSON at "features" (for a completion suggestion). With "assembly": a spec,
+it stacks the plates, puts each screw through its holes and writes every screw's interference
+volume with every plate it joins (JSON at "output", STLs next to it). The reply is one JSON
 line {"ok": true} or {"ok": false, "error": "..."}. Programs are checked (check_code) by the
 caller before they get here; webapp/builder.py restarts this process if a job hangs or it dies.
 """
@@ -32,6 +34,9 @@ def _run_program(path, overrides=None):
 def build(job):
     import cadquery as cq
 
+    if job.get("assembly") is not None:  # the adapter's assembly check: plates, screws, clashes
+        assembly(job["assembly"], job["output"])
+        return
     result = _run_program(job["code"], job.get("overrides"))
     if job.get("compare_to"):  # a completion: what it adds to and removes from another program's part
         compare(result, _run_program(job["compare_to"]), job)
@@ -67,6 +72,55 @@ def compare(result, base, job):
         cq.exporters.export(removed, job["removed_output"])
     with open(job["features"], "w", encoding="utf-8") as file:
         json.dump(report, file)
+
+
+def assembly(spec, report_path):
+    """Stack the spec's plates, put each screw through the plates it joins, and report every
+    screw's interference volume per plate. Writes plate_<name>.stl, screw_<id>.stl and, for a
+    screw that overlaps material, clash_<id>_<plate>.stl next to the report (all in the stack's
+    coordinates: plates face to face from Z = 0 up, screws at their fixed positions)."""
+    import cadquery as cq
+    from pathlib import Path
+
+    import partkit as pk
+
+    folder = Path(report_path).parent
+    folder.mkdir(parents=True, exist_ok=True)
+    volume = lambda part: sum(solid.Volume() for solid in part.solids().vals())  # noqa: E731
+    plates = {}
+    for plate in spec["plates"]:
+        part = pk.outline_from_points(plate["outline"], plate["thickness"]).translate((0, 0, plate["z0"]))
+        for hole in plate["holes"]:
+            if "circle" in hole:
+                (x, y, d) = hole["circle"]
+                part = pk.cut_circle(part, (x, y), d)
+            elif "slot" in hole:
+                (x, y, length, width, angle) = hole["slot"]
+                part = pk.cut_slot(part, (x, y), length, width, angle)
+            else:
+                part = pk.cut_polygon(part, hole["polygon"])
+        plates[plate["name"]] = part
+        cq.exporters.export(part, str(folder / f"plate_{plate['name']}.stl"))
+    screws = []
+    for screw in spec["screws"]:
+        x, y, d, z0, z1 = (screw[key] for key in ("x", "y", "d", "z0", "z1"))
+        solid = cq.Workplane("XY", origin=(x, y, z0)).circle(d / 2).extrude(z1 - z0)
+        cq.exporters.export(solid, str(folder / f"screw_{screw['id']}.stl"))
+        interference = {}
+        for name in plates:  # every screw with every plate (a screw only reaches the plates it joins)
+            clash = solid.intersect(plates[name])
+            amount = volume(clash)
+            interference[name] = amount
+            if amount > 1e-9:
+                cq.exporters.export(clash, str(folder / f"clash_{screw['id']}_{name}.stl"))
+        screws.append({"id": screw["id"], "size": screw["size"], "pattern": screw["pattern"],
+                       "x": x, "y": y, "d": d, "z0": z0, "z1": z1,
+                       "interference_mm3": {name: round(value, 4) for name, value in interference.items()},
+                       "total_mm3": round(sum(interference.values()), 4)})
+    with open(report_path, "w", encoding="utf-8") as file:
+        json.dump({"screws": screws, "plates": [
+            {"name": p["name"], "label": p["label"], "thickness": p["thickness"], "z0": p["z0"]}
+            for p in spec["plates"]]}, file)
 
 
 def profile(result):
