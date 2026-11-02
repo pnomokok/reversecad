@@ -2,6 +2,8 @@
 
 One photo of a flat part → an editable CAD program with real millimeter dimensions.
 
+The core of ReverseCAD — writing every candidate CAD program — runs on Muse Spark Open, Meta's open-weight model, served through Baseten.
+
 ![ReverseCAD result](reports/ui/A_light_edit.png)
 
 Demo video: <!-- TODO: video link, Nov 3 -->
@@ -46,7 +48,13 @@ Code measures, the model decides the structure, every program is checked against
 ![Result in 3D](reports/ui/A_light_edit.png)
 *The result with one slider per named parameter.*
 
+## The agent loop
+
+In one run the system decides on its own: it writes candidates in three approaches (fewest parameters, feature based, symmetry first), builds each program and checks it against the photo, rejects failures with a stated reason, and stops the search once 3 passing candidates build the same shape (early stop on 258 of 300 random parts, 3.42 of 5 requests on average). When no candidate passes, it calls Muse Wonder to diagnose and repair (at most 2 rounds): 6/6 synthetic cases repaired in round 1, and on the real cardboard both photos had all 5 candidates rejected with the repair passing in round 1. It then looks for break cues and asks Wonder for a completion, or falls back to the measured shape and says why. The user keeps the final say on anything the photo cannot show: estimated values in a completion come with a suggested value, and the suggestion waits for Apply / Ignore.
+
 ## Where Meta models are used
+
+On Muse Spark Open run: candidate CadQuery programs; part-name suggestions for SAM; spoken/typed edit commands to JSON parameter changes; adapter outline programs; free-text adapter patterns to JSON.
 
 | Model | Where | What it does in ReverseCAD | Files |
 |---|---|---|---|
