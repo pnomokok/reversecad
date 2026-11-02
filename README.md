@@ -121,7 +121,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m uvicorn webapp.server:app
 ```
 
-On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe` (not tested there yet).
+On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe`; tested on Linux (Python 3.13, fresh clone: install, tests, web app start); macOS not tested.
 
 Open **http://127.0.0.1:8000**. Four saved synthetic runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), and `D_tab_broken` (a snapped-off tab with its completion card).
 
@@ -192,7 +192,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 .venv\Scripts\python.exe -m pytest
 ```
 
-255 passed, 1 skipped; the frontend files also pass `node --check`. The tests never call an API. A few need runs saved under `outputs/` and are skipped in a fresh clone; the samples in `samples/` cover the web app.
+247 passed, 9 skipped in a fresh clone; the frontend files also pass `node --check`. The tests never call an API. The 9 skips need local-only files (the private BREAK live runs, private real photos, local `outputs/` scenes, saved SAM answers) or are the opt-in full SAM check (`FULL_SAM_CHECK=1`); the samples in `samples/` cover the web app.
 
 ## Project layout
 
