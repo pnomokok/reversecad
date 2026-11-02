@@ -453,6 +453,26 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .adapter-parsed { display: flex; flex-direction: column; gap: var(--space-2); }
 .adapter-parsed.hidden { display: none; }
 .adapter-summary { font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text-strong); }
+.mating-row button { padding: var(--space-2) var(--space-3); background: var(--color-container); color: var(--color-text-strong); font-family: var(--font-mono); font-size: var(--font-size-label-lg); }
+.mating-panel { display: flex; flex-direction: column; gap: var(--space-2); }
+.mating-panel.hidden { display: none; }
+.mating-photo { position: relative; background: var(--color-lowest); }
+.mating-photo img { display: block; width: 100%; cursor: crosshair; }
+.mating-photo svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.mating-photo .scanline { left: 0; right: 0; }
+.mating-contour { fill: none; stroke: var(--color-overlay-part); stroke-width: 3px; vector-effect: non-scaling-stroke; }
+.mating-hole { fill: none; stroke: var(--color-overlay-hole); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.mating-number { fill: var(--color-selected); font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.mating-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text); }
+.mating-table.hidden { display: none; }
+.mating-table td { padding: 2px var(--space-2); border-top: var(--border-width) solid var(--color-high); }
+.mating-table td.number { text-align: right; color: var(--color-text-strong); }
+.mating-table tr.heading td { color: var(--color-text-muted); border-top: none; padding-top: var(--space-2); }
+.mating-thickness { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text-muted); }
+.mating-thickness.hidden { display: none; }
+.mating-thickness input { width: 64px; background: var(--color-lowest); border: var(--border-width) solid var(--color-highest); color: var(--color-text-strong); font-family: var(--font-mono); font-size: var(--font-size-label-lg); padding: var(--space-2); text-align: right; }
+.mating-thickness input:focus { outline: none; border-color: var(--color-selected); }
+.mating-fly { position: fixed; z-index: 100; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: var(--color-lowest); border: 2px solid var(--color-selected); color: var(--color-selected); font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; pointer-events: none; }
 .matching-choices button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--space-3); background: var(--color-container); text-align: left; }
 .matching-choices strong { font-family: var(--font-mono); font-size: var(--font-size-label-lg); color: var(--color-text-strong); }
 .matching-choices span { font-size: var(--font-size-label); color: var(--color-text-muted); line-height: 1.35; }

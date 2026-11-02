@@ -1270,7 +1270,213 @@ $("adapter-mic").addEventListener("click", async () => {
   $("adapter-mic").classList.add("recording");
 });
 
-async function runAdapter(pattern) {
+// ---------- adapter plate: pattern B measured from a photo of the mating part ----------
+// Upload a photo of the mating part (with an ID-1 card next to it), click the part, and the
+// existing live pipeline measures it (SAM 3.1 card + click mask, the frozen scale rule and hole
+// finding); no candidate search runs for this photo. The measured holes are shown back and need
+// Apply, then the existing placement and outline flow takes over.
+const mating = { run: null, click: null, analysis: null, pattern: null, measuring: false };
+
+function matingStatus(text, warning) {
+  $("mating-status").textContent = text;
+  $("mating-status").classList.toggle("warning", !!warning);
+}
+
+function resetMatingPhoto() {
+  mating.run = null;
+  mating.click = null;
+  mating.analysis = null;
+  mating.pattern = null;
+  $("mating-svg").innerHTML = "";
+  $("mating-scan").classList.add("hidden");
+  $("mating-table").classList.add("hidden");
+  $("mating-thickness-row").classList.add("hidden");
+  $("mating-parsed").classList.add("hidden");
+  $("mating-summary").textContent = "";
+  $("mating-photo").removeAttribute("src");
+}
+
+$("adapter-photo").addEventListener("click", () => $("mating-file").click());
+$("mating-file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  clearAdapterPreview();
+  resetMatingPhoto();
+  $("mating-panel").classList.remove("hidden");
+  matingStatus("Uploading…", false);
+  const form = new FormData();
+  form.append("photo", file);
+  const response = await fetch(`/api/runs/${state.run}/matching/adapter/mating/upload`, { method: "POST", body: form });
+  if (!response.ok) {
+    matingStatus(`Upload failed: ${(await response.json()).detail}`, true);
+    return;
+  }
+  mating.run = (await response.json()).name;
+  const photo = $("mating-photo");
+  photo.src = `/api/runs/${mating.run}/photo`;
+  await photo.decode().catch(() => {});
+  matingStatus("Click the mating part in the photo (not a hole).", false);
+});
+
+$("mating-photo").addEventListener("click", (event) => {
+  if (!mating.run || mating.measuring || !event.target.naturalWidth) return;
+  const box = event.target.getBoundingClientRect();
+  mating.click = [Math.round((event.clientX - box.left) * (event.target.naturalWidth / box.width)),
+                  Math.round((event.clientY - box.top) * (event.target.naturalHeight / box.height))];
+  measureMating();
+});
+
+function matingError(message) {
+  // SAM's failures in plain words (the technical text is not shown; nothing is guessed).
+  if (/no card/i.test(message)) return "no ID-1 card was found in this photo — put a credit-card-size card next to the part and retake it";
+  if (/no part/i.test(message)) return "nothing was found under the click — click on the part itself, not a hole and not the card";
+  return message;
+}
+
+function measureMating() {
+  mating.measuring = true;
+  mating.analysis = null;
+  mating.pattern = null;
+  $("mating-svg").innerHTML = "";
+  $("mating-table").classList.add("hidden");
+  $("mating-thickness-row").classList.add("hidden");
+  $("mating-parsed").classList.add("hidden");
+  if (!reducedMotion()) $("mating-scan").classList.remove("hidden");
+  const [x, y] = mating.click;
+  const stream = new EventSource(`/api/live/${mating.run}/measure/stream?x=${x}&y=${y}`);
+  stream.addEventListener("progress", (m) => matingStatus(JSON.parse(m.data).message, false));
+  stream.addEventListener("analysis", async (m) => {
+    stream.close();
+    $("mating-scan").classList.add("hidden");
+    mating.measuring = false;
+    mating.analysis = JSON.parse(m.data);
+    drawMating(mating.analysis);
+    await fetchMatingPattern();
+  });
+  stream.addEventListener("error", (m) => {
+    stream.close();
+    $("mating-scan").classList.add("hidden");
+    mating.measuring = false;
+    matingStatus(m.data ? `Not measured: ${matingError(JSON.parse(m.data).message)}` : "The connection was lost.", true);
+  });
+}
+
+function drawMating(a) {
+  // The photo with the measured outline (draws itself) and the detected holes, numbered, one by
+  // one — then the small "Measured" table. Purely visual: nothing waits for it.
+  const svg = $("mating-svg");
+  const [width, height] = a.image_size;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const points = (list) => list.map(([x, y]) => `${x},${y}`).join(" ");
+  const ordered = [...a.holes].sort((p, q) => p.center_px[0] - q.center_px[0] || p.center_px[1] - q.center_px[1]);
+  // SVG units are photo pixels; numbers stay readable by scaling like the capture canvas labels.
+  const numberPx = 15 * (width / (svg.clientWidth || width));
+  const contour = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  contour.setAttribute("points", points(a.outline_px));
+  contour.setAttribute("class", "mating-contour");
+  svg.appendChild(contour);
+  if (!reducedMotion()) {
+    const length = contour.getTotalLength();
+    contour.style.strokeDasharray = `${length}`;
+    contour.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }],
+      { duration: 900, easing: "ease-out", fill: "forwards" });
+  }
+  ordered.forEach((hole, i) => {
+    const ring = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    ring.setAttribute("points", points(hole.contour_px));
+    ring.setAttribute("class", "mating-hole");
+    const number = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    number.setAttribute("x", hole.center_px[0]);
+    number.setAttribute("y", hole.center_px[1]);
+    number.setAttribute("class", "mating-number");
+    number.setAttribute("font-size", numberPx.toFixed(1));
+    number.textContent = i + 1;
+    svg.append(ring, number);
+    if (!reducedMotion()) {
+      for (const element of [ring, number]) {
+        element.animate([{ opacity: 0 }, { opacity: 1 }],
+          { duration: 250, delay: 900 + 150 * i, fill: "backwards", easing: "ease-out" });
+      }
+    }
+  });
+  const rows = [["Measured", null], ["Outline", `${mm(a.outline_mm.length)} × ${mm(a.outline_mm.width)}`],
+    [`Holes`, `${ordered.length} measured`],
+    ...ordered.map((hole, i) => [`${i + 1}`, hole.size])];
+  $("mating-table").innerHTML = tableHTML(rows);
+  $("mating-table").classList.remove("hidden");
+}
+
+function matingThickness() {
+  const value = Number(String($("mating-thickness").value).replace(",", "."));
+  return Number.isFinite(value) && value >= 0.1 && value <= 100 ? value : null;
+}
+
+async function fetchMatingPattern() {
+  // The measured holes as pattern B (deterministic, no model call); shown back, needs Apply.
+  if (!mating.analysis.holes.length) {
+    matingStatus("No holes were found in the mating part — the holes must show the background through them.", true);
+    return;
+  }
+  const thickness = matingThickness();
+  if (thickness === null) {
+    matingStatus("Enter a mating thickness between 0.1 and 100 mm.", true);
+    return;
+  }
+  matingStatus("Reading the hole pattern…", false);
+  const response = await postJSON(`/api/runs/${state.run}/matching/adapter/mating/pattern`,
+    { mating: mating.run, thickness });
+  if (!response.ok) {
+    matingStatus((await response.json()).detail, true);
+    return;
+  }
+  const answer = await response.json();
+  mating.pattern = answer.pattern;
+  $("mating-summary").textContent = answer.summary;
+  $("mating-parsed").classList.remove("hidden");
+  $("mating-thickness-row").classList.remove("hidden");
+  matingStatus("Measured · SAM 3.1", false);
+}
+
+$("mating-thickness").addEventListener("change", () => {
+  // The entered thickness is stored with the mating run; re-reading is deterministic (no model).
+  if (mating.analysis?.holes.length && !mating.measuring) fetchMatingPattern();
+});
+$("mating-dismiss").addEventListener("click", () => {
+  mating.pattern = null;
+  $("mating-parsed").classList.add("hidden");
+  matingStatus("Dismissed.", false);
+});
+
+async function flyMatingHoles() {
+  // The numbered holes travel from the photo panel toward the overlay inset (short and eased),
+  // then the existing placement and outline flow runs. Purely visual: the pattern is decided.
+  const box = document.querySelector(".fit-inset").getBoundingClientRect();
+  const to = { x: box.left + box.width / 2, y: box.top + 120 };
+  const flights = [...$("mating-svg").querySelectorAll(".mating-number")].map((label, i) => {
+    const at = label.getBoundingClientRect();
+    const dot = document.createElement("div");
+    dot.className = "mating-fly";
+    dot.textContent = label.textContent;
+    dot.style.left = `${at.left + at.width / 2}px`;
+    dot.style.top = `${at.top + at.height / 2}px`;
+    document.body.appendChild(dot);
+    const flight = dot.animate([
+      { transform: "translate(0, 0) scale(1)", opacity: 1 },
+      { transform: `translate(${to.x - at.left - at.width / 2}px, ${to.y - at.top - at.height / 2}px) scale(0.6)`, opacity: 0.2 },
+    ], { duration: 600, delay: 90 * i, easing: "cubic-bezier(0.3, 0.7, 0.3, 1)", fill: "forwards" });
+    return flight.finished.then(() => dot.remove()).catch(() => dot.remove());
+  });
+  await Promise.all(flights);
+}
+
+$("mating-apply").addEventListener("click", async () => {
+  if (!mating.pattern) return;
+  if (!reducedMotion()) await flyMatingHoles();
+  runAdapter(mating.pattern, mating.run);
+});
+
+async function runAdapter(pattern, matingRun = null) {
   const base = currentValues();
   clearAdapterPreview();
   $("matching-status").textContent = "";
@@ -1288,7 +1494,8 @@ async function runAdapter(pattern) {
   const minWall = place.placement.walls.min;
   $("model-status").textContent = `Placed ${place.placement.candidate}`
     + (minWall === null ? "" : ` · min wall ${minWall.toFixed(1)} mm`) + " — finding the outline…";
-  const outline = await postJSON(`/api/runs/${state.run}/matching/adapter/outline`, { base, pattern, outline: "auto" });
+  const outline = await postJSON(`/api/runs/${state.run}/matching/adapter/outline`,
+    matingRun === null ? { base, pattern, outline: "auto" } : { base, pattern, outline: "auto", mating: matingRun });
   if (!outline.ok) {
     $("model-status").textContent = "";
     $("matching-status").textContent = `Not built: ${(await outline.json()).detail}`;
@@ -1304,7 +1511,7 @@ async function runAdapter(pattern) {
   }
   clearVoicePreview();
   state.winner = await outline.json();
-  state.matching = { kind: "adapter", base, pattern, outline: "auto" };
+  state.matching = { kind: "adapter", base, pattern, outline: "auto", mating: matingRun };
   const w = state.winner;
   setMatchingLayout(w);
   $("model-program").textContent = `Program ${w.program}`;
@@ -1653,6 +1860,7 @@ function applyConfig(config) {
   if (!config.live) {
     offNote(document.querySelector(".dropzone"), "Your own photos", true);
     offNote($("repair-again"), "Repair");
+    offNote($("mating-row"), "Pattern from a photo");
   }
   if (!config.voice) {
     offNote($("voice-card"), "Voice editing");

@@ -1,0 +1,1288 @@
+{
+  "chosen_method": "color",
+  "scale_used": "simple",
+  "table": {
+    "outline": {
+      "length_mm": 69.56,
+      "width_mm": 40.47,
+      "vertex_count": 4,
+      "polygon_mm": [
+        [
+          -34.67,
+          -20.14
+        ],
+        [
+          -34.63,
+          20.12
+        ],
+        [
+          34.69,
+          20.07
+        ],
+        [
+          34.09,
+          -20.11
+        ]
+      ],
+      "rectangle_fill_ratio": 0.986
+    },
+    "hole_count": 2,
+    "holes": [
+      {
+        "shape": "rectangle",
+        "center_from_part_center_mm": [
+          -14.91,
+          -0.12
+        ],
+        "diameter_mm": 12.84,
+        "roundness": 0.473,
+        "solidity": 0.983,
+        "shape_match": 0.976,
+        "length_mm": 16.0,
+        "width_mm": 8.26,
+        "angle_deg": 0.0,
+        "polygon_mm": [
+          [
+            -6.99,
+            -4.19
+          ],
+          [
+            -6.95,
+            3.95
+          ],
+          [
+            -22.86,
+            3.96
+          ],
+          [
+            -22.86,
+            -4.19
+          ]
+        ]
+      },
+      {
+        "shape": "slot",
+        "center_from_part_center_mm": [
+          14.73,
+          -0.15
+        ],
+        "diameter_mm": 12.0,
+        "roundness": 0.295,
+        "solidity": 0.984,
+        "shape_match": 0.981,
+        "length_mm": 19.83,
+        "width_mm": 6.24,
+        "angle_deg": 0.0,
+        "polygon_mm": [
+          [
+            22.93,
+            -3.21
+          ],
+          [
+            24.94,
+            -0.64
+          ],
+          [
+            23.9,
+            2.3
+          ],
+          [
+            21.8,
+            2.91
+          ],
+          [
+            6.45,
+            2.93
+          ],
+          [
+            4.58,
+            0.25
+          ],
+          [
+            5.46,
+            -2.41
+          ],
+          [
+            7.25,
+            -3.18
+          ]
+        ]
+      }
+    ],
+    "center_on_table_mm": [
+      160.75,
+      81.3
+    ]
+  },
+  "card_edge_differences": [
+    0.0002893218770623207,
+    -0.013340999372303486
+  ],
+  "tables": {
+    "sam_full": {
+      "outline": {
+        "length_mm": 69.56,
+        "width_mm": 40.47,
+        "vertex_count": 4,
+        "polygon_mm": [
+          [
+            -34.67,
+            -20.14
+          ],
+          [
+            -34.63,
+            20.12
+          ],
+          [
+            34.69,
+            20.07
+          ],
+          [
+            34.09,
+            -20.11
+          ]
+        ],
+        "rectangle_fill_ratio": 0.986
+      },
+      "hole_count": 7,
+      "holes": [
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            -15.08,
+            1.07
+          ],
+          "diameter_mm": 7.82,
+          "roundness": 0.288,
+          "solidity": 0.683,
+          "shape_match": 0.66,
+          "length_mm": 15.35,
+          "width_mm": 5.01,
+          "angle_deg": 1.4,
+          "polygon_mm": [
+            [
+              -11.11,
+              -1.49
+            ],
+            [
+              -8.42,
+              -0.26
+            ],
+            [
+              -8.35,
+              -0.27
+            ],
+            [
+              -7.37,
+              1.81
+            ],
+            [
+              -8.16,
+              3.82
+            ],
+            [
+              -16.47,
+              2.3
+            ],
+            [
+              -21.67,
+              2.25
+            ],
+            [
+              -22.98,
+              1.35
+            ],
+            [
+              -20.96,
+              -1.97
+            ],
+            [
+              -18.62,
+              -0.37
+            ],
+            [
+              -18.36,
+              1.72
+            ],
+            [
+              -15.88,
+              0.65
+            ],
+            [
+              -14.3,
+              1.97
+            ],
+            [
+              -14.79,
+              0.59
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            -8.14,
+            -1.7
+          ],
+          "diameter_mm": 0.88,
+          "roundness": 0.71,
+          "solidity": 0.972,
+          "shape_match": 0.796,
+          "length_mm": 0.92,
+          "width_mm": 0.84,
+          "angle_deg": -36.9,
+          "polygon_mm": [
+            [
+              -8.67,
+              -1.64
+            ],
+            [
+              -7.56,
+              -1.7
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            9.18,
+            -0.03
+          ],
+          "diameter_mm": 4.75,
+          "roundness": 0.518,
+          "solidity": 0.768,
+          "shape_match": 0.654,
+          "length_mm": 7.49,
+          "width_mm": 3.81,
+          "angle_deg": 4.6,
+          "polygon_mm": [
+            [
+              10.48,
+              -1.6
+            ],
+            [
+              9.71,
+              0.9
+            ],
+            [
+              11.15,
+              0.24
+            ],
+            [
+              13.42,
+              1.97
+            ],
+            [
+              6.7,
+              1.6
+            ],
+            [
+              5.34,
+              -1.94
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            12.77,
+            -1.01
+          ],
+          "diameter_mm": 1.78,
+          "roundness": 0.97,
+          "solidity": 0.92,
+          "shape_match": 0.859,
+          "length_mm": 1.77,
+          "width_mm": 1.69,
+          "angle_deg": -36.9,
+          "polygon_mm": [
+            [
+              12.88,
+              -2.18
+            ],
+            [
+              13.9,
+              -0.84
+            ],
+            [
+              12.6,
+              0.13
+            ],
+            [
+              11.75,
+              -1.24
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            16.35,
+            0.61
+          ],
+          "diameter_mm": 2.23,
+          "roundness": 0.65,
+          "solidity": 0.849,
+          "shape_match": 0.667,
+          "length_mm": 2.86,
+          "width_mm": 2.17,
+          "angle_deg": -41.3,
+          "polygon_mm": [
+            [
+              16.62,
+              -1.0
+            ],
+            [
+              17.91,
+              0.27
+            ],
+            [
+              17.82,
+              0.45
+            ],
+            [
+              13.82,
+              1.92
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            20.18,
+            1.03
+          ],
+          "diameter_mm": 1.33,
+          "roundness": 0.671,
+          "solidity": 0.884,
+          "shape_match": 0.745,
+          "length_mm": 1.74,
+          "width_mm": 1.18,
+          "angle_deg": -32.5,
+          "polygon_mm": [
+            [
+              21.02,
+              0.96
+            ],
+            [
+              19.15,
+              1.02
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            22.4,
+            -3.34
+          ],
+          "diameter_mm": 1.07,
+          "roundness": 0.249,
+          "solidity": 0.827,
+          "shape_match": 0.643,
+          "length_mm": 2.39,
+          "width_mm": 0.65,
+          "angle_deg": 8.1,
+          "polygon_mm": [
+            [
+              23.57,
+              -3.06
+            ],
+            [
+              21.2,
+              -3.4
+            ]
+          ]
+        }
+      ],
+      "center_on_table_mm": [
+        160.75,
+        81.3
+      ]
+    },
+    "sam_crop": {
+      "outline": {
+        "length_mm": 69.55,
+        "width_mm": 40.44,
+        "vertex_count": 4,
+        "polygon_mm": [
+          [
+            -34.62,
+            -20.11
+          ],
+          [
+            -34.68,
+            20.02
+          ],
+          [
+            34.76,
+            20.06
+          ],
+          [
+            34.15,
+            -20.11
+          ]
+        ],
+        "rectangle_fill_ratio": 0.986
+      },
+      "hole_count": 2,
+      "holes": [
+        {
+          "shape": "rectangle",
+          "center_from_part_center_mm": [
+            -14.94,
+            -0.14
+          ],
+          "diameter_mm": 13.12,
+          "roundness": 0.487,
+          "solidity": 0.96,
+          "shape_match": 0.944,
+          "length_mm": 16.42,
+          "width_mm": 8.74,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              -6.99,
+              -4.22
+            ],
+            [
+              -6.8,
+              4.02
+            ],
+            [
+              -23.06,
+              4.14
+            ],
+            [
+              -22.84,
+              -4.49
+            ]
+          ]
+        },
+        {
+          "shape": "slot",
+          "center_from_part_center_mm": [
+            14.84,
+            -0.19
+          ],
+          "diameter_mm": 12.29,
+          "roundness": 0.314,
+          "solidity": 0.957,
+          "shape_match": 0.93,
+          "length_mm": 20.15,
+          "width_mm": 6.84,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              22.79,
+              -3.41
+            ],
+            [
+              25.21,
+              -0.77
+            ],
+            [
+              23.49,
+              3.13
+            ],
+            [
+              6.48,
+              3.06
+            ],
+            [
+              4.23,
+              -0.49
+            ],
+            [
+              6.92,
+              -3.27
+            ]
+          ]
+        }
+      ],
+      "center_on_table_mm": [
+        160.73,
+        81.32
+      ]
+    },
+    "color": {
+      "outline": {
+        "length_mm": 69.56,
+        "width_mm": 40.47,
+        "vertex_count": 4,
+        "polygon_mm": [
+          [
+            -34.67,
+            -20.14
+          ],
+          [
+            -34.63,
+            20.12
+          ],
+          [
+            34.69,
+            20.07
+          ],
+          [
+            34.09,
+            -20.11
+          ]
+        ],
+        "rectangle_fill_ratio": 0.986
+      },
+      "hole_count": 2,
+      "holes": [
+        {
+          "shape": "rectangle",
+          "center_from_part_center_mm": [
+            -14.91,
+            -0.12
+          ],
+          "diameter_mm": 12.84,
+          "roundness": 0.473,
+          "solidity": 0.983,
+          "shape_match": 0.976,
+          "length_mm": 16.0,
+          "width_mm": 8.26,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              -6.99,
+              -4.19
+            ],
+            [
+              -6.95,
+              3.95
+            ],
+            [
+              -22.86,
+              3.96
+            ],
+            [
+              -22.86,
+              -4.19
+            ]
+          ]
+        },
+        {
+          "shape": "slot",
+          "center_from_part_center_mm": [
+            14.73,
+            -0.15
+          ],
+          "diameter_mm": 12.0,
+          "roundness": 0.295,
+          "solidity": 0.984,
+          "shape_match": 0.981,
+          "length_mm": 19.83,
+          "width_mm": 6.24,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              22.93,
+              -3.21
+            ],
+            [
+              24.94,
+              -0.64
+            ],
+            [
+              23.9,
+              2.3
+            ],
+            [
+              21.8,
+              2.91
+            ],
+            [
+              6.45,
+              2.93
+            ],
+            [
+              4.58,
+              0.25
+            ],
+            [
+              5.46,
+              -2.41
+            ],
+            [
+              7.25,
+              -3.18
+            ]
+          ]
+        }
+      ],
+      "center_on_table_mm": [
+        160.75,
+        81.3
+      ]
+    }
+  },
+  "tables_with_homography_scale": {
+    "sam_full": {
+      "outline": {
+        "length_mm": 70.32,
+        "width_mm": 40.32,
+        "vertex_count": 4,
+        "polygon_mm": [
+          [
+            -35.07,
+            -20.06
+          ],
+          [
+            -34.98,
+            20.02
+          ],
+          [
+            35.02,
+            20.06
+          ],
+          [
+            35.03,
+            -20.04
+          ]
+        ],
+        "rectangle_fill_ratio": 0.99
+      },
+      "hole_count": 7,
+      "holes": [
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            -15.21,
+            1.16
+          ],
+          "diameter_mm": 7.85,
+          "roundness": 0.283,
+          "solidity": 0.683,
+          "shape_match": 0.66,
+          "length_mm": 15.55,
+          "width_mm": 4.99,
+          "angle_deg": 1.4,
+          "polygon_mm": [
+            [
+              -11.17,
+              -1.38
+            ],
+            [
+              -8.45,
+              -0.15
+            ],
+            [
+              -8.38,
+              -0.17
+            ],
+            [
+              -7.4,
+              1.91
+            ],
+            [
+              -8.21,
+              3.91
+            ],
+            [
+              -16.62,
+              2.39
+            ],
+            [
+              -19.13,
+              3.56
+            ],
+            [
+              -23.21,
+              1.44
+            ],
+            [
+              -21.16,
+              -1.86
+            ],
+            [
+              -18.79,
+              -0.28
+            ],
+            [
+              -18.53,
+              1.81
+            ],
+            [
+              -16.02,
+              0.75
+            ],
+            [
+              -14.41,
+              2.07
+            ],
+            [
+              -14.92,
+              0.68
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            -8.16,
+            -1.59
+          ],
+          "diameter_mm": 0.88,
+          "roundness": 0.699,
+          "solidity": 0.972,
+          "shape_match": 0.784,
+          "length_mm": 0.94,
+          "width_mm": 0.85,
+          "angle_deg": -36.3,
+          "polygon_mm": [
+            [
+              -8.7,
+              -1.53
+            ],
+            [
+              -7.58,
+              -1.59
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            9.4,
+            0.08
+          ],
+          "diameter_mm": 4.78,
+          "roundness": 0.512,
+          "solidity": 0.768,
+          "shape_match": 0.656,
+          "length_mm": 7.58,
+          "width_mm": 3.81,
+          "angle_deg": 4.5,
+          "polygon_mm": [
+            [
+              10.74,
+              -1.48
+            ],
+            [
+              9.93,
+              1.01
+            ],
+            [
+              11.4,
+              0.36
+            ],
+            [
+              13.69,
+              2.08
+            ],
+            [
+              6.87,
+              1.71
+            ],
+            [
+              5.53,
+              -1.82
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            13.07,
+            -0.9
+          ],
+          "diameter_mm": 1.8,
+          "roundness": 0.979,
+          "solidity": 0.92,
+          "shape_match": 0.843,
+          "length_mm": 1.8,
+          "width_mm": 1.69,
+          "angle_deg": -36.2,
+          "polygon_mm": [
+            [
+              13.19,
+              -2.06
+            ],
+            [
+              14.2,
+              -0.72
+            ],
+            [
+              12.87,
+              0.25
+            ],
+            [
+              12.02,
+              -1.13
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            16.68,
+            0.73
+          ],
+          "diameter_mm": 2.25,
+          "roundness": 0.637,
+          "solidity": 0.849,
+          "shape_match": 0.669,
+          "length_mm": 2.91,
+          "width_mm": 2.17,
+          "angle_deg": -40.5,
+          "polygon_mm": [
+            [
+              16.97,
+              -0.88
+            ],
+            [
+              18.27,
+              0.39
+            ],
+            [
+              18.18,
+              0.56
+            ],
+            [
+              14.1,
+              2.03
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            20.57,
+            1.15
+          ],
+          "diameter_mm": 1.34,
+          "roundness": 0.657,
+          "solidity": 0.884,
+          "shape_match": 0.735,
+          "length_mm": 1.78,
+          "width_mm": 1.17,
+          "angle_deg": -31.8,
+          "polygon_mm": [
+            [
+              21.42,
+              1.08
+            ],
+            [
+              19.51,
+              1.14
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "center_from_part_center_mm": [
+            22.87,
+            -3.22
+          ],
+          "diameter_mm": 1.08,
+          "roundness": 0.245,
+          "solidity": 0.827,
+          "shape_match": 0.634,
+          "length_mm": 2.42,
+          "width_mm": 0.65,
+          "angle_deg": 8.0,
+          "polygon_mm": [
+            [
+              24.06,
+              -2.94
+            ],
+            [
+              21.66,
+              -3.28
+            ]
+          ]
+        }
+      ],
+      "center_on_table_mm": [
+        145.33,
+        27.03
+      ]
+    },
+    "sam_crop": {
+      "outline": {
+        "length_mm": 70.35,
+        "width_mm": 40.3,
+        "vertex_count": 4,
+        "polygon_mm": [
+          [
+            -35.04,
+            -20.04
+          ],
+          [
+            -35.04,
+            19.91
+          ],
+          [
+            35.06,
+            20.06
+          ],
+          [
+            35.08,
+            -20.04
+          ]
+        ],
+        "rectangle_fill_ratio": 0.989
+      },
+      "hole_count": 2,
+      "holes": [
+        {
+          "shape": "rectangle",
+          "center_from_part_center_mm": [
+            -15.09,
+            -0.05
+          ],
+          "diameter_mm": 13.19,
+          "roundness": 0.479,
+          "solidity": 0.96,
+          "shape_match": 0.943,
+          "length_mm": 16.63,
+          "width_mm": 8.71,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              -7.0,
+              -4.11
+            ],
+            [
+              -6.85,
+              4.1
+            ],
+            [
+              -23.31,
+              4.2
+            ],
+            [
+              -23.08,
+              -4.39
+            ]
+          ]
+        },
+        {
+          "shape": "slot",
+          "center_from_part_center_mm": [
+            15.14,
+            -0.08
+          ],
+          "diameter_mm": 12.37,
+          "roundness": 0.308,
+          "solidity": 0.957,
+          "shape_match": 0.926,
+          "length_mm": 20.47,
+          "width_mm": 6.82,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              23.22,
+              -3.29
+            ],
+            [
+              25.7,
+              -0.68
+            ],
+            [
+              23.88,
+              3.24
+            ],
+            [
+              6.62,
+              3.16
+            ],
+            [
+              4.36,
+              -0.38
+            ],
+            [
+              7.12,
+              -3.15
+            ]
+          ]
+        }
+      ],
+      "center_on_table_mm": [
+        145.33,
+        27.05
+      ]
+    },
+    "color": {
+      "outline": {
+        "length_mm": 70.32,
+        "width_mm": 40.32,
+        "vertex_count": 4,
+        "polygon_mm": [
+          [
+            -35.07,
+            -20.06
+          ],
+          [
+            -34.98,
+            20.02
+          ],
+          [
+            35.02,
+            20.06
+          ],
+          [
+            35.03,
+            -20.04
+          ]
+        ],
+        "rectangle_fill_ratio": 0.99
+      },
+      "hole_count": 2,
+      "holes": [
+        {
+          "shape": "rectangle",
+          "center_from_part_center_mm": [
+            -15.03,
+            -0.02
+          ],
+          "diameter_mm": 12.9,
+          "roundness": 0.465,
+          "solidity": 0.983,
+          "shape_match": 0.979,
+          "length_mm": 16.22,
+          "width_mm": 8.23,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              -6.98,
+              -4.07
+            ],
+            [
+              -6.98,
+              4.04
+            ],
+            [
+              -23.09,
+              4.04
+            ],
+            [
+              -23.09,
+              -4.08
+            ]
+          ]
+        },
+        {
+          "shape": "slot",
+          "center_from_part_center_mm": [
+            15.04,
+            -0.03
+          ],
+          "diameter_mm": 12.08,
+          "roundness": 0.29,
+          "solidity": 0.984,
+          "shape_match": 0.978,
+          "length_mm": 20.14,
+          "width_mm": 6.22,
+          "angle_deg": 0.0,
+          "polygon_mm": [
+            [
+              23.41,
+              -3.08
+            ],
+            [
+              25.42,
+              -0.52
+            ],
+            [
+              24.33,
+              2.42
+            ],
+            [
+              22.18,
+              3.02
+            ],
+            [
+              6.61,
+              3.03
+            ],
+            [
+              4.73,
+              0.36
+            ],
+            [
+              5.65,
+              -2.29
+            ],
+            [
+              7.47,
+              -3.06
+            ]
+          ]
+        }
+      ],
+      "center_on_table_mm": [
+        145.33,
+        27.03
+      ]
+    }
+  },
+  "errors_vs_truth": {
+    "sam_full": {
+      "length_mm": -0.44,
+      "width_mm": 0.47,
+      "vertex_count": 0,
+      "hole_count": 5,
+      "holes": [
+        {
+          "true_shape": "rectangle",
+          "measured_shape": "polygon",
+          "true_diameter_mm": 12.766,
+          "center_error_mm": 1.073,
+          "diameter_error_mm": -4.946,
+          "length_error_mm": -0.65,
+          "width_error_mm": -2.99
+        },
+        {
+          "true_shape": "slot",
+          "measured_shape": "polygon",
+          "true_diameter_mm": 11.956,
+          "center_error_mm": 1.481,
+          "diameter_error_mm": -9.726,
+          "length_error_mm": -17.14,
+          "width_error_mm": -3.83
+        }
+      ]
+    },
+    "sam_crop": {
+      "length_mm": -0.45,
+      "width_mm": 0.44,
+      "vertex_count": 0,
+      "hole_count": 0,
+      "holes": [
+        {
+          "true_shape": "rectangle",
+          "measured_shape": "rectangle",
+          "true_diameter_mm": 12.766,
+          "center_error_mm": 0.152,
+          "diameter_error_mm": 0.354,
+          "length_error_mm": 0.42,
+          "width_error_mm": 0.74
+        },
+        {
+          "true_shape": "slot",
+          "measured_shape": "slot",
+          "true_diameter_mm": 11.956,
+          "center_error_mm": 0.248,
+          "diameter_error_mm": 0.334,
+          "length_error_mm": 0.15,
+          "width_error_mm": 0.84
+        }
+      ]
+    },
+    "color": {
+      "length_mm": -0.44,
+      "width_mm": 0.47,
+      "vertex_count": 0,
+      "hole_count": 0,
+      "holes": [
+        {
+          "true_shape": "rectangle",
+          "measured_shape": "rectangle",
+          "true_diameter_mm": 12.766,
+          "center_error_mm": 0.15,
+          "diameter_error_mm": 0.074,
+          "length_error_mm": 0.0,
+          "width_error_mm": 0.26
+        },
+        {
+          "true_shape": "slot",
+          "measured_shape": "slot",
+          "true_diameter_mm": 11.956,
+          "center_error_mm": 0.309,
+          "diameter_error_mm": 0.044,
+          "length_error_mm": -0.17,
+          "width_error_mm": 0.24
+        }
+      ]
+    }
+  },
+  "errors_vs_truth_with_homography_scale": {
+    "sam_full": {
+      "length_mm": 0.32,
+      "width_mm": 0.32,
+      "vertex_count": 0,
+      "hole_count": 5,
+      "holes": [
+        {
+          "true_shape": "rectangle",
+          "measured_shape": "polygon",
+          "true_diameter_mm": 12.766,
+          "center_error_mm": 1.179,
+          "diameter_error_mm": -4.916,
+          "length_error_mm": -0.45,
+          "width_error_mm": -3.01
+        },
+        {
+          "true_shape": "slot",
+          "measured_shape": "polygon",
+          "true_diameter_mm": 11.956,
+          "center_error_mm": 1.832,
+          "diameter_error_mm": -9.706,
+          "length_error_mm": -17.09,
+          "width_error_mm": -3.83
+        }
+      ]
+    },
+    "sam_crop": {
+      "length_mm": 0.35,
+      "width_mm": 0.3,
+      "vertex_count": 0,
+      "hole_count": 0,
+      "holes": [
+        {
+          "true_shape": "rectangle",
+          "measured_shape": "rectangle",
+          "true_diameter_mm": 12.766,
+          "center_error_mm": 0.103,
+          "diameter_error_mm": 0.424,
+          "length_error_mm": 0.63,
+          "width_error_mm": 0.71
+        },
+        {
+          "true_shape": "slot",
+          "measured_shape": "slot",
+          "true_diameter_mm": 11.956,
+          "center_error_mm": 0.161,
+          "diameter_error_mm": 0.414,
+          "length_error_mm": 0.47,
+          "width_error_mm": 0.82
+        }
+      ]
+    },
+    "color": {
+      "length_mm": 0.32,
+      "width_mm": 0.32,
+      "vertex_count": 0,
+      "hole_count": 0,
+      "holes": [
+        {
+          "true_shape": "rectangle",
+          "measured_shape": "rectangle",
+          "true_diameter_mm": 12.766,
+          "center_error_mm": 0.036,
+          "diameter_error_mm": 0.134,
+          "length_error_mm": 0.22,
+          "width_error_mm": 0.23
+        },
+        {
+          "true_shape": "slot",
+          "measured_shape": "slot",
+          "true_diameter_mm": 11.956,
+          "center_error_mm": 0.05,
+          "diameter_error_mm": 0.124,
+          "length_error_mm": 0.14,
+          "width_error_mm": 0.22
+        }
+      ]
+    }
+  },
+  "mask_iou_vs_truth": {
+    "sam_full": 0.9299,
+    "sam_crop": 0.9841,
+    "color": 0.9922
+  }
+}

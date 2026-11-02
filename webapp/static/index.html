@@ -276,6 +276,26 @@
                 <span id="adapter-summary" class="adapter-summary"></span>
                 <div class="break-actions"><button class="break-apply" id="adapter-apply"><span class="icon">check</span>Apply</button><button class="break-ignore" id="adapter-dismiss">Dismiss</button></div>
               </div>
+              <div class="mating-row" id="mating-row">
+                <button type="button" id="adapter-photo">From a photo</button>
+                <input type="file" id="mating-file" accept="image/*" class="hidden" aria-label="mating part photo">
+              </div>
+              <div class="mating-panel hidden" id="mating-panel">
+                <div class="mating-photo" id="mating-photo-wrap">
+                  <img id="mating-photo" alt="mating part photo">
+                  <svg id="mating-svg" aria-hidden="true"></svg>
+                  <div class="scanline hidden" id="mating-scan"></div>
+                </div>
+                <p class="status-line" id="mating-status"></p>
+                <table class="mating-table hidden" id="mating-table"></table>
+                <label class="mating-thickness hidden" id="mating-thickness-row">Mating thickness (entered, mm)
+                  <input type="text" inputmode="decimal" id="mating-thickness" value="3.0">
+                </label>
+                <div class="adapter-parsed hidden" id="mating-parsed">
+                  <span id="mating-summary" class="adapter-summary"></span>
+                  <div class="break-actions"><button class="break-apply" id="mating-apply"><span class="icon">check</span>Apply</button><button class="break-ignore" id="mating-dismiss">Dismiss</button></div>
+                </div>
+              </div>
               <p class="status-line" id="adapter-status"></p>
             </div>
           </div>

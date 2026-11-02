@@ -29,6 +29,7 @@ import adapter_pattern
 import adapter_place
 import drawing_export
 import matching_part
+import mating_measure
 import voice_edit
 from webapp import gallery, live, replay
 from webapp.builder import Builder
@@ -373,6 +374,60 @@ async def adapter_parse(name: str, request: Request):
         raise HTTPException(502, f"Muse Spark Open did not answer: {type(error).__name__}")
 
 
+@app.post("/api/runs/{name}/matching/adapter/mating/upload", dependencies=[Depends(_needs_keys)])
+async def mating_upload(name: str, photo: UploadFile = File(...)):
+    """Pattern B from a photo: store the mating part's photo (upright, without EXIF) as a live run.
+
+    Measure it with the live measure stream, then turn it into a pattern below. Stored like any
+    live run, so it stays out of the gallery unless opted in with public.txt.
+    """
+    try:
+        replay.run_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    try:
+        return live.save_upload(await photo.read())
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+
+
+@app.post("/api/runs/{name}/matching/adapter/mating/pattern", dependencies=[Depends(_needs_keys)])
+async def mating_pattern(name: str, request: Request):
+    """Pattern B from a measured mating photo: its holes, centroid-relative, with measured diameters.
+
+    Body: {"mating": live run name, "thickness": entered mating thickness in mm (default 3)}.
+    No model is called here (measuring already used SAM 3.1). Unusable photos are 422 with a
+    message, never a guess. The pattern, the measured outline and the entered thickness are kept
+    in the mating run's 4_mating.json for the assembly check.
+    """
+    try:
+        replay.run_dir(name)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    body = await request.json()
+    thickness = body.get("thickness", 3.0)
+    if isinstance(thickness, bool) or not isinstance(thickness, (int, float)) or not 0.1 <= thickness <= 100:
+        raise HTTPException(400, "send a mating thickness between 0.1 and 100 mm")
+    mating = body.get("mating")
+    try:
+        folder = live.live_dir(mating if isinstance(mating, str) else "")
+    except FileNotFoundError:
+        raise HTTPException(404, f"no mating photo run named {mating!r}")
+    measurements = folder / "3_measurements.json"
+    if not measurements.exists():
+        raise HTTPException(422, "the mating photo has not been measured yet — click the mating part first")
+    table = json.loads(measurements.read_text(encoding="utf-8"))["table"]
+    result, error = mating_measure.pattern_from_table(table)
+    if result is None:
+        raise HTTPException(422, error)
+    (folder / "4_mating.json").write_text(json.dumps(
+        {"pattern": result["pattern"], "summary": result["summary"], "outline_mm": result["outline_mm"],
+         "outline_polygon_mm": result["outline_polygon_mm"], "thickness_mm": round(float(thickness), 2),
+         "thickness_source": "entered", "main_run": name}, indent=2), encoding="utf-8")
+    return {"pattern": result["pattern"], "summary": result["summary"], "mating": mating,
+            "outline_mm": result["outline_mm"], "thickness_mm": round(float(thickness), 2)}
+
+
 @app.post("/api/runs/{name}/matching/adapter/place")
 async def adapter_placement(name: str, request: Request):
     """Place pattern B onto the original built with {"base"}: deterministic candidates, no model.
@@ -403,13 +458,21 @@ async def adapter_outline_program(name: str, request: Request):
     """
     body = await request.json()
     key, pattern, _, original, mode = await _adapter_key(name, body)
+    mating_run = body.get("mating")  # optional: the mating photo run, when pattern B was measured
+    if mating_run is not None:  # verified before the cache lookup, so bad input never hits the cache
+        try:
+            mating_folder = live.live_dir(mating_run if isinstance(mating_run, str) else "")
+        except FileNotFoundError:
+            raise HTTPException(404, f"no mating photo run named {mating_run!r}")
+        if not (mating_folder / "4_mating.json").exists():
+            raise HTTPException(422, "the mating photo has not been measured yet — click the mating part first")
     program, meta_path = MATCHING_DIR / f"{key}.py", MATCHING_DIR / f"{key}.json"
     if program.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         return {**_matching_info(name, "adapter", program),
                 "parameters": matching_part.slider_parameters(program.read_text(encoding="utf-8")),
                 "pattern": meta["pattern"], "placement": meta["placement"], "winner": meta["winner"],
-                "outline_source": meta["outline_source"],
+                "outline_source": meta["outline_source"], "mating": meta.get("mating"),
                 "candidates": meta["candidates"], "cached": True}
     _, profile = await _matching(name, "cover", body.get("base"))
     placed = adapter_place.place_pattern(profile, pattern)
@@ -451,6 +514,7 @@ async def adapter_outline_program(name: str, request: Request):
             outline_source = "Muse Spark Open"
     meta = {"pattern": pattern, "placement": placed, "holes_a": profile["holes"], "margin_default": margin_default,
             "thickness": profile["thickness"], "outline_source": outline_source,
+            "mating": {"run": mating_run} if mating_run is not None else None,
             "winner": winner["candidate"] if winner else None, "candidates": rows}
     MATCHING_DIR.mkdir(parents=True, exist_ok=True)
     for path, text in ((meta_path, json.dumps(meta)), (program, source)):
@@ -460,7 +524,7 @@ async def adapter_outline_program(name: str, request: Request):
     return {**_matching_info(name, "adapter", program),
             "parameters": matching_part.slider_parameters(source),
             "pattern": pattern, "placement": placed, "winner": meta["winner"], "outline_source": outline_source,
-            "candidates": rows, "cached": False}
+            "mating": meta["mating"], "candidates": rows, "cached": False}
 
 
 @app.post("/api/runs/{name}/voice/transcribe", dependencies=[Depends(_needs_keys)])
