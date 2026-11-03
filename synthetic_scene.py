@@ -13,6 +13,7 @@ import numpy as np
 from measure import CARD_LONG_MM, CARD_SHORT_MM
 from parts.template_parts import make_part
 from render_silhouette import render_top_silhouette
+from synthetic_appearance import paint_surface
 
 CANVAS_MM_PER_PIXEL = 0.05
 WORLD_MM = (-20.0, -60.0, 215.0, 115.0)  # x_min, y_min, x_max, y_max of the drawn table area
@@ -106,8 +107,13 @@ def photo_from_world():
     return cv2.getPerspectiveTransform(world, photo)
 
 
-def make_scene(workplane=None, part_color=LIGHT_METAL, center_mm=(145.0, 27.0), angle_deg=8.0, seed=0):
-    """Return (photo_rgb, {"card": mask, "part": mask}). Default part: template plate A."""
+def make_scene(workplane=None, part_color=LIGHT_METAL, center_mm=(145.0, 27.0), angle_deg=8.0, seed=0,
+               appearance=None):
+    """Return (photo_rgb, {"card": mask, "part": mask}). Default part: template plate A.
+
+    appearance selects a painted surface from synthetic_appearance (part_color is then
+    ignored); None keeps the legacy flat color with brushed streaks.
+    """
     workplane = workplane if workplane is not None else make_part("A")
     rng = np.random.default_rng(seed)
     width = round((WORLD_MM[2] - WORLD_MM[0]) / CANVAS_MM_PER_PIXEL)
@@ -118,8 +124,12 @@ def make_scene(workplane=None, part_color=LIGHT_METAL, center_mm=(145.0, 27.0), 
     part_mask = _part_mask((height, width), workplane, center_mm, angle_deg)
     alpha = card_mask[..., None] / 255
     canvas = card_art.astype(np.float32) * alpha + canvas * (1 - alpha)
-    brushed = cv2.blur(rng.normal(0, 6, (height, width)).astype(np.float32), (41, 1))  # brushed metal streaks
-    surface = np.dstack([part_color[i] + brushed for i in range(3)])
+    if appearance is None:
+        brushed = cv2.blur(rng.normal(0, 6, (height, width)).astype(np.float32), (41, 1))  # brushed metal streaks
+        surface = np.dstack([part_color[i] + brushed for i in range(3)])
+    else:
+        rng.normal(0, 6, (height, width))  # discarded: background and noise stay identical across appearances
+        surface = paint_surface(height, width, part_mask, appearance, seed)
     canvas = np.where(part_mask[..., None] > 0, surface, canvas)
     canvas = cv2.GaussianBlur(canvas.astype(np.float32), (0, 0), 1.0)  # avoid aliasing when shrinking
 
