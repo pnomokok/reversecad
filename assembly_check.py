@@ -3,23 +3,26 @@
 The stack is the original part, the adapter plate and the mating part (or a stand-in plate when
 pattern B came from a preset, text or voice). Every plate is rebuilt from its built top-face
 profile through a baseline table (baseline_cad): round holes stay exact circles, outlines and
-shaped holes arrive as the profile's 0.01 mm points. Screws are fixed cylinders at the adapter's
-hole centers - they are rigid, so a screw either passes every plate it joins or it is blocked.
+shaped holes arrive as the profile's 0.01 mm points. Screws are rigid cylinders seated in the
+outer plates' real holes - a screw either clears every plate it joins or it is blocked.
 
-Two hole styles: Exact (holes as built) and Slotted (every round hole of pattern A and pattern B,
-on every plate that carries it, becomes a slot along its pattern's long axis, 2 x SHIFT_MM longer
-than the hole's diameter). Two error cases: As measured (holes where the models put them) and
-With measured error (each pattern's own hole spacing grows by SHIFT_MM: every hole moves SHIFT_MM
-/ 2 outward from its pattern's centroid along the long axis; the adapter stays nominal).
+Two hole styles: Exact (holes as built) and Slotted (only the adapter's round holes of pattern A
+and pattern B become slots along their pattern's long axis, 2 x SHIFT_MM longer than the hole's
+diameter). Two error cases: As measured (holes where the models put them) and With measured
+error (each outer pattern's own hole spacing grows by SHIFT_MM: every hole moves SHIFT_MM / 2
+outward from its pattern's centroid along the long axis; the adapter stays nominal, and the
+screws follow the outer holes they sit in).
 
-Why slots live on every plate, not just the adapter: with the error shift (0.64 mm per side) larger
-than a screw's radial slack (e.g. 0.50 mm for M5 in a 6.0 mm hole), a slot in the middle plate alone
-cannot save a fixed screw - the shifted round holes of the outer plates still overlap it. Slotting
-the joint's holes everywhere is what lets the same fixed screws pass.
+Why only the adapter gets slots: the adapter is the part we make; the original part and the
+mating part already exist, so their holes can never be slotted or changed. A screw seated in a
+shifted outer hole (0.64 mm per side) clears the adapter's nominal round hole only through its
+radial slack (e.g. 0.50 mm for M5 in a 6.0 mm hole) - that shortfall blocks it in Exact, while
+the adapter's slots (SHIFT_MM of room per side along the axis) absorb the shift in Slotted.
 
 Pure geometry and bookkeeping only; the solids and the interference volumes are computed by the
 build worker (its "assembly" job), which is the only place CadQuery is touched.
 """
+import copy
 import math
 
 import adapter_pattern
@@ -48,6 +51,10 @@ MATING_LABEL = "measured mating part"
 
 HOLE_STYLES = ("exact", "slotted")
 ERROR_CASES = ("as_measured", "with_error")
+
+#: Version of the worker spec build_stack returns: bumped when the stack logic changes, so old
+#: cached checks (keyed by their spec hash) retire instead of being served as current.
+SPEC_VERSION = 3
 
 
 def screw_for_diameter(diameter_mm):
@@ -223,11 +230,145 @@ def stand_in_table(holes_b, thickness_mm, margin_mm=STAND_IN_MARGIN_MM):
                        "diameter_mm": h["d"]} for h in holes_b]}, thickness_mm
 
 
-def as_slot_record(center, diameter_mm, axis_deg):
-    """A round hole as a slot record: width = diameter, length = diameter + 2 x SHIFT_MM."""
-    return {"shape": "slot", "center_from_part_center_mm": [center[0], center[1]],
-            "diameter_mm": diameter_mm, "length_mm": round(diameter_mm + 2 * SHIFT_MM, 3),
-            "width_mm": diameter_mm, "angle_deg": axis_deg}
+def screw_groups(tagged):
+    """Adapter holes grouped by size for the screw selects: {key: {"size", "default", "holes"}}."""
+    groups = {}
+    for entry in tagged:
+        key = f"{entry['size']:.2f}"
+        groups.setdefault(key, {"size": entry["size"],
+                                "default": screw_for_diameter(entry["size"]), "holes": []})
+        groups[key]["holes"].append(entry)
+    return groups
+
+
+def record_to_spec(record):
+    """A baseline hole record as a worker spec hole (circle, slot or sampled polygon)."""
+    u, v = record["center_from_part_center_mm"]
+    if record["shape"] == "circle":
+        return {"circle": (u, v, record["diameter_mm"])}
+    if record["shape"] == "slot":
+        return {"slot": (u, v, record["length_mm"], record["width_mm"], record["angle_deg"])}
+    if record["shape"] == "rectangle":
+        angle = math.radians(record["angle_deg"])
+        ux, uy = math.cos(angle), math.sin(angle)
+        half_l, half_w = record["length_mm"] / 2, record["width_mm"] / 2
+        return {"polygon": [(round(u + su * half_l * ux - sv * half_w * uy, 3),
+                             round(v + su * half_l * uy + sv * half_w * ux, 3))
+                            for su, sv in ((1, 1), (-1, 1), (-1, -1), (1, -1))]}
+    if record["shape"] == "ellipse":
+        angle = math.radians(record["angle_deg"])
+        ux, uy = math.cos(angle), math.sin(angle)
+        points = []
+        for i in range(32):
+            arc = 2 * math.pi * i / 32
+            lx, ly = math.cos(arc) * record["length_mm"] / 2, math.sin(arc) * record["width_mm"] / 2
+            points.append((round(u + lx * ux - ly * uy, 3), round(v + lx * uy + ly * ux, 3)))
+        return {"polygon": points}
+    return {"polygon": [tuple(p) for p in record["polygon_mm"]]}
+
+
+def _seat(entries, centers):
+    """Each entry seated in an outer hole (closest pairs first); an entry with no outer hole
+    left stays at its own center."""
+    pairs = sorted((math.dist(entry["center"], center), i, j)
+                   for i, entry in enumerate(entries) for j, center in enumerate(centers))
+    used_entries, used_centers, seated = set(), set(), {}
+    for _, i, j in pairs:
+        if i in used_entries or j in used_centers:
+            continue
+        used_entries.add(i)
+        used_centers.add(j)
+        seated[i] = centers[j]
+    return [seated.get(i, entries[i]["center"]) for i in range(len(entries))]
+
+
+def build_stack(original, adapter, mating, hole_style, error_case, screw_choices=None):
+    """(spec, groups, skipped) for the build worker's "assembly" job: the stacked plates, the
+    screws seated in the outer plates' real holes, and the screw-size groups with any skips.
+
+    original is {"outline", "holes", "thickness"} with holes in wall form ({"circle": (x, y, d)}
+    or {"polygon": [(x, y), ...]}); adapter {"outline", "tagged", "thickness"} with tagged built
+    holes ({"tag", "center", "size", "form"}); mating {"outline", "records", "label", "thickness"}
+    with baseline hole records. screw_choices maps screw-group keys to "M3"-"M6" or None to skip.
+
+    The physics: the outer plates always keep their round holes - only the adapter is the part we
+    make, so only it gets slots (in Slotted mode, through its own slotted program). With measured
+    error each outer pattern's spacing grows by SHIFT_MM (half per side along its long axis); the
+    adapter stays nominal and every screw follows the outer hole it sits in. A-screws join
+    original + adapter, B-screws adapter + mating.
+    """
+    if hole_style not in HOLE_STYLES:
+        raise ValueError(f"hole_style must be one of: {', '.join(HOLE_STYLES)}")
+    if error_case not in ERROR_CASES:
+        raise ValueError(f"error_case must be one of: {', '.join(ERROR_CASES)}")
+    choices = screw_choices or {}
+    axis_a = pattern_long_axis([adapter_place.hole_center(hole) for hole in original["holes"]]
+                               or [[0, 0]])
+    axis_b = pattern_long_axis([record["center_from_part_center_mm"] for record in mating["records"]]
+                               or [[0, 0]])
+    centers = [adapter_place.hole_center(hole) for hole in original["holes"]]
+    moved = (error_shifted_centers(centers, axis_a) if error_case == "with_error"
+             else [list(center) for center in centers])
+    original_final = []
+    for hole, center in zip(original["holes"], moved):
+        if "circle" in hole:  # rounds stay round: the original already exists, it is never slotted
+            original_final.append({"circle": (*center, hole["circle"][2])})
+        else:
+            dx = center[0] - adapter_place.hole_center(hole)[0]
+            dy = center[1] - adapter_place.hole_center(hole)[1]
+            original_final.append({"polygon": [(round(x + dx, 3), round(y + dy, 3))
+                                               for x, y in hole["polygon"]]})
+    records = copy.deepcopy(mating["records"])
+    if error_case == "with_error":
+        moved = error_shifted_centers([record["center_from_part_center_mm"] for record in records],
+                                      axis_b)
+        for record, center in zip(records, moved):
+            dx = center[0] - record["center_from_part_center_mm"][0]
+            dy = center[1] - record["center_from_part_center_mm"][1]
+            record["center_from_part_center_mm"] = center
+            if record["shape"] == "polygon":
+                record["polygon_mm"] = [[round(x + dx, 3), round(y + dy, 3)]
+                                        for x, y in record["polygon_mm"]]
+    t_o, t_a, t_m = original["thickness"], adapter["thickness"], mating["thickness"]
+    plates = [
+        {"name": "original", "label": "original", "outline": original["outline"], "thickness": t_o,
+         "z0": 0.0, "holes": original_final},
+        {"name": "adapter", "label": f"adapter ({hole_style})", "outline": adapter["outline"],
+         "thickness": t_a, "z0": t_o, "holes": [entry["form"] for entry in adapter["tagged"]]},
+        {"name": "mating", "label": mating["label"], "outline": mating["outline"],
+         "thickness": t_m, "z0": t_o + t_a, "holes": [record_to_spec(record) for record in records]},
+    ]
+    tagged = [dict(entry) for entry in adapter["tagged"]]
+    for tag, outer in (("A", [adapter_place.hole_center(hole) for hole in original_final]),
+                       ("B", [record["center_from_part_center_mm"] for record in records])):
+        indices = [i for i, entry in enumerate(tagged) if entry["tag"] == tag]
+        for i, seat in zip(indices, _seat([tagged[i] for i in indices], outer)):
+            tagged[i]["seat"] = seat
+    groups = screw_groups(tagged)
+    screws, skipped = [], []
+    for key in sorted(groups):
+        size = choices.get(key, groups[key]["default"])
+        if size is None:
+            skipped.append({"group": key, "size": groups[key]["size"], "message":
+                            f"no metric screw fits the Ø{groups[key]['size']} mm holes "
+                            f"(smallest clearance is M3 = {adapter_pattern.ISO_273_MEDIUM['M3']} mm) — skipped"})
+            continue
+        for entry in sorted(groups[key]["holes"], key=lambda e: (e["center"][0], e["center"][1])):
+            tag = entry["tag"]
+            axis = axis_a if tag == "A" else axis_b
+            screws.append({"pattern": tag, "group": key, "x": entry["seat"][0], "y": entry["seat"][1],
+                           "shift": [1.0, 0.0] if axis == 0.0 else [0.0, 1.0],
+                           "d": SHANK_DIAMETER_MM[size], "size": size,
+                           "z0": -SCREW_PROTRUDE_MM if tag == "A" else t_o,
+                           "z1": t_o + t_a if tag == "A" else t_o + t_a + t_m + SCREW_PROTRUDE_MM,
+                           "plates": ["original", "adapter"] if tag == "A" else ["adapter", "mating"]})
+    for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "A"],
+                                            key=lambda s: (s["x"], s["y"])), 1):
+        screw["id"] = f"A{position}"
+    for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "B"],
+                                            key=lambda s: (s["x"], s["y"])), 1):
+        screw["id"] = f"B{position}"
+    return {"version": SPEC_VERSION, "plates": plates, "screws": screws}, groups, skipped
 
 
 def profile_table(outline_points, holes):

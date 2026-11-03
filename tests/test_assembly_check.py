@@ -1,8 +1,10 @@
 """Assembly check and Slotted hole style, without calling any model.
 
-Pure geometry first (screw rule, slot walls, error shift, mating transform), then the endpoints
-on the A_light sample with a preset pattern (fallback outline, stand-in plate): Exact +
-as-measured passes with zero interference, Exact + measured error blocks, Slotted + error passes.
+Pure geometry first (screw rule, slot walls, error shift, mating transform, stack spec), then
+the endpoints on the A_light sample with a preset pattern (fallback outline, stand-in plate):
+all four style x error verdicts (only Exact + measured error blocks, at the adapter), clash
+locations, screw overrides and the slotted overlay forms. The outer plates always keep their
+round holes; only the adapter gets slots.
 """
 import json
 import math
@@ -125,6 +127,70 @@ def test_mating_table_moves_outline_and_holes_by_the_placement():
     assert [h["center_from_part_center_mm"] for h in table["holes"]] == [[-25.0, -7.0], [35.0, -7.0]]
 
 
+def _stack_inputs():
+    tagged = ([{"tag": "A", "center": [x, y], "size": 6.0, "form": {"circle": (x, y, 6.0)}}
+               for x in (-32.0, 32.0) for y in (-12.0, 12.0)]
+              + [{"tag": "B", "center": [h["x"], h["y"]], "size": h["d"],
+                  "form": {"circle": (h["x"], h["y"], h["d"])}} for h in B_HOLES])
+    original = {"outline": OUTLINE, "holes": [dict(hole) for hole in A_HOLES], "thickness": 3.0}
+    adapter = {"outline": OUTLINE, "tagged": tagged, "thickness": 3.0}
+    records = [{"shape": "circle", "center_from_part_center_mm": [h["x"], h["y"]],
+                "diameter_mm": h["d"]} for h in B_HOLES]
+    mating = {"outline": OUTLINE, "records": records, "label": "stand-in plate", "thickness": 3.0}
+    return original, adapter, mating
+
+
+def test_build_stack_outer_plates_keep_round_holes_in_every_case():
+    for style in ("exact", "slotted"):
+        for error in ("as_measured", "with_error"):
+            spec, _, _ = assembly_check.build_stack(*_stack_inputs(), style, error)
+            assert spec["version"] == assembly_check.SPEC_VERSION
+            holes = {plate["name"]: plate["holes"] for plate in spec["plates"]}
+            assert all("circle" in hole for hole in holes["original"]), (style, error)
+            assert all("circle" in hole for hole in holes["mating"]), (style, error)
+
+
+def test_build_stack_adapter_stays_nominal_and_screws_follow_outer_holes():
+    original, adapter, mating = _stack_inputs()
+    spec, groups, skipped = assembly_check.build_stack(original, adapter, mating, "exact", "with_error")
+    assert skipped == [] and sorted(groups) == ["5.50", "6.00"]
+    holes = {plate["name"]: plate["holes"] for plate in spec["plates"]}
+    assert holes["adapter"] == [entry["form"] for entry in adapter["tagged"]]
+    screws = {screw["id"]: screw for screw in spec["screws"]}
+    assert sorted(screws) == ["A1", "A2", "A3", "A4", "B1", "B2"]
+    assert all(screw["d"] == 5.0 and screw["size"] == "M5" for screw in screws.values())
+    for screw_id, x, y in (("A1", -32.64, -12.0), ("A2", -32.64, 12.0),
+                           ("A3", 32.64, -12.0), ("A4", 32.64, 12.0),
+                           ("B1", -30.64, 0.0), ("B2", 30.64, 0.0)):
+        assert (screws[screw_id]["x"], screws[screw_id]["y"]) == pytest.approx((x, y))
+    assert (screws["A1"]["z0"], screws["A1"]["z1"]) == (-1.0, 6.0)
+    assert (screws["B1"]["z0"], screws["B1"]["z1"]) == (3.0, 10.0)
+    spec, _, _ = assembly_check.build_stack(*_stack_inputs(), "exact", "as_measured")
+    screws = {screw["id"]: screw for screw in spec["screws"]}
+    assert (screws["A1"]["x"], screws["A1"]["y"]) == (-32.0, -12.0)
+    assert (screws["B2"]["x"], screws["B2"]["y"]) == (30.0, 0.0)
+
+
+def test_build_stack_keeps_measured_shaped_holes_as_they_are():
+    original, adapter, mating = _stack_inputs()
+    mating["records"].append({"shape": "slot", "center_from_part_center_mm": [0.0, 15.0],
+                              "diameter_mm": 5.0, "length_mm": 12.0, "width_mm": 5.0,
+                              "angle_deg": 0.0})
+    spec, _, _ = assembly_check.build_stack(original, adapter, mating, "slotted", "with_error")
+    holes = [hole for plate in spec["plates"] if plate["name"] == "mating" for hole in plate["holes"]]
+    slots = [hole["slot"] for hole in holes if "slot" in hole]
+    assert len(slots) == 1  # the measured slot, only moved - nothing is converted into a slot
+    assert slots[0][:2] == pytest.approx((0.64, 15.0)) and slots[0][2:] == (12.0, 5.0, 0.0)
+    assert sum("circle" in hole for hole in holes) == 2
+
+
+def test_build_stack_rejects_unknown_style_and_error_case():
+    with pytest.raises(ValueError):
+        assembly_check.build_stack(*_stack_inputs(), "oval", "as_measured")
+    with pytest.raises(ValueError):
+        assembly_check.build_stack(*_stack_inputs(), "exact", "maybe")
+
+
 def _outline_body(**overrides):
     body = {"base": {}, "pattern": PRESET, "outline": "fallback"}
     body.update(overrides)
@@ -197,6 +263,17 @@ def test_exact_with_error_blocks_every_screw():
     depths = {s["id"]: s["depth_mm"] for s in check["screws"]}
     assert all(depths[f"A{i}"] == pytest.approx(0.14, abs=0.02) for i in (1, 2, 3, 4))
     assert all(depths[f"B{i}"] == pytest.approx(0.39, abs=0.02) for i in (1, 2))
+    # The screws sit in the outer plates' shifted holes, so every clash is with the adapter.
+    for screw_id, artifacts in check["artifacts"].items():
+        assert artifacts["clashes"] != [], screw_id
+        assert all(url.endswith("_adapter.stl") for url in artifacts["clashes"]), screw_id
+    report = json.loads((server.MATCHING_DIR / f"asm_{check['check_id']}" / "report.json").read_text(
+        encoding="utf-8"))
+    for screw in report["screws"]:
+        amounts = screw["interference_mm3"]
+        assert amounts["adapter"] > 0
+        outer = "original" if screw["id"].startswith("A") else "mating"
+        assert amounts[outer] == 0.0
 
 
 def test_slotted_with_error_passes():
@@ -207,6 +284,15 @@ def test_slotted_with_error_passes():
     assert check["verdict"] == "pass" and check["message"] == "All 6 screws pass"
     assert all(s["overlap_mm3"] == 0.0 for s in check["screws"])
     assert [p["label"] for p in check["plates"]] == ["original", "adapter (slotted)", "stand-in plate"]
+
+
+def test_slotted_as_measured_passes():
+    _searched()
+    client.post("/api/runs/A_light/matching/adapter/slotted", json=_outline_body())
+    check = client.post("/api/runs/A_light/matching/adapter/assembly",
+                        json=_assembly_body("slotted", "as_measured")).json()
+    assert check["verdict"] == "pass" and check["message"] == "All 6 screws pass"
+    assert all(s["overlap_mm3"] == 0.0 for s in check["screws"])
 
 
 def test_screw_overrides_and_skips():

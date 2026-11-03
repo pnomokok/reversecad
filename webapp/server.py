@@ -639,17 +639,6 @@ def _tagged_adapter_holes(built_holes, holes_b):
     return tagged
 
 
-def _screw_groups(tagged):
-    """Adapter holes grouped by size for the screw selects: {key: {"size", "default", "holes"}}."""
-    groups = {}
-    for entry in tagged:
-        key = f"{entry['size']:.2f}"
-        groups.setdefault(key, {"size": entry["size"],
-                                "default": assembly_check.screw_for_diameter(entry["size"]), "holes": []})
-        groups[key]["holes"].append(entry)
-    return groups
-
-
 def _resolve_mating(name, body, meta):
     """(measured_table, mating_json) for the mating run, or (None, None) for a stand-in plate."""
     run = body.get("mating") or (meta.get("mating") or {}).get("run")
@@ -666,41 +655,16 @@ def _resolve_mating(name, body, meta):
             json.loads(mating.read_text(encoding="utf-8")))
 
 
-def _record_to_spec(record):
-    """A baseline hole record as a worker spec hole (circle, slot or sampled polygon)."""
-    u, v = record["center_from_part_center_mm"]
-    if record["shape"] == "circle":
-        return {"circle": (u, v, record["diameter_mm"])}
-    if record["shape"] == "slot":
-        return {"slot": (u, v, record["length_mm"], record["width_mm"], record["angle_deg"])}
-    if record["shape"] == "rectangle":
-        angle = math.radians(record["angle_deg"])
-        ux, uy = math.cos(angle), math.sin(angle)
-        half_l, half_w = record["length_mm"] / 2, record["width_mm"] / 2
-        return {"polygon": [(round(u + su * half_l * ux - sv * half_w * uy, 3),
-                             round(v + su * half_l * uy + sv * half_w * ux, 3))
-                            for su, sv in ((1, 1), (-1, 1), (-1, -1), (1, -1))]}
-    if record["shape"] == "ellipse":
-        angle = math.radians(record["angle_deg"])
-        ux, uy = math.cos(angle), math.sin(angle)
-        points = []
-        for i in range(32):
-            arc = 2 * math.pi * i / 32
-            lx, ly = math.cos(arc) * record["length_mm"] / 2, math.sin(arc) * record["width_mm"] / 2
-            points.append((round(u + lx * ux - ly * uy, 3), round(v + lx * uy + ly * ux, 3)))
-        return {"polygon": points}
-    return {"polygon": [tuple(p) for p in record["polygon_mm"]]}
-
-
 @app.post("/api/runs/{name}/matching/adapter/assembly")
 async def adapter_assembly(name: str, request: Request):
-    """The assembly check: stack original + adapter + mating plate, put each screw through the
-    plates it joins, and report every screw's interference volume per plate (computed by CadQuery).
+    """The assembly check: stack original + adapter + mating plate, seat each screw in the outer
+    plates' real holes, and report every screw's interference volume per plate (computed by CadQuery).
 
     Body: {"base", "pattern", "outline", "parameters", "hole_style" (exact/slotted),
     "error_case" ("as_measured"/"with_error"), "mating"? (else the outline's, else a stand-in plate),
-    "screws"? ({size-group: "M3"-"M6" or null to skip})}. Screws sit fixed at the adapter's hole
-    centers; A-screws join original + adapter, B-screws adapter + mating. No model is called;
+    "screws"? ({size-group: "M3"-"M6" or null to skip})}. Screws sit in the outer plates' holes
+    (nominal, or shifted outward with the error case); A-screws join original + adapter, B-screws
+    adapter + mating. Only the adapter gets slots in Slotted mode. No model is called;
     works in the demo. Cached by inputs; artifacts served under .../assembly/<check_id>/.
     """
     body = await request.json()
@@ -714,29 +678,6 @@ async def adapter_assembly(name: str, request: Request):
     _, original = await _matching(name, "cover", body.get("base"))
     holes_b = meta["placement"]["holes_b"]
     tagged = _tagged_adapter_holes(adapter["holes"], holes_b)
-    axis_a = assembly_check.pattern_long_axis([t["center"] for t in tagged if t["tag"] == "A"] or [[0, 0]])
-    axis_b = assembly_check.pattern_long_axis([[h["x"], h["y"]] for h in holes_b])
-
-    def shifted(holes, axis):
-        """Final hole forms: error case moves each hole SHIFT_MM / 2 outward from its pattern's
-        centroid along the axis; slotted style turns rounds into slots."""
-        centers = [adapter_place.hole_center(hole) for hole in holes]
-        moved = (assembly_check.error_shifted_centers(centers, axis) if error_case == "with_error"
-                 else [list(c) for c in centers])
-        final = []
-        for hole, center in zip(holes, moved):
-            if "circle" in hole and style == "slotted":
-                _, _, diameter = hole["circle"]
-                final.append({"slot": (*center, round(diameter + 2 * assembly_check.SHIFT_MM, 3),
-                                       diameter, axis)})
-            elif "circle" in hole:
-                final.append({"circle": (*center, hole["circle"][2])})
-            else:
-                dx = center[0] - adapter_place.hole_center(hole)[0]
-                dy = center[1] - adapter_place.hole_center(hole)[1]
-                final.append({"polygon": [(round(x + dx, 3), round(y + dy, 3)) for x, y in hole["polygon"]]})
-        return final
-
     measured_table, mating_json = _resolve_mating(name, body, meta)
     if measured_table is None:
         mating_records = [{"shape": "circle", "center_from_part_center_mm": [h["x"], h["y"]],
@@ -748,53 +689,18 @@ async def adapter_assembly(name: str, request: Request):
                                                meta["pattern"], mating_json["thickness_mm"])
         mating_records, mating_thickness = table["holes"], mating_json["thickness_mm"]
         mating_label = assembly_check.MATING_LABEL
-    if style == "slotted":
-        mating_records = [assembly_check.as_slot_record(h["center_from_part_center_mm"], h["diameter_mm"], axis_b)
-                          if h["shape"] == "circle" else h for h in mating_records]
-    if error_case == "with_error":
-        moved = assembly_check.error_shifted_centers(
-            [h["center_from_part_center_mm"] for h in mating_records], axis_b)
-        for record, center in zip(mating_records, moved):
-            dx, dy = center[0] - record["center_from_part_center_mm"][0], center[1] - record["center_from_part_center_mm"][1]
-            record["center_from_part_center_mm"] = center
-            if record["shape"] == "polygon":
-                record["polygon_mm"] = [[round(x + dx, 3), round(y + dy, 3)] for x, y in record["polygon_mm"]]
-
-    t_o, t_a, t_m = original["thickness"], adapter["thickness"], mating_thickness
-    plates = [
-        {"name": "original", "label": "original", "outline": original["outline"], "thickness": t_o,
-         "z0": 0.0, "holes": shifted([adapter_place.profile_hole(h) for h in original["holes"]], axis_a)},
-        {"name": "adapter", "label": f"adapter ({style})", "outline": adapter["outline"],
-         "thickness": t_a, "z0": t_o, "holes": [t["form"] for t in tagged]},
-        {"name": "mating", "label": mating_label, "outline": table["outline"]["polygon_mm"],
-         "thickness": t_m, "z0": t_o + t_a, "holes": [_record_to_spec(h) for h in mating_records]},
-    ]
-    groups, screw_overrides = _screw_groups(tagged), body.get("screws") or {}
+    screw_overrides = body.get("screws") or {}
     for key, size in screw_overrides.items():
         if size is not None and size not in assembly_check.SHANK_DIAMETER_MM:
             raise HTTPException(400, f"unknown screw size for group {key}: {size!r} (M3-M6 or null)")
-    screws, skipped = [], []
-    for key in sorted(groups):
-        size = screw_overrides.get(key, groups[key]["default"])
-        if size is None:
-            skipped.append({"group": key, "size": groups[key]["size"], "message":
-                            f"no metric screw fits the Ø{groups[key]['size']} mm holes "
-                            f"(smallest clearance is M3 = {adapter_pattern.ISO_273_MEDIUM['M3']} mm) — skipped"})
-            continue
-        for entry in sorted(groups[key]["holes"], key=lambda e: (e["center"][0], e["center"][1])):
-            tag = entry["tag"]
-            axis = axis_a if tag == "A" else axis_b
-            screws.append({"pattern": tag, "group": key, "x": entry["center"][0], "y": entry["center"][1],
-                           "shift": [1.0, 0.0] if axis == 0.0 else [0.0, 1.0],
-                           "d": assembly_check.SHANK_DIAMETER_MM[size], "size": size,
-                           "z0": -assembly_check.SCREW_PROTRUDE_MM if tag == "A" else t_o,
-                           "z1": t_o + t_a if tag == "A" else t_o + t_a + t_m + assembly_check.SCREW_PROTRUDE_MM,
-                           "plates": ["original", "adapter"] if tag == "A" else ["adapter", "mating"]})
-    for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "A"], key=lambda s: (s["x"], s["y"])), 1):
-        screw["id"] = f"A{position}"
-    for position, screw in enumerate(sorted([s for s in screws if s["pattern"] == "B"], key=lambda s: (s["x"], s["y"])), 1):
-        screw["id"] = f"B{position}"
-    spec = {"version": 2, "plates": plates, "screws": screws}  # versioned: worker logic changes retire old checks
+    spec, groups, skipped = assembly_check.build_stack(
+        {"outline": original["outline"],
+         "holes": [adapter_place.profile_hole(hole) for hole in original["holes"]],
+         "thickness": original["thickness"]},
+        {"outline": adapter["outline"], "tagged": tagged, "thickness": adapter["thickness"]},
+        {"outline": table["outline"]["polygon_mm"], "records": mating_records,
+         "label": mating_label, "thickness": mating_thickness},
+        style, error_case, screw_overrides)
     check_id = hashlib.sha256(json.dumps(spec, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     folder = MATCHING_DIR / f"asm_{check_id}"
     report_path = folder / "report.json"
@@ -819,7 +725,7 @@ async def adapter_assembly(name: str, request: Request):
     return {"check_id": check_id, "verdict": "blocked" if blocked else "pass", "message": message,
             "hole_style": style, "error_case": error_case, "screws": watched, "skipped": skipped,
             "groups": [{"key": key, "size": groups[key]["size"], "default": groups[key]["default"],
-                        "holes": sorted(s["id"] for s in screws if s["group"] == key)}
+                        "holes": sorted(s["id"] for s in spec["screws"] if s["group"] == key)}
                        for key in sorted(groups)],
             "plates": [{"name": p["name"], "label": p["label"], "thickness": p["thickness"], "z0": p["z0"],
                         "stl": f"{base}/plate_{p['name']}.stl"} for p in report["plates"]],
