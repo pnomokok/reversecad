@@ -62,12 +62,15 @@ def card(name):
         if label is None:
             return None
         outline = table["outline"]
-        # Live runs are uploaded photos; template scenes and samples are rendered. The one
-        # exception is live-20261028-013118-d23896, a synthetic render uploaded as a test,
-        # which shows as "Real photo".
+        # Live runs are uploaded photos; template scenes and samples are rendered, except a
+        # recorded live run in samples/, which says so. (One older exception:
+        # live-20261028-013118-d23896, a synthetic render uploaded as a test.)
+        if name.startswith("live-"):
+            kind = "Real photo · recorded live run" if _is_sample(folder) else "Real photo"
+        else:
+            kind = "Synthetic"
         return {"name": name, "length_mm": outline["length_mm"], "width_mm": outline["width_mm"],
-                "hole_count": len(table["holes"]), "source": label,
-                "kind": "Real photo" if name.startswith("live-") else "Synthetic"}
+                "hole_count": len(table["holes"]), "source": label, "kind": kind}
     except (FileNotFoundError, KeyError, ValueError, TypeError, OSError):
         return None  # unfinished or unreadable: no card, never a guess
 

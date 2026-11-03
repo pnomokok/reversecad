@@ -80,8 +80,8 @@ def config():
 
 @app.get("/api/runs")
 def runs():
-    """Saved runs that can be replayed."""
-    return {"runs": replay.list_runs()}
+    """Saved runs that can be replayed, plus the recorded samples among them."""
+    return {"runs": replay.list_runs(), "samples": replay.list_samples()}
 
 
 @app.get("/api/parts")

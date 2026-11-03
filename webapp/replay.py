@@ -42,6 +42,11 @@ def list_runs():
     return sorted(names)
 
 
+def list_samples():
+    """Sample names (samples/ only), so clients can tell recorded samples from local runs."""
+    return sorted(p.name for p in SAMPLES_DIR.iterdir() if p.is_dir()) if SAMPLES_DIR.exists() else []
+
+
 def run_dir(name, measured=True):
     """A run's folder; measured=False also accepts a live upload that has not been measured yet."""
     for source in SOURCES:
@@ -147,21 +152,35 @@ def fit_to_measurements_mm(row):
 
 
 # Synthetic scenes (run_template_scenes.py) and the template part each one shows: their true
-# dimensions are known. Real photos and live runs have no ground truth.
+# dimensions are known. A real-photo run has ruler truth when it ships 1_truth.json.
 SCENE_PARTS = {"A_light": "A", "A_light_repair": "A", "A_dark": "A", "B": "B", "C": "C", "D": "D", "E": "E"}
 
 
+def _ruler_truth(name):
+    """Ruler-measured truth (length, width, hole diameters) a real-photo run ships; else None."""
+    try:
+        path = run_dir(name) / "1_truth.json"
+    except FileNotFoundError:
+        return None  # no such run, so no truth
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
 def ground_truth_error(name, row):
-    """The candidate's outline and hole sizes against the true part, for synthetic scenes; else None.
+    """The candidate's outline and hole sizes against the true part; else None.
 
     {"length": [model, true], "width": [model, true], "holes": [[model, true], ...] or None if the
     hole counts differ}. Sizes in mm; holes as equal-area diameters, matched by size.
+    scenes compare against the CAD design, real-photo runs with 1_truth.json against the ruler.
     """
-    if name not in SCENE_PARTS or not row.get("outline_mm"):
+    if not row.get("outline_mm"):
         return None
-    from parts.template_parts import part_truth  # loads CadQuery; only needed for synthetic scenes
-
-    truth = part_truth(SCENE_PARTS[name])
+    if name in SCENE_PARTS:
+        from parts.template_parts import part_truth  # loads CadQuery; only needed for synthetic scenes
+        truth = part_truth(SCENE_PARTS[name])
+    else:
+        truth = _ruler_truth(name)
+        if truth is None:
+            return None
     true_holes = sorted(h["diameter_mm"] for h in truth["holes"])
     model_holes = sorted(row.get("hole_diameters_mm") or [])
     return {"length": [row["outline_mm"][0], truth["length"]], "width": [row["outline_mm"][1], truth["width"]],

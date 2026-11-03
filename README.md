@@ -2,6 +2,10 @@
 
 One photo of a flat part → an editable CAD program with real millimeter dimensions.
 
+Indie developer track · Theme: Push the Frontier (manufacturing)
+
+A photo of a physical part becomes manufacturable, measured geometry (laser, CNC, 3D print) that the assembly check tests against the real parts it must fit.
+
 The core of ReverseCAD — writing every candidate CAD program — runs on Muse Spark Open, Meta's open-weight model, served through Baseten.
 
 ![ReverseCAD result](reports/ui/A_light_edit.png)
@@ -118,6 +122,12 @@ The Parts screen shows every finished run as a card with a rotating 3D preview �
 - **Model results vary between runs** (see the two BREAK3 after-fix runs above); never trust a single run for a critical dimension.
 - **The Muse Spark Open price is unverified** ($1.25 / $4.25 per million tokens from a third-party listing); all Spark costs above use it.
 
+## Live, recorded and synthetic
+
+- **Without keys** you can replay the nine samples: each replays recorded outputs from an earlier run (measurements, candidates, repairs, completions); no model is called in replay. Works on a local server and in the online demo.
+- **With keys** you get live mode: new photos, voice editing, and new candidate searches and repairs.
+- Eight samples are **synthetic renders** (`A_light`, `A_light_repair`, `A_torn_fallback`, `D_tab_broken`, `A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`); one is a **real photo**: `live-20261103-224610-c8b8df` (the BREAK1 cardboard part; the QR code on its card was removed with a generative-erase tool before the run, nothing else changed; ruler truth ±0.5 mm).
+
 ## Run it
 
 Tested with **Python 3.13 on Windows 11**. The web page loads three.js from a CDN, so the browser needs internet access.
@@ -132,7 +142,7 @@ python -m venv .venv
 
 On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe`; tested on Linux (Python 3.13, fresh clone: install, tests, web app start); macOS not tested.
 
-Open **http://127.0.0.1:8000**. Eight saved synthetic runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), and four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`).
+Open **http://127.0.0.1:8000**. Nine saved runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`), and one recorded real-photo run (`live-20261103-224610-c8b8df`: broken cardboard part, 5 rejected candidates, a Wonder repair, a completion suggestion).
 
 ### Live mode (your own photos)
 
@@ -158,7 +168,7 @@ copy .env.example .env      # then write your keys into .env
 
 Every model call is logged per run with its tokens and estimated cost (`usage.jsonl`, shown on the search screen).
 
-Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the eight samples in the browser; live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
+Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the nine samples in the browser; live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
 
 ## Taking a photo
 
@@ -219,7 +229,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 | `sam_decode.py`, `usage_ledger.py` | Fast SAM mask decoding (identical to the library's), per-run model usage and cost |
 | `webapp/` | FastAPI back end (`server.py`, `replay.py`, `live.py`, `builder.py`, `gallery.py`) and the page (`static/`; all styling variables in `tokens.css`) |
 | `parts/`, `synthetic_scene.py` | Template test parts with ground truth, broken versions with their intact design, and their synthetic photos |
-| `samples/` | Compact saved synthetic runs for replay without API keys |
+| `samples/` | Compact saved runs for replay without API keys (8 synthetic, 1 recorded real photo) |
 | `tests/` | pytest suite |
 
 ## Built with

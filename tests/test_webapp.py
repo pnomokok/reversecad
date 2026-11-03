@@ -103,6 +103,19 @@ def test_fit_and_ground_truth_are_separate(monkeypatch):
     assert replay.ground_truth_error("live-anything", {"outline_mm": [1, 1]}) is None  # real photos: unknown
 
 
+@pytest.mark.skipif(not (replay.SAMPLES_DIR / "live-20261103-224610-c8b8df").exists(),
+                    reason="needs the real-photo sample")
+def test_real_photo_replays_ruler_truth(monkeypatch):
+    """The recorded live run compares against ruler values where synthetic samples show CAD truth."""
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
+    winner = client.get("/api/runs/live-20261103-224610-c8b8df/winner").json()
+    assert winner["program"] == "repaired.py" and winner["source"] == "repair · Muse Wonder"
+    truth = winner["ground_truth"]  # ruler midpoints from reports/real_parts.md: 106.5 × 96.0 mm, four Ø6 holes
+    assert [real for _, real in (truth["length"], truth["width"])] == [106.5, 96.0]
+    assert [real for _, real in truth["holes"]] == [6.0] * 4
+    assert abs(truth["length"][0] - 106.5) / 106.5 < 0.05 and abs(truth["width"][0] - 96.0) / 96.0 < 0.05
+
+
 def _stl_x_extent(data):
     """Length along X of an STL (ASCII or binary)."""
     if data[:5] == b"solid" and b"facet" in data[:1000]:
@@ -155,9 +168,12 @@ def test_sample_run_replays_like_a_fresh_clone(monkeypatch):
     monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
     replay.analysis.cache_clear()
     try:
-        assert client.get("/api/runs").json()["runs"] == ["A_brushed", "A_light", "A_light_repair",
-                                                            "A_torn_fallback", "C_wood", "D_black_plastic",
-                                                            "D_tab_broken", "E_glossy_white"]
+        body = client.get("/api/runs").json()
+        assert body["runs"] == ["A_brushed", "A_light", "A_light_repair",
+                                "A_torn_fallback", "C_wood", "D_black_plastic",
+                                "D_tab_broken", "E_glossy_white",
+                                "live-20261103-224610-c8b8df"]
+        assert body["samples"] == body["runs"]  # SOURCES is samples-only here, so every run is a sample
         assert client.get("/api/runs/A_light/photo").headers["content-type"] == "image/jpeg"
         assert client.get("/api/runs/A_light/analysis").json()["table"]["hole_count"] == 4
         events = _events(client.get("/api/runs/A_light/candidates/stream").text)

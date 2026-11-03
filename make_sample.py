@@ -2,7 +2,9 @@
 
 Keeps only what the web app's replay reads; the photo becomes a high-quality JPEG and the
 candidate silhouettes PNGs (the replay reads the saved masks, not the photo, for measurements).
-Only synthetic scenes belong here: real photos show the user's card.
+Only synthetic scenes (uppercase names) and reviewed real-photo runs (live-* names) belong
+here. A live run may be packed only after a human has confirmed its photo shows no personal
+data and ships without EXIF; unreviewed photos can never be packed by accident.
 
 Muse Wonder repair rounds and a completion suggestion are kept when the run has them (their
 programs, silhouettes, results and the material a completion adds), and so is the usage ledger.
@@ -24,8 +26,10 @@ FILES = ["2_sam_attempts.json", "3_measurements.json", "3_mask_card.png", "3_par
 
 def make_sample(name):
     source = RUNS_DIR / name
-    if not name[0].isupper():  # template scenes are named after their part (A_light, B, ...); real photos are not
-        raise SystemExit(f"{name!r} does not look like a synthetic scene; samples must not contain real photos")
+    # Template scenes are named after their part (A_light, B, ...); live-* names are real photos,
+    # packed only after a human has reviewed them for personal data and EXIF (see the docstring).
+    if not name[0].isupper() and not name.startswith("live-"):
+        raise SystemExit(f"{name!r} is neither a synthetic scene nor a reviewed real-photo run")
     target = SAMPLES_DIR / name
     shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True)
@@ -46,6 +50,9 @@ def make_sample(name):
                         np.load(mask_path).astype(np.uint8) * 255)
     if (source / "usage.jsonl").exists():
         shutil.copy(source / "usage.jsonl", target / "usage.jsonl")
+    for extra in ("1_truth.json", "notes.md"):  # ruler truth and packing notes; only reviewed real-photo runs have them
+        if (source / extra).exists():
+            shutil.copy(source / extra, target / extra)
     for repair in source.glob("repair_round_*"):  # Muse Wonder repairs: program, silhouette, result
         (target / repair.name).mkdir()
         for file in ("repaired.py", "result.json"):

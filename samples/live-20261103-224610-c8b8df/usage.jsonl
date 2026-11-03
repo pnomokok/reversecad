@@ -1,0 +1,11 @@
+{"time": "2026-11-03 22:46:54", "model": "sam-3.1", "purpose": "segment credit card", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "audio_seconds": 0, "seconds": 4.9}
+{"time": "2026-11-03 22:47:00", "model": "sam-3.1", "purpose": "segment card", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "audio_seconds": 0, "seconds": 6.0}
+{"time": "2026-11-03 22:47:06", "model": "sam-3.1", "purpose": "segment point", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "audio_seconds": 0, "seconds": 5.8}
+{"time": "2026-11-03 22:47:12", "model": "sam-3.1", "purpose": "segment crop_point", "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0, "images": 1, "audio_seconds": 0, "seconds": 6.1}
+{"time": "2026-11-03 22:48:25", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 3", "input_tokens": 3582, "output_tokens": 3350, "reasoning_tokens": 3035, "images": 0, "audio_seconds": 0, "seconds": 16.1}
+{"time": "2026-11-03 22:48:28", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 1", "input_tokens": 3564, "output_tokens": 3087, "reasoning_tokens": 2796, "images": 0, "audio_seconds": 0, "seconds": 16.9}
+{"time": "2026-11-03 22:48:29", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 5", "input_tokens": 3584, "output_tokens": 2664, "reasoning_tokens": 2320, "images": 0, "audio_seconds": 0, "seconds": 17.1}
+{"time": "2026-11-03 22:48:34", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 2", "input_tokens": 3584, "output_tokens": 4523, "reasoning_tokens": 4185, "images": 0, "audio_seconds": 0, "seconds": 25.0}
+{"time": "2026-11-03 22:48:35", "model": "meta-models/muse-spark-open-1026", "purpose": "candidate 4", "input_tokens": 3564, "output_tokens": 5801, "reasoning_tokens": 5462, "images": 0, "audio_seconds": 0, "seconds": 26.5}
+{"time": "2026-11-03 22:49:12", "model": "muse-wonder-1.0", "purpose": "repair round 1", "input_tokens": 5005, "output_tokens": 4446, "reasoning_tokens": 4018, "images": 0, "audio_seconds": 0, "seconds": 34.6}
+{"time": "2026-11-03 22:50:46", "model": "muse-wonder-1.0", "purpose": "completion (mask)", "input_tokens": 2396, "output_tokens": 9419, "reasoning_tokens": 8765, "images": 0, "audio_seconds": 0, "seconds": 94.0}

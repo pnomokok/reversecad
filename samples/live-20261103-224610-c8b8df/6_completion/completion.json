@@ -1,0 +1,99 @@
+{
+  "cues": [
+    {
+      "kind": "rough_edge",
+      "from": [
+        -52.66,
+        48.15
+      ],
+      "to": [
+        51.64,
+        35.14
+      ],
+      "length_mm": 105.11,
+      "roughness_mm": 2.184
+    },
+    {
+      "kind": "missing_material",
+      "mirror_axis": "u = 0",
+      "symmetry_iou": 0.964,
+      "area_mm2": 117.6,
+      "bbox_mm": [
+        37.0,
+        35.5,
+        53.0,
+        48.5
+      ]
+    },
+    {
+      "kind": "missing_material",
+      "mirror_axis": "v = 0",
+      "symmetry_iou": 0.956,
+      "area_mm2": 16.3,
+      "bbox_mm": [
+        9.25,
+        46.75,
+        22.25,
+        48.25
+      ]
+    },
+    {
+      "kind": "missing_material",
+      "mirror_axis": "v = 0",
+      "symmetry_iou": 0.956,
+      "area_mm2": 7.8,
+      "bbox_mm": [
+        22.75,
+        46.75,
+        29.0,
+        48.0
+      ]
+    }
+  ],
+  "winner": "repaired.py",
+  "broken": true,
+  "suggestion": "Restore the broken bottom-right corner to a square corner using the new restored_corner_size parameter.",
+  "rationale": "The rough edge and the missing-material regions next to it show the corner beyond the modeled diagonal is absent, while mirror symmetry about both axes and the other square corners predict a full rectangular corner there. Extending the bottom and right straight edges to their intersection restores that corner without changing the measured plate or holes.",
+  "parts": [
+    {
+      "name": "restored_corner_size",
+      "value": 14.0,
+      "basis": "measured",
+      "evidence": "The existing chamfer=14.0 parameter fixes the distance from the corner along the bottom and right edges, consistent with the missing-material bbox at that corner.",
+      "question": null
+    }
+  ],
+  "input": "mask",
+  "seconds": 94.0,
+  "usage": {
+    "completion_tokens": 9419,
+    "prompt_tokens": 2396,
+    "total_tokens": 11815,
+    "completion_tokens_details": {
+      "accepted_prediction_tokens": null,
+      "audio_tokens": null,
+      "reasoning_tokens": 8765,
+      "rejected_prediction_tokens": null,
+      "text_tokens": null
+    },
+    "prompt_tokens_details": {
+      "audio_tokens": null,
+      "cache_write_tokens": null,
+      "cached_tokens": 0,
+      "image_tokens": null,
+      "text_tokens": null
+    }
+  },
+  "error": null,
+  "program": "completed.py",
+  "check": {
+    "ok": true,
+    "reasons": [],
+    "base_volume_mm3": 30237.0,
+    "result_volume_mm3": 30531.0,
+    "added_volume_mm3": 294.0,
+    "removed_volume_mm3": 0
+  },
+  "status": "suggested",
+  "valid": true
+}

@@ -118,7 +118,17 @@ def test_demo_sources_list_samples_only(monkeypatch):
     monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
     names = {c["name"] for c in gallery.gallery_runs()}
     assert names == {"A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken",
-                       "A_brushed", "C_wood", "D_black_plastic", "E_glossy_white"}
+                       "A_brushed", "C_wood", "D_black_plastic", "E_glossy_white",
+                       "live-20261103-224610-c8b8df"}
+
+
+def test_demo_recorded_live_run_card(monkeypatch):
+    """The real-photo sample's card: recorded-live-run label, repair source, measured size."""
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
+    card = next(c for c in gallery.gallery_runs() if c["name"] == "live-20261103-224610-c8b8df")
+    assert card["kind"] == "Real photo · recorded live run"
+    assert card["source"] == "Muse Wonder repair"
+    assert (card["length_mm"], card["width_mm"], card["hole_count"]) == (107.0, 96.76, 4)
 
 
 def test_parts_endpoint_shape():

@@ -2298,8 +2298,8 @@ function drawingSVG(data) {
   setScreen("capture");
   updateProcedure();
   applyConfig(await getJSON("/api/config"));
-  const { runs } = await getJSON("/api/runs");
-  const examples = runs.filter((name) => !name.startsWith("live-"));
+  const { runs, samples } = await getJSON("/api/runs");
+  const examples = runs.filter((name) => !name.startsWith("live-") || samples.includes(name));
   $("example-list").innerHTML = examples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
   document.querySelectorAll("#example-list button").forEach((b) => b.addEventListener("click", () => chooseRun(b.dataset.run)));
 
