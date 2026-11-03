@@ -145,7 +145,7 @@ def candidates_job(name, count, thickness, render, emit, builder=None):
     if builder and result and summary["result_source"] != replay.FALLBACK_SOURCE:
         cues = find_break_cues(table)
         if cues["break_likely"]:  # Wonder is asked only when code found evidence of a break
-            emit({"type": "progress", "message": "Possible break: asking Muse Wonder for a completion…"})
+            emit({"type": "progress", "message": "Possible break: asking Muse Wonder for a completion…"}); emit({"type": "completion_started"})
             program = Path(result["file"])
             suggest_completion(folder, program, np.load(program.with_suffix(".default.mask.npy")), builder, cues=cues)
     summary["usage"] = usage_ledger.summarize(folder)

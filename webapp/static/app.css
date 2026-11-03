@@ -141,6 +141,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .example-list { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .example-list button { background: var(--color-container); font-family: var(--font-mono); font-size: var(--font-size-label); padding: var(--space-2) var(--space-3); color: var(--color-text); }
 .example-list button.active { background: var(--color-highest); color: var(--color-selected); font-weight: 700; }
+.your-runs { margin-top: var(--space-2); }
+.your-runs summary { cursor: pointer; font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); padding: var(--space-2) 0; }
+.your-runs .example-list { margin-top: var(--space-1); }
 .section { display: flex; flex-direction: column; gap: var(--space-3); }
 .procedure { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .procedure li { display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--color-container); }
@@ -211,6 +214,10 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-2); text-align: center;
   background: var(--color-scrim); color: var(--color-bad); font-family: var(--font-mono); font-size: var(--font-size-label); font-weight: 700; line-height: 1.35;
 }
+.wonder-card { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); background: var(--color-high); margin-bottom: var(--space-4); }
+.wonder-card .icon { font-size: 22px; }
+.wonder-title { font-family: var(--font-heading); font-weight: 600; font-size: var(--font-size-body-lg); color: var(--color-text-strong); }
+.wonder-sub { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); margin-left: auto; white-space: nowrap; }
 .candidate-card.waiting { background: var(--color-low); }
 .candidate-card.waiting .shape { color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--font-size-label); text-transform: uppercase; }
 .candidate-card.slot { background: var(--color-low); opacity: 0.35; }

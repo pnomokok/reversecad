@@ -136,6 +136,7 @@ def repair_loop(out, table, reference, mask_path, rows, thickness=3.0, truth=Non
         (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
         images = [folder / request["mask_image"]] + [folder / c["xor_image"] for c in request["candidates"] if c["xor_image"]]
         if emit:
+            emit({"type": "repair_started", "round": number})
             emit({"type": "progress", "message": f"repair round {number} · Muse Wonder"})
         try:
             response, seconds = ask_wonder(client, prompt, images)

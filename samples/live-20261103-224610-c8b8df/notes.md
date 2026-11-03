@@ -4,7 +4,7 @@ Recorded live run on the BREAK1 photo: a cardboard plate (ruler 106.5 × 96.0 mm
 4 × Ø6 mm holes, one corner cut off) next to a transit card, replayed here
 without API calls.
 
-Photo edit before the run: a QR code printed on the credit card was removed with
+Photo edit before the run: a QR code printed on the transit card was removed with
 a generative-erase photo tool; nothing else was changed. The shipped JPEG carries
 no EXIF. Reviewed for personal data before packing: the card shows only transit
 branding and artwork — no name, number, chip or code.

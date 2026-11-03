@@ -170,20 +170,20 @@ def ground_truth_error(name, row):
 
     {"length": [model, true], "width": [model, true], "holes": [[model, true], ...] or None if the
     hole counts differ}. Sizes in mm; holes as equal-area diameters, matched by size.
-    scenes compare against the CAD design, real-photo runs with 1_truth.json against the ruler.
+    scenes compare against the CAD design ("kind": "cad"), real-photo runs with 1_truth.json against the ruler ("kind": "ruler").
     """
     if not row.get("outline_mm"):
         return None
     if name in SCENE_PARTS:
         from parts.template_parts import part_truth  # loads CadQuery; only needed for synthetic scenes
-        truth = part_truth(SCENE_PARTS[name])
+        truth, kind = part_truth(SCENE_PARTS[name]), "cad"
     else:
-        truth = _ruler_truth(name)
+        truth, kind = _ruler_truth(name), "ruler"
         if truth is None:
             return None
     true_holes = sorted(h["diameter_mm"] for h in truth["holes"])
     model_holes = sorted(row.get("hole_diameters_mm") or [])
-    return {"length": [row["outline_mm"][0], truth["length"]], "width": [row["outline_mm"][1], truth["width"]],
+    return {"kind": kind, "length": [row["outline_mm"][0], truth["length"]], "width": [row["outline_mm"][1], truth["width"]],
             "holes": [[m, round(t, 2)] for m, t in zip(model_holes, true_holes)]
             if len(model_holes) == len(true_holes) else None}
 
@@ -257,7 +257,7 @@ def candidate_events(name, round_name=None):
     summary = json.loads((run_dir(name) / f"5_summary_{round_name}.json").read_text(encoding="utf-8"))
     events = [candidate_event(name, row, round_name) for row in summary["candidates"]]
     repaired = summary.get("repair") or {}
-    events += [{"type": "repair", **entry} for entry in repaired.get("rounds", [])]
+    events += [e for entry in repaired.get("rounds", []) for e in ({"type": "repair_started", "round": entry.get("round"), "seconds": entry.get("seconds")}, {"type": "repair", **entry})]
     if repaired.get("passed"):
         events.append(candidate_event(name, repaired["result"]))
     return events + [done_event(summary, round_name, result_note(name, summary), name)]

@@ -301,6 +301,11 @@ function drawMeasurements(a, fx) {
   a.holes.forEach((hole) => polygon(hole.contour_px, css("--color-overlay-hole"), 2));
 
   const box = orientedBox(a.outline_px);
+  const shapeBox = (points) => {  // the shape's own rectangle: labels stay off the card and the part
+    const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  };
+  occupied.push(shapeBox(a.card_corners_px), shapeBox(a.outline_px));
   if (state.click) occupied.push([state.click[0] - 70 * s, state.click[1] - 30 * s, state.click[0] + 70 * s, state.click[1] + 62 * s]);
 
   // The part's outline first (its labels matter most), along its own axes; then the holes; then the card.
@@ -344,7 +349,11 @@ function drawHoleGroup(group, box) {
   const centers = group.holes.map((h) => h.center_px);
   const middle = [centers.reduce((t, c) => t + c[0], 0) / centers.length, centers.reduce((t, c) => t + c[1], 0) / centers.length];
   const step = 48 * s;
-  const spots = [middle, ...[1, -1, 2, -2].map((k) => [middle[0] + box.v[0] * step * k, middle[1] + box.v[1] * step * k]),
+  const half = (axis) => Math.max(...box.corners.map(([x, y]) => Math.abs((x - box.center[0]) * axis[0] + (y - box.center[1]) * axis[1])));
+  const outside = [1, 2].flatMap((k) => [[box.v, half(box.v) + step * k], [box.v, -(half(box.v) + step * k)],
+    [box.u, half(box.u) + step * k], [box.u, -(half(box.u) + step * k)]]
+    .map(([axis, d]) => [middle[0] + axis[0] * d, middle[1] + axis[1] * d]));
+  const spots = [...outside, middle, ...[1, -1, 2, -2].map((k) => [middle[0] + box.v[0] * step * k, middle[1] + box.v[1] * step * k]),
                  ...centers.map(([x, y]) => [x + (box.center[0] - x) * 0.35, y + (box.center[1] - y) * 0.35])];
   const [x, y] = spots.find((p) => fits(labelBox(text, ...p, 16))) || clampInside(text, spots[0], 16);
   context.strokeStyle = css("--color-overlay-hole");
@@ -430,7 +439,11 @@ function thickness() {
 function updateProcedure() {
   const a = state.analysis;
   const steps = { card: !!a, photo: !!a, click: !!(a && state.click) };
-  for (const key of Object.keys(steps)) $(`step-${key}`).classList.toggle("done", steps[key]);
+  for (const key of Object.keys(steps)) {  // an empty circle until done; the tap step keeps its hint icon
+    $(`step-${key}`).classList.toggle("done", steps[key]);
+    $(`step-${key}`).querySelector(".step-icon .icon").textContent
+      = steps[key] ? "check" : key === "click" ? "touch_app" : "radio_button_unchecked";
+  }
   $("step-click").classList.toggle("current", !!state.image && !steps.click);
   $("step-card-sub").textContent = a ? `Card found · ${a.card_mm_per_pixel} mm/px` : "Card found when measured";
   $("step-photo-sub").textContent = a
@@ -507,7 +520,8 @@ async function chooseRun(name) {
   state.run = name;
   resetResults();
   watch.reset();
-  document.querySelectorAll("#example-list button").forEach((b) => b.classList.toggle("active", b.dataset.run === name));
+  document.querySelectorAll("#example-list button, #your-runs-list button")
+    .forEach((b) => b.classList.toggle("active", b.dataset.run === name));
   state.image = await loadImage(`/api/runs/${name}/photo`);
   state.click = (await getJSON(`/api/runs/${name}/info`)).click_px;  // the example's own click
   showPhoto();
@@ -529,7 +543,7 @@ $("photo-upload").addEventListener("change", async (event) => {
   state.run = name;
   resetResults();
   watch.reset();
-  document.querySelectorAll("#example-list button").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll("#example-list button, #your-runs-list button").forEach((b) => b.classList.remove("active"));
   state.click = null;  // live: the user clicks the part
   state.image = await loadImage(`/api/runs/${name}/photo`);
   showPhoto();
@@ -645,14 +659,19 @@ function resultRows(event) {
   if (event.fit_mm != null) rows.push(["Fit to measurements", mm(event.fit_mm)]);
   const truth = event.ground_truth;
   if (truth) {
-    rows.push(["vs ground truth", null]);  // a heading row
+    const ruler = truth.kind === "ruler";
+    rows.push([ruler ? "vs ruler (±0.5 mm)" : "vs ground truth", null]);  // a heading row
     for (const key of ["length", "width"]) {
       const [model, real] = truth[key];
       rows.push([key === "length" ? "Length" : "Width", `${model.toFixed(2)} vs ${real.toFixed(2)} (${percent(model, real)})`]);
     }
     if (truth.holes && truth.holes.length) {
-      const worst = Math.max(...truth.holes.map(([model, real]) => Math.abs(model - real)));
-      rows.push(["Holes", `Ø within ${mm(worst)}`]);
+      if (ruler) {  // a ruler reads ±0.5 mm: measured vs ruler per hole, no tighter claim
+        truth.holes.forEach(([model, real], i) => rows.push([`Hole ${i + 1}`, `Ø${model.toFixed(2)} vs ${real}`]));
+      } else {
+        const worst = Math.max(...truth.holes.map(([model, real]) => Math.abs(model - real)));
+        rows.push(["Holes", `Ø within ${mm(worst)}`]);
+      }
     }
   }
   if (event.parameters != null) rows.push(["Parameters", event.parameters]);
@@ -703,7 +722,7 @@ function winnerCard(event) {
   const fit = event.fit_mm == null ? ""
     : `<div><span class="label">Fit to measurements</span><span class="big-plain">${mm(event.fit_mm)}</span></div>`;
   const truth = event.ground_truth
-    ? `<div class="truth-line">vs ground truth: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
+    ? `<div class="truth-line">${event.ground_truth.kind === "ruler" ? "vs ruler (±0.5 mm)" : "vs ground truth"}: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
       + ` vs ${event.ground_truth.length[1].toFixed(2)} × ${event.ground_truth.width[1].toFixed(2)} mm`
       + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
   const diagnosis = event.label && event.diagnosis  // a repaired program says what was wrong with the rest
@@ -777,9 +796,47 @@ function updateSummary() {
   updateHeader();
 }
 
+const wonderCard = {
+  // A status card in the main area while a Muse Wonder request runs (repair or completion): live it
+  // counts the elapsed seconds, replay shows the recorded duration briefly. Hidden when the answer arrives.
+  timer: null,
+  show(kind, recordedSeconds, parent, before = null, extraClass = "") {
+    this.hide();
+    const titles = { repair: "Muse Wonder is repairing the candidates…", completion: "Asking Muse Wonder for a completion…" };
+    const card = document.createElement("div");
+    card.className = `wonder-card ${extraClass}`;
+    card.id = "wonder-card";
+    const sub = document.createElement("span");
+    sub.className = "wonder-sub";
+    card.innerHTML = `<span class="icon accent">psychology</span><span class="wonder-title">${titles[kind]}</span>`;
+    card.appendChild(sub);
+    parent.insertBefore(card, before);
+    if (recordedSeconds == null) {
+      const started = Date.now();
+      const tick = () => (sub.textContent = `${Math.floor((Date.now() - started) / 1000)} s elapsed · usually 1–2 min`);
+      tick();
+      this.timer = setInterval(tick, 1000);
+    } else {
+      sub.textContent = `Recorded run · took ${recordedSeconds} s`;
+    }
+  },
+  hide() {
+    clearInterval(this.timer);
+    this.timer = null;
+    document.querySelectorAll("#wonder-card").forEach((e) => e.remove());
+  },
+};
+
+function wonderShow(kind, seconds) {
+  // The wait, at the top of the search screen's main area.
+  const main = document.querySelector(".search-main");
+  wonderCard.show(kind, seconds, main, main.firstChild);
+}
+
 function streamCandidates() {
   return new Promise((resolve) => {
     if (state.stream) state.stream.close();
+    wonderCard.hide();
     state.done = null;
     state.winner = null;
     state.seen = [];
@@ -800,14 +857,18 @@ function streamCandidates() {
       ? `/api/live/${state.run}/candidates/stream?count=${count}&thickness=${thickness() ?? 3}`
       : `/api/runs/${state.run}/candidates/stream${state.round ? `?round=${state.round}` : ""}`);
     state.stream.addEventListener("progress", (m) => streamItem("…", "tag-ok", JSON.parse(m.data).message));
+    state.stream.addEventListener("repair_started", (m) => wonderShow("repair", JSON.parse(m.data).seconds));
+    state.stream.addEventListener("completion_started", () => wonderShow("completion", null));
     state.stream.addEventListener("repair", (m) => {
       // A Muse Wonder repair round: its diagnosis, and whether its program passed the same checks.
+      wonderCard.hide();
       const r = JSON.parse(m.data);
       streamItem(r.passed ? "REPAIRED" : "REPAIR", r.passed ? "tag-best" : "tag-bad",
         `repair round ${r.round} · Muse Wonder: ${r.passed ? `passed, IoU ${r.iou.toFixed(4)}` : "not passed"}. ${r.diagnosis || ""}`,
         r.reasons.join("\n"));
     });
     state.stream.addEventListener("candidate", (m) => {
+      wonderCard.hide();
       const event = JSON.parse(m.data);
       state.seen.push(event);
       grid.insertBefore(candidateCard(event), grid.querySelector(".waiting"));
@@ -823,6 +884,7 @@ function streamCandidates() {
     });
     state.stream.addEventListener("done", (m) => {
       state.stream.close();
+      wonderCard.hide();
       state.done = JSON.parse(m.data);
       watch.finish(state.done.durations);
       $("search-round").innerHTML = `Round <strong>${state.done.round}</strong>`;
@@ -843,6 +905,7 @@ function streamCandidates() {
     });
     state.stream.addEventListener("error", (m) => {
       state.stream.close();
+      wonderCard.hide();
       streamItem("ERROR", "tag-bad", m.data ? JSON.parse(m.data).message : "The candidate stream stopped unexpectedly.");
       watch.pause();
       resolve();
@@ -897,13 +960,16 @@ $("repair-again").addEventListener("click", () => {
   $("repair-again").disabled = true;
   const stream = new EventSource(`/api/runs/${state.run}/repair/stream`);
   stream.addEventListener("progress", (m) => { status.textContent = JSON.parse(m.data).message; });
+  stream.addEventListener("repair_started", (m) => wonderShow("repair", JSON.parse(m.data).seconds));
   stream.addEventListener("repair", (m) => {
+    wonderCard.hide();
     const r = JSON.parse(m.data);
     streamItem(r.passed ? "REPAIRED" : "REPAIR", r.passed ? "tag-best" : "tag-bad",
       `repair round ${r.round} · Muse Wonder: ${r.passed ? "passed" : "not passed"}. ${r.diagnosis || ""}`, r.reasons.join(" | "));
   });
-  stream.addEventListener("done", () => { stream.close(); $("repair-again").disabled = false; streamCandidates(); });
+  stream.addEventListener("done", () => { stream.close(); wonderCard.hide(); $("repair-again").disabled = false; streamCandidates(); });
   stream.addEventListener("error", (m) => {
+    wonderCard.hide();
     stream.close();
     $("repair-again").disabled = false;
     status.textContent = m.data ? `Not repaired: ${JSON.parse(m.data).message}` : "The repair needs MODEL_API_KEY in .env (Muse Wonder).";
@@ -1807,6 +1873,11 @@ async function showCompletion() {
   const hidden = !c || c.broken === false || c.decision === "ignore";
   $("break-card").classList.toggle("hidden", hidden);
   if (hidden) return;
+  if (!state.live && typeof c.seconds === "number") {  // replay: the recorded wait, briefly
+    wonderCard.show("completion", c.seconds, $("break-card").parentNode, $("break-card"), "tab-parameters-only");
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    wonderCard.hide();
+  }
   const applied = c.decision === "apply";
   const check = c.check || {};
   $("break-suggestion").textContent = c.suggestion || "";
@@ -2299,9 +2370,13 @@ function drawingSVG(data) {
   updateProcedure();
   applyConfig(await getJSON("/api/config"));
   const { runs, samples } = await getJSON("/api/runs");
-  const examples = runs.filter((name) => !name.startsWith("live-") || samples.includes(name));
-  $("example-list").innerHTML = examples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
-  document.querySelectorAll("#example-list button").forEach((b) => b.addEventListener("click", () => chooseRun(b.dataset.run)));
+  $("example-list").innerHTML = samples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
+  const local = runs.filter((name) => !samples.includes(name));
+  $("your-runs").classList.toggle("hidden", !local.length);
+  $("your-runs-summary").textContent = `Your runs (${local.length})`;
+  $("your-runs-list").innerHTML = local.map((n) => `<button data-run="${n}">${n}</button>`).join("");
+  document.querySelectorAll("#example-list button, #your-runs-list button")
+    .forEach((b) => b.addEventListener("click", () => chooseRun(b.dataset.run)));
 
   // Deep link for screenshots and recordings: ?run=A_light&step=search (?step=parts needs no run)
   const params = new URLSearchParams(location.search);

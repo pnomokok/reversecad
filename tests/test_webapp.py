@@ -98,6 +98,7 @@ def test_fit_and_ground_truth_are_separate(monkeypatch):
     winner = client.get("/api/runs/A_light/winner").json()
     assert 0 <= winner["fit_mm"] < 0.5  # follows the measurements closely
     truth = winner["ground_truth"]  # A_light shows template part A: 80 × 40 mm, four Ø6 holes
+    assert truth["kind"] == "cad"
     assert [real for _, real in (truth["length"], truth["width"])] == [80, 40]
     assert abs(truth["length"][0] - 80) < 0.05 * 80 and all(abs(m - 6) < 0.3 for m, _ in truth["holes"])
     assert replay.ground_truth_error("live-anything", {"outline_mm": [1, 1]}) is None  # real photos: unknown
@@ -111,9 +112,30 @@ def test_real_photo_replays_ruler_truth(monkeypatch):
     winner = client.get("/api/runs/live-20261103-224610-c8b8df/winner").json()
     assert winner["program"] == "repaired.py" and winner["source"] == "repair · Muse Wonder"
     truth = winner["ground_truth"]  # ruler midpoints from reports/real_parts.md: 106.5 × 96.0 mm, four Ø6 holes
+    assert truth["kind"] == "ruler"
     assert [real for _, real in (truth["length"], truth["width"])] == [106.5, 96.0]
     assert [real for _, real in truth["holes"]] == [6.0] * 4
     assert abs(truth["length"][0] - 106.5) / 106.5 < 0.05 and abs(truth["width"][0] - 96.0) / 96.0 < 0.05
+
+
+@pytest.mark.skipif("A_light_repair" not in replay.list_samples(), reason="needs the repair sample")
+def test_repair_replay_announces_the_wait_with_recorded_seconds(monkeypatch):
+    """The replayed stream says the repair is coming (with its recorded seconds) before the answer."""
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
+    monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
+    events = _events(client.get("/api/runs/A_light_repair/candidates/stream").text)
+    kinds = [kind for kind, _ in events]
+    started = kinds.index("repair_started")
+    assert kinds[started + 1] == "repair"  # the wait first, then the answer
+    assert events[started][1] == {"type": "repair_started", "round": 1, "seconds": 9.6}
+
+
+@pytest.mark.skipif("D_tab_broken" not in replay.list_samples(), reason="needs the completion sample")
+def test_completion_carries_its_recorded_seconds(monkeypatch):
+    """The suggestion keeps how long Muse Wonder took, so replay can show the wait briefly."""
+    monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
+    data = client.get("/api/runs/D_tab_broken/completion").json()
+    assert data["available"] and isinstance(data["seconds"], (int, float))
 
 
 def _stl_x_extent(data):
