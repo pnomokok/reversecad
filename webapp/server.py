@@ -333,13 +333,30 @@ async def adapter_check(name: str, request: Request):
     margins = [adapter_place.hole_to_outline(adapter_place.profile_hole(h), matching["outline"])
                for h in matching["holes"]]
     holes_b = meta["placement"]["holes_b"]
-    if style == "slotted":  # the dashed B overlay follows the slots, not the round holes
+    holes_a = None
+    if style == "slotted":  # the dashed overlays follow the slots, not the round holes
         axis = assembly_check.pattern_long_axis([[h["x"], h["y"]] for h in holes_b])
         holes_b = [{**h, "length": round(h["d"] + 2 * assembly_check.SHIFT_MM, 3),
                     "width": h["d"], "angle": axis} for h in holes_b]
+        round_a = [h for h in original["holes"] if h["type"] == "circle"]
+        if round_a:  # pattern A's slots, centered on the built adapter's A holes (closest pairs first)
+            axis_a = assembly_check.pattern_long_axis([h["center"] for h in round_a])
+            built_a = [t for t in _tagged_adapter_holes(matching["holes"], meta["placement"]["holes_b"])
+                       if t["tag"] == "A"]
+            pairs = sorted((math.dist(h["center"], t["center"]), i, j)
+                           for i, h in enumerate(round_a) for j, t in enumerate(built_a))
+            used_h, used_t, holes_a = set(), set(), []
+            for _, i, j in pairs:
+                if i in used_h or j in used_t:
+                    continue
+                used_h.add(i)
+                used_t.add(j)
+                holes_a.append({"x": built_a[j]["center"][0], "y": built_a[j]["center"][1],
+                                "length": round(round_a[i]["diameter"] + 2 * assembly_check.SHIFT_MM, 3),
+                                "width": round_a[i]["diameter"], "angle": axis_a})
     return {"original": original, "matching": matching,
             "alignment": matching_part.hole_alignment(original, matching),
-            "holes_b": holes_b, "label_b": meta["pattern"]["label"],
+            "holes_b": holes_b, "label_b": meta["pattern"]["label"], "holes_a": holes_a,
             "min_margin_mm": round(min(margins), 3) if margins else None,
             "outline_source": meta["outline_source"]}
 

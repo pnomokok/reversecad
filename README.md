@@ -54,7 +54,7 @@ In one run the system decides on its own: it writes candidates in three approach
 
 ## Where Meta models are used
 
-On Muse Spark Open run: candidate CadQuery programs; part-name suggestions for SAM; spoken/typed edit commands to JSON parameter changes; adapter outline programs; free-text adapter patterns to JSON.
+Running on Muse Spark Open: candidate CadQuery programs; part-name suggestions for SAM; spoken/typed edit commands to JSON parameter changes; adapter outline programs; free-text adapter patterns to JSON.
 
 | Model | Where | What it does in ReverseCAD | Files |
 |---|---|---|---|
@@ -204,7 +204,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 .venv\Scripts\python.exe -m pytest
 ```
 
-247 passed, 9 skipped in a fresh clone; the frontend files also pass `node --check`. The tests never call an API. The 9 skips need local-only files (the private BREAK live runs, private real photos, local `outputs/` scenes, saved SAM answers) or are the opt-in full SAM check (`FULL_SAM_CHECK=1`); the samples in `samples/` cover the web app.
+275 passed, 9 skipped in a fresh clone (Linux, Python 3.13, at 56c44d4); the frontend files also pass `node --check`. The tests never call an API. The 9 skips need local-only files (the private BREAK live runs, private real photos, local `outputs/` scenes, saved SAM answers) or are the opt-in full SAM check (`FULL_SAM_CHECK=1`); the samples in `samples/` cover the web app.
 
 ## Project layout
 

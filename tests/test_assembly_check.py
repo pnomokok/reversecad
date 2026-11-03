@@ -5,6 +5,7 @@ on the A_light sample with a preset pattern (fallback outline, stand-in plate): 
 as-measured passes with zero interference, Exact + measured error blocks, Slotted + error passes.
 """
 import json
+import math
 
 import pytest
 from fastapi.testclient import TestClient
@@ -246,3 +247,23 @@ def test_assembly_works_in_demo_mode(monkeypatch):
     monkeypatch.setattr(server, "DEMO", True)
     check = client.post("/api/runs/A_light/matching/adapter/assembly", json=_assembly_body()).json()
     assert check["verdict"] == "pass" and check["plates"][-1]["label"] == "stand-in plate"
+
+
+def test_check_draws_pattern_a_slots_in_slotted_mode_only():
+    _searched()
+    client.post("/api/runs/A_light/matching/adapter/slotted", json=_outline_body())
+    exact = client.post("/api/runs/A_light/matching/adapter/check", json=_assembly_body("exact")).json()
+    assert exact["holes_a"] is None
+    check = client.post("/api/runs/A_light/matching/adapter/check", json=_assembly_body("slotted")).json()
+    forms = check["holes_a"]
+    assert len(forms) == 4
+    for form in forms:  # the slotted rule: diameter + 2 x SHIFT_MM along pattern A's axis
+        assert form["length"] == pytest.approx(6.0 + 2 * SHIFT_MM)
+        assert form["width"] == pytest.approx(6.0) and form["angle"] == 0.0
+    built = []  # every form sits on a slot of the built slotted adapter
+    for hole in check["matching"]["holes"]:
+        xs = [p[0] for p in hole["points"]]
+        ys = [p[1] for p in hole["points"]]
+        built.append((sum(xs) / len(xs), sum(ys) / len(ys)))
+    for form in forms:
+        assert min(math.dist([form["x"], form["y"]], c) for c in built) == pytest.approx(0.0, abs=0.01)

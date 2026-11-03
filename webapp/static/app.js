@@ -73,7 +73,9 @@ function updateHeader() {
   if (!searching) return;
   const total = state.done ? state.done.candidate_count : state.expected;
   const count = state.seen.filter((e) => !e.label).length;  // requested candidates only, not repairs (R1, R2)
-  $("progress-label").textContent = state.done ? "Search finished · Muse Spark Open"
+  const repaired = state.done && (state.done.result_source || "").startsWith("repair");
+  $("progress-label").textContent = repaired ? "Search finished · repaired by Muse Wonder"
+    : state.done ? "Search finished · Muse Spark Open"
     : state.live ? "Generating with Muse Spark Open · Checking against the SAM 3.1 mask" : "Replaying a saved candidate round";
   $("progress-count").textContent = total ? `${Math.round((100 * count) / total)}% | ${count} / ${total}` : `${count}`;
   $("progress-fill").style.width = total ? `${(100 * count) / total}%` : "0";
@@ -684,11 +686,13 @@ function winnerCard(event) {
     ? `<div class="truth-line">vs ground truth: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
       + ` vs ${event.ground_truth.length[1].toFixed(2)} × ${event.ground_truth.width[1].toFixed(2)} mm`
       + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
+  const diagnosis = event.label && event.diagnosis  // a repaired program says what was wrong with the rest
+    ? `<div class="repair-diagnosis"><span class="label">Repaired by Muse Wonder</span>${escapeAttribute(event.diagnosis)}</div>` : "";
   card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${idOf(event)}</span>${event.label ? "REPAIRED" : "BEST MATCH"}</span>`
     + `<span class="winner-chip">Selected · ${event.parameters} params</span></div>`
     + `<div class="shape">${length}<img class="shape-ref" src="/api/runs/${state.run}/reference.png" alt="" onerror="this.remove()">`
     + `<img class="shape-cand" src="${event.silhouette}" alt="selected candidate silhouette"></div>`
-    + `<div class="winner-scores"><div><span class="label">Overlap (IoU)</span><span class="big-accent">IoU ${event.iou.toFixed(4)}</span></div>`
+    + `${diagnosis}<div class="winner-scores"><div><span class="label">Overlap (IoU)</span><span class="big-accent">IoU ${event.iou.toFixed(4)}</span></div>`
     + `${fit}</div>${truth}`;
   return card;
 }
@@ -1144,7 +1148,7 @@ async function showAlignment(build) {
     drawOverlay(original, null);
     return;
   }
-  drawOverlay(original, matching, answer.holes_b, answer.label_b);
+  drawOverlay(original, matching, answer.holes_b, answer.label_b, answer.holes_a);
   if (state.matching.kind === "adapter" && matching) updateAdapterGhosts(matching.thickness);
   const breakouts = a.breakouts === 1 ? "1 hole breaks through the edge" : `${a.breakouts} holes break through the edge`;
   check.innerHTML = !a.total ? "No holes to align"
@@ -1154,7 +1158,7 @@ async function showAlignment(build) {
   check.classList.toggle("bad", a.aligned < a.total);
 }
 
-function drawOverlay(original, matching, holesB, labelB) {
+function drawOverlay(original, matching, holesB, labelB, holesA) {
   // Top view in mm (SVG's y runs down, so y is negated): the original see-through, the matching part as a line.
   const closed = (points) => `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z`;
   const circle = ([x, y], d) => `M${x - d / 2},${-y}a${d / 2},${d / 2} 0 1,0 ${d},0a${d / 2},${d / 2} 0 1,0 ${-d},0Z`;
@@ -1187,11 +1191,13 @@ function drawOverlay(original, matching, holesB, labelB) {
   const view = $("overlay-view");
   view.setAttribute("viewBox", `${x0 - margin} ${-y1 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`);
   const bPath = (holesB || []).map((h) => (h.length === undefined ? circle([h.x, h.y], h.d) : slotPath(h))).join("");
+  const aPath = (holesA || []).map(slotPath).join("");  // slotted style: pattern A's slots, dashed like B's
 
-  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/>`;
+  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/><path class="overlay-pattern-a" d="${aPath}"/>`;
   $("overlay-b-item").classList.toggle("hidden", !holesB?.length);
   // A photo pattern's full summary stays in the line below; the legend keeps only its source.
   if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB.endsWith("from photo") ? "from photo" : labelB}`;
+  $("overlay-a-item").classList.toggle("hidden", !holesA?.length);
   $("overlay-matching-item").classList.toggle("hidden", split);
 }
 
@@ -1720,6 +1726,9 @@ document.querySelectorAll("#assembly-error-row button").forEach((b) => b.addEven
   runAssemblyCheck(false);
 }));
 
+$("assembly-show").addEventListener("click", () => {  // the visible twin of the toolbar's stacks icon
+  if (assembly.view !== "sim") $("view-assembly").click();
+});
 $("view-assembly").addEventListener("click", async () => {
   if (assembly.view === "sim") {
     assembly.view = "part";

@@ -1,4 +1,4 @@
-// 3D viewer for the Edit screen: the built part (STL) in an isometric orthographic view, with dimension
+﻿// 3D viewer for the Edit screen: the built part (STL) in an isometric orthographic view, with dimension
 // lines and labels pinned to 3D points (three.js CSS2DRenderer). The numbers come from the built model
 // itself: its bounding box (length, width, thickness) and its top-face holes (from the back end).
 import * as THREE from "three";
@@ -23,6 +23,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -5000, 5000);
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, renderer.domElement);
+  controls.addEventListener("start", () => labelPan.set(0, 0, 0));  // user orbiting absorbs the pan
   scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f44, 2.2));
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(0.6, -1, 1.6);
@@ -38,6 +39,16 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   let mating = null;
   let annotations = null;
   let framedRadius = null;
+  let riseToken = 0;  // reset() cancels an in-flight rise; only the current rise may finish
+  const labelPan = new THREE.Vector3();  // world offset of the current label pan (never accumulates)
+
+  function resetPan() {
+    // Drop the previous label pan: setView re-centers the target, so a kept position would skew
+    // the view; the pan is recomputed from the pristine state below.
+    camera.position.sub(labelPan);
+    controls.target.sub(labelPan);
+    labelPan.set(0, 0, 0);
+  }
   let labelsVisible = true;  // dimension labels on/off (toolbar toggle, default on)
   let changed = new Set();
   const labelElements = {};  // key -> element, so "changed" can be toggled without a rebuild
@@ -48,7 +59,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     renderer.setSize(width, height);
     labels.setSize(width, height);
     if (assembly && part) fitProjected(framedBox(), framedBox().getCenter(new THREE.Vector3()));
-    else if (framedRadius) setFrustum(framedRadius);
+    else if (framedRadius) {
+      resetPan();
+      setFrustum(framedRadius);
+      panToClearLabels();
+      layoutPartLabels();
+      controls.update();
+    }
   }
 
   function setFrustum(radius) {
@@ -71,6 +88,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
 
   function setView(view, box = part && framedBox()) {
     if (!box) return;
+    resetPan();
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
     framedRadius = radius;
@@ -90,6 +108,11 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     camera.updateProjectionMatrix();
     controls.update();
     if (assembly) layoutSimLabels();  // tags follow the current view, screws stay put
+    else {  // dimension labels stay on their lines, so the camera pans for them; then ghost tags
+      panToClearLabels();
+      layoutPartLabels();
+      controls.update();
+    }
   }
 
   function fitProjected(box, center) {
@@ -154,6 +177,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     const size = Math.max(x1 - x0, y1 - y0);
     const gap = size * 0.14;
     const group = new THREE.Group();
+    group.userData.holes = [];  // movable hole labels: {label, leader, hole, home}, placed per view
     dimension(group, "length", `${(x1 - x0).toFixed(2)} mm`, [x0, y0, z0], [x1, y0, z0], [0, -gap, 0]);
     dimension(group, "width", `${(y1 - y0).toFixed(2)} mm`, [x1, y0, z0], [x1, y1, z0], [gap, 0, 0]);
     dimension(group, "thickness", `${(z1 - z0).toFixed(2)} mm`, [x0, y0, z0], [x0, y0, z1], [-gap * 0.7, -gap * 0.7, 0]);
@@ -171,8 +195,12 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     for (const [diameter, holes] of groups) {
       const [hx, hy, hz] = nearest(holes).center;
       const end = [hx + gap * (0.5 + 2.2 * lift), hy + gap * 0.2, hz + gap * (1.1 + 2.2 * lift)];
-      group.add(line([[hx, hy, hz], end], dimensionMaterial));
-      group.add(label("hole", `${holes.length > 1 ? `${holes.length}× ` : ""}Ø${Number(diameter).toFixed(2)} mm`, end));
+      const leader = line([[hx, hy, hz], end], dimensionMaterial);
+      group.add(leader);
+      const tag = label("hole", `${holes.length > 1 ? `${holes.length}× ` : ""}Ø${Number(diameter).toFixed(2)} mm`, end);
+      tag.element.dataset.movable = "hole";
+      group.add(tag);
+      group.userData.holes.push({ label: tag, leader, hole: [hx, hy, hz], home: [...end] });
       lift += 1;
     }
     return group;
@@ -232,6 +260,9 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     group.add(new THREE.Mesh(geometry, companionMaterial));
     group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
     group.position.z = liftZ;
+    group.userData.box = box.clone();
+    group.userData.tag = null;
+    group.userData.leader = null;
     if (labelText) {
       const element = document.createElement("div");
       element.className = "dim-label";
@@ -239,6 +270,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       const tag = new CSS2DObject(element);
       tag.position.set(box.getCenter(new THREE.Vector3()).x, box.max.y, box.max.z);
       group.add(tag);
+      group.userData.tag = tag;
     }
     if (!assembly) scene.add(group);
     return group;
@@ -255,6 +287,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       const size = new THREE.Box3().setFromObject(companion).getSize(new THREE.Vector3());
       companion.position.y = size.y + Math.max(size.y * 0.4, 16);
     }
+    layoutPartLabels();
   }
 
   function showMating(stlBuffer, labelText = null, liftZ = 0) {
@@ -262,6 +295,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     mating = clearGhost(mating);
     if (!stlBuffer) return;
     mating = makeGhost(stlBuffer, labelText, liftZ);
+    layoutPartLabels();
   }
 
   let suggestion = null;
@@ -351,6 +385,176 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     // its labels behind; hide them by hand (showing again is the renderer's job after re-attach).
     group.traverse((o) => {
       if (o.isCSS2DObject) o.element.style.display = visible ? "" : "none";
+    });
+  }
+
+  function labelSize(element) {
+    // [hw, hh] of a label in px: the rendered box when laid out, else a monospace estimate.
+    return element.offsetWidth > 0 ? [element.offsetWidth / 2, element.offsetHeight / 2]
+      : [element.textContent.length * 6 + 12, 18];
+  }
+
+  function screenRect(object) {
+    // [cx, cy, hw, hh] of a CSS2D label in viewer px, from its current 3D anchor.
+    object.updateWorldMatrix(true, false);
+    const v = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld).project(camera);
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 600;
+    const [hw, hh] = labelSize(object.element);
+    return [(v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * h, hw, hh];
+  }
+
+  function panToClearLabels() {
+    // Pan the camera along its right axis until every visible dimension label clears the floating
+    // overlay panel (left) and the sidebar (right); the panel wins when both cannot clear at once.
+    // Ghost tags are placed into the strip afterwards, so they do not constrain the pan.
+    if (!labelsVisible) return;
+    const fixed = [];  // dimension labels stay on their lines; hole labels are placed, not panned for
+    for (const group of [annotations, suggestion]) {
+      if (group) group.traverse((o) => {
+        if (o.isCSS2DObject && o.element.style.display !== "none" && !o.element.dataset.movable) fixed.push(o);
+      });
+    }
+    if (!fixed.length) return;
+    camera.updateMatrixWorld();
+    const viewRect = container.getBoundingClientRect();
+    const insetRect = document.querySelector(".fit-inset")?.getBoundingClientRect();
+    const clearLeft = (insetRect ? insetRect.right - viewRect.left : 0) + 8;
+    const clearRight = viewRect.width - 8;
+    const span = () => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const o of fixed) {
+        const [sx, , hw] = screenRect(o);
+        lo = Math.min(lo, sx - hw);
+        hi = Math.max(hi, sx + hw);
+      }
+      return [lo, hi];
+    };
+    // When the labels are wider than the visible strip, no pan can clear both sides: zoom out
+    // until they fit, then pan. One pass suffices (the zoom is computed from the same span).
+    for (let pass = 0; pass < 2; pass++) {
+      const [lo, hi] = span();
+      if (hi - lo <= clearRight - clearLeft) break;
+      const factor = (hi - lo + 16) / (clearRight - clearLeft);
+      camera.left *= factor;
+      camera.right *= factor;
+      camera.top *= factor;
+      camera.bottom *= factor;
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+    }
+    let left = 0;
+    let right = 0;
+    for (const o of fixed) {
+      const [sx, , hw] = screenRect(o);
+      left = Math.max(left, clearLeft - (sx - hw));
+      right = Math.max(right, (sx + hw) - clearRight);
+    }
+    const px = left > 0 ? left : -right;
+    if (!px) return;
+    // Moving the rig along +right shifts the picture left, so the pan goes the other way.
+    const mm = -px * ((camera.right - camera.left) / (container.clientWidth || 800));
+    const camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    camera.position.addScaledVector(camRight, mm);
+    controls.target.addScaledVector(camRight, mm);
+    labelPan.addScaledVector(camRight, mm);
+  }
+
+  function layoutPartLabels() {
+    // Movable part-view labels, placed per view like the sim plate tags: hole labels keep their
+    // leader to the hole, ghost tags (ORIGINAL, MATING PART) get their own outside corners of the
+    // framed stack with a leader to their ghost's nearest corner. The corner nearest the floating
+    // panel is skipped, every label is clamped into the visible strip and lifted past the fixed
+    // dimension labels and each other, so no two labels overlap. Runs on every view change.
+    const ghosts = [companion, mating].filter((g) => g && g.userData.tag);
+    for (const group of [companion, mating].filter(Boolean)) {
+      if (group.userData.leader) {
+        group.remove(group.userData.leader);
+        group.userData.leader.geometry.dispose();
+        group.userData.leader = null;
+      }
+    }
+    const holes = (annotations && labelsVisible && !assembly ? annotations.userData.holes : []) || [];
+    for (const entry of holes) {
+      annotations.remove(entry.leader);
+      entry.leader.geometry.dispose();
+    }
+    if ((!ghosts.length && !holes.length) || !part || assembly) return;  // in sim view all wait detached
+    const stack = framedBox();
+    camera.updateMatrixWorld();
+    const mid = { x: (stack.min.x + stack.max.x) / 2, y: (stack.min.y + stack.max.y) / 2, z: (stack.min.z + stack.max.z) / 2 };
+    const viewRect = container.getBoundingClientRect();
+    const insetRect = document.querySelector(".fit-inset")?.getBoundingClientRect();
+    const clearLeft = (insetRect ? insetRect.right - viewRect.left : 0) + 78;
+    const clearRight = viewRect.width - 78;
+    const camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const camUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    const mmPerPxX = (camera.right - camera.left) / (container.clientWidth || 800);
+    const mmPerPxY = (camera.top - camera.bottom) / (container.clientHeight || 600);
+    const project = (p) => {
+      const v = new THREE.Vector3(...p).project(camera);
+      return [(v.x * 0.5 + 0.5) * viewRect.width, (-v.y * 0.5 + 0.5) * viewRect.height];
+    };
+    const placed = [];
+    for (const group of [annotations, suggestion]) {
+      if (group && labelsVisible) group.traverse((o) => {
+        if (o.isCSS2DObject && o.element.style.display !== "none" && !o.element.dataset.movable) {
+          placed.push(screenRect(o));
+        }
+      });
+    }
+    const settle = (start, hw, hh) => {  // clamp into the strip, then lift past placed labels
+      const at = [...start];
+      for (let nudge = 0; nudge < 24; nudge++) {
+        const sx = project(at)[0];
+        if (sx >= clearLeft && sx <= clearRight) break;
+        const step = Math.sign(sx < clearLeft ? clearLeft - sx : clearRight - sx) * mmPerPxX * 8;
+        at[0] += camRight.x * step;
+        at[1] += camRight.y * step;
+        at[2] += camRight.z * step;
+      }
+      for (let lift = 0; lift < 12; lift++) {
+        const [sx, sy] = project(at);
+        const hit = placed.find(([px, py, pw, ph]) =>
+          Math.abs(sx - px) < pw + hw + 6 && Math.abs(sy - py) < ph + hh + 6);
+        if (!hit) break;
+        const dir = sy <= hit[1] ? 1 : -1;
+        const step = ((hit[3] + hh + 6) - Math.abs(sy - hit[1]) + 2) * mmPerPxY * dir;
+        at[0] += camUp.x * step;
+        at[1] += camUp.y * step;
+        at[2] += camUp.z * step;
+      }
+      placed.push([...project(at), hw, hh]);
+      return at;
+    };
+    for (const entry of holes) {
+      const [hw, hh] = labelSize(entry.label.element);
+      const at = settle(entry.home, hw, hh);
+      entry.label.position.set(...at);
+      entry.leader = line([entry.hole, at], dimensionMaterial);
+      annotations.add(entry.leader);
+    }
+    const screenX = ([cx, cy]) => new THREE.Vector3(cx, cy, mid.z).project(camera).x;
+    const stackCorners = [[stack.min.x, stack.min.y], [stack.max.x, stack.min.y],
+      [stack.min.x, stack.max.y], [stack.max.x, stack.max.y]]
+      .sort((a, b) => screenX(b) - screenX(a)).slice(0, Math.max(ghosts.length, 1));
+    ghosts.forEach((group, i) => {
+      const box = group.userData.box;
+      const corner = stackCorners[i % stackCorners.length];
+      const outward = new THREE.Vector2(corner[0] - mid.x, corner[1] - mid.y).normalize();
+      const topZ = group.position.z + box.max.z + 1.5;
+      const [hw, hh] = labelSize(group.userData.tag.element);
+      const tagAt = settle([corner[0] + outward.x * 8, corner[1] + outward.y * 8, topZ], hw, hh);
+      const tag = group.userData.tag;  // anchors are local: the ghost groups only translate
+      tag.position.set(tagAt[0] - group.position.x, tagAt[1] - group.position.y, tagAt[2] - group.position.z);
+      const own = [box.min.x, box.min.y, box.max.x, box.max.y];
+      const local = [tagAt[0] - group.position.x, tagAt[1] - group.position.y];
+      const foot = [(Math.abs(own[0] - local[0]) < Math.abs(own[2] - local[0]) ? own[0] : own[2]),
+        (Math.abs(own[1] - local[1]) < Math.abs(own[3] - local[1]) ? own[1] : own[3]), box.max.z];
+      const leader = line([foot, [tag.position.x, tag.position.y, tag.position.z]], dimensionMaterial);
+      group.add(leader);
+      group.userData.leader = leader;
     });
   }
 
@@ -580,8 +784,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     part.scale.z = 0.02;
     if (annotations) annotations.scale.z = 0.02;
     controls.enabled = false;
+    const token = riseToken;
     const t0 = performance.now();
     const step = (now) => {
+      if (token !== riseToken) {  // a view switch cancelled this rise; the new view frames itself
+        controls.enabled = true;
+        return;
+      }
       const t = Math.min(1, (now - t0) / 1100);
       const eased = 1 - Math.pow(1 - t, 3);
       camera.position.copy(topPos).lerp(isoPos, 0.02 + 0.98 * eased);
@@ -594,6 +803,9 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
         part.scale.z = 1;
         if (annotations) annotations.scale.z = 1;
         controls.enabled = true;
+        // The last frame is already the iso view, so this only pans for the labels and places
+        // the ghost tags (no visible jump).
+        setView("iso");
       }
     };
     requestAnimationFrame(step);
@@ -620,7 +832,11 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       labels.domElement.style.display = visible ? "" : "none";
       if (annotations) annotations.visible = visible;
     },
-    reset: () => { framedRadius = null; } };
+    reset: () => {
+      riseToken += 1;  // an in-flight rise belongs to the old view and must not finish it
+      framedRadius = null;
+    },
+  };
 }
 
 // ---------- card previews: small turntables for the Parts gallery ----------

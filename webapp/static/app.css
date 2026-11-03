@@ -234,6 +234,8 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .winner-scores div { display: flex; flex-direction: column; gap: 2px; }
 .winner-scores div:last-child { text-align: right; }
 .truth-line { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); padding: 0 var(--space-1); }
+.repair-diagnosis { font-size: var(--font-size-body); line-height: 1.4; color: var(--color-text); padding: 0 var(--space-1); }
+.repair-diagnosis .label { display: block; margin-bottom: 2px; }
 .best-box table.values td, .fit-inset table.values td { text-transform: none; white-space: nowrap; padding: 2px 0; }
 table.values tr.heading td { padding-top: var(--space-2); color: var(--color-text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-size: var(--font-size-label-sm); }
 .fit-inset table.values td.number, .best-box table.values td.number { font-size: var(--font-size-label); }
@@ -488,8 +490,8 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .overlay-legend span { display: inline-flex; align-items: center; gap: var(--space-2); }
 .swatch-original { background: var(--color-text); opacity: 0.35; }
 .swatch-matching { border: 2px solid var(--color-selected); }
-.overlay-pattern-b { fill: none; stroke: var(--color-selected); stroke-width: 1.5px; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
-.swatch-pattern-b { border: 2px dashed var(--color-selected); }
+.overlay-pattern-b, .overlay-pattern-a { fill: none; stroke: var(--color-selected); stroke-width: 1.5px; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
+.swatch-pattern-b, .swatch-pattern-a { border: 2px dashed var(--color-selected); }
 .fit-check { margin: 0; font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); line-height: 1.35; }
 .fit-check.bad, .fit-warning { color: var(--color-bad); }
 .assembly-block { display: flex; flex-direction: column; gap: var(--space-2); }
