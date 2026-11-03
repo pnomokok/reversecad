@@ -169,19 +169,17 @@ Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-de
 
 ## Using the app
 
-1. **Photo**: pick a saved run or upload a photo, click the part (not a hole), enter its thickness.
-2. **Measurements**: card, outline, and holes are drawn over the photo with their sizes; the table shows the numbers the model will get.
-3. **Candidates**: programs arrive one by one with their silhouette, IoU, parameter count and, if rejected, why.
-4. **Model**: the result in 3D; one slider per named parameter rebuilds the part when released (about 0.3 s).
-5. **Download**: STL, STEP, DXF, the 1:1 print template, or the CadQuery program (`.py`) with the slider values as its defaults.
-6. **Make a matching part** (on the model screen): a **cover** (same outline and holes, own thickness), a **spacer / gasket** (same holes, outline offset), or an **adapter plate** (the original's holes plus a new pattern such as "2 × M5 · 60 mm", placed by fixed rules, outline by Muse Spark Open). A computed line ("Holes aligned: 4/4, max offset 0.000 mm") shows that the holes line up.
+1. **Capture**: pick a saved run or upload a photo, click the part (not a hole), enter its thickness. The card, outline, and holes are drawn over the photo with their sizes; the table shows the numbers the model will get.
+2. **Search**: candidate programs arrive one by one with their silhouette, IoU, parameter count and, if rejected, why.
+3. **Edit**: the result in 3D; the Parameters tab holds one slider per named parameter (rebuilding on release, about 0.3 s), voice editing, and any break-completion suggestion.
+4. **Match**: the Matching part tab offers a **cover** (same outline and holes, own thickness), a **spacer / gasket** (same holes, outline offset), or an **adapter plate** (the original's holes plus a new pattern such as "2 × M5 · 60 mm", placed by fixed rules, outline by Muse Spark Open). A computed line ("Holes aligned: 4/4, max offset 0.000 mm") shows that the holes line up. The adapter also has the assembly check: Exact or Slotted holes, As measured or With measured error, with estimated screw sizes per hole group; the 3D simulation stacks the plates, seats each screw in the outer plates' real holes, and colors it by its computed interference volume. Only the adapter gets slots in Slotted mode — the original and mating parts already exist and keep their round holes. It checks rigid hole-vs-screw overlap only — material flex, printer tolerance, and thickness errors are not simulated.
 
 ![Adapter plate](reports/ui/A_light_adapter.png)
 *A cover, spacer, or adapter plate made from the built result.*
-7. **Assembly check** (on the adapter screen): Exact or Slotted holes, As measured or With measured error, with estimated screw sizes per hole group; the 3D simulation stacks the plates, seats each screw in the outer plates' real holes, and colors it by its computed interference volume. Only the adapter gets slots in Slotted mode — the original and mating parts already exist and keep their round holes. It checks rigid hole-vs-screw overlap only — material flex, printer tolerance, and thickness errors are not simulated.
 
 ![Assembly check](reports/ui/A_light_assembly_exact_blocked.png)
 *With the worst measured spacing error (1.28 mm), all 6 exact-hole screws block; slots let them pass.*
+5. **Export**: the technical drawing and download packages: STL, STEP, DXF, the 1:1 print template, or the CadQuery program (`.py`) with the slider values as its defaults.
 
 ## Command-line scripts
 

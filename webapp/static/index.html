@@ -1,8 +1,9 @@
 <!doctype html>
 <!-- ReverseCAD web app. Layout adapted from the Stitch screens in design/ (capture, search, edit):
      icon rail, top bar, a sub-bar per screen, a large stage and an inspector. Every value on screen
-     is filled in by app.js from the back end. Open with ?run=<name>&step=capture|measure|search|edit
-     to jump straight to a screen of a saved run (used for screenshots and recordings). -->
+     is filled in by app.js from the back end. Open with ?run=<name>&step=capture|measure|search|edit|match
+     to jump straight to a screen of a saved run (match = the edit screen with the Matching part
+     tab; &match=adapter&pattern=N runs the adapter flow first). Used for screenshots and recordings. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -41,7 +42,8 @@
       <button data-screen="capture">1 Capture</button><span class="dot">·</span>
       <button data-screen="search" disabled>2 Search</button><span class="dot">·</span>
       <button data-screen="edit" disabled>3 Edit</button><span class="dot">·</span>
-      <button data-screen="export" disabled>4 Export</button>
+      <button data-screen="match" disabled>4 Match</button><span class="dot">·</span>
+      <button data-screen="export" disabled>5 Export</button>
     </nav>
     <div class="progress hidden" id="progress">
       <div class="progress-text"><span id="progress-label"></span><span class="progress-count" id="progress-count"></span></div>
@@ -234,16 +236,17 @@
           </div>
           <div class="model-status" id="model-status"></div>
         </div>
-        <aside class="edit-panel" id="edit-panel">
-          <div class="matching-bar hidden" id="matching-bar">
-            <span class="matching-name" id="matching-name"></span>
-            <button id="matching-back"><span class="icon">arrow_back</span>Back to original</button>
+        <aside class="edit-panel" id="edit-panel" data-tab="parameters">
+          <div class="panel-tabs">
+            <button class="panel-tab-button active" data-tab="parameters">Parameters</button>
+            <button class="panel-tab-button" data-tab="matching">Matching part</button>
+            <button class="icon-button" id="panel-wide" title="Wide panel"><span class="icon">swap_horiz</span></button>
           </div>
-          <div class="edit-panel-head">
+          <div class="edit-panel-head tab-parameters-only">
             <div><h2>Design parameters</h2><span class="label">named in the program</span></div>
             <button class="icon-button" id="reset-parameters" title="Reset to the program's values"><span class="icon">restart_alt</span></button>
           </div>
-          <div class="break-card hidden" id="break-card">
+          <div class="break-card hidden tab-parameters-only" id="break-card">
             <div class="break-head"><span class="break-title"><span class="icon accent">warning</span>Possible break detected</span><span class="chip-muted chip-small">Muse Wonder</span></div>
             <p class="break-suggestion" id="break-suggestion"></p>
             <div class="break-parts" id="break-parts"></div>
@@ -254,10 +257,13 @@
               <button class="break-ignore" id="break-ignore">Ignore</button>
             </div>
           </div>
-          <div class="sliders" id="sliders"></div>
-          <div class="matching-block" id="matching-block">
-            <button class="matching-open" id="matching-open"><span class="icon">layers</span>Make a matching part</button>
-            <div class="matching-choices hidden" id="matching-choices">
+          <div class="sliders tab-parameters-only" id="sliders"></div>
+          <div class="matching-bar hidden tab-matching-only" id="matching-bar">
+            <span class="matching-name" id="matching-name"></span>
+            <button id="matching-back"><span class="icon">arrow_back</span>Back to original</button>
+          </div>
+          <div class="matching-block tab-matching-only" id="matching-block">
+            <div class="matching-choices" id="matching-choices">
               <button data-kind="cover"><strong>Cover</strong><span>Same outline and holes, own thickness</span></button>
               <button data-kind="spacer"><strong>Spacer / gasket</strong><span>Same holes, outline offset, 1 mm thick</span></button>
               <button data-kind="adapter"><strong>Adapter plate</strong><span>Original holes + a new pattern</span></button>
@@ -301,7 +307,7 @@
               <p class="status-line" id="adapter-status"></p>
             </div>
           </div>
-          <div class="assembly-block hidden" id="assembly-block">
+          <div class="assembly-block hidden tab-matching-only" id="assembly-block">
             <span class="label">Assembly check · simulation</span>
             <div class="assembly-row"><button type="button" id="assembly-show">Show in 3D</button></div>
             <div class="assembly-row" id="assembly-style-row">
@@ -320,7 +326,7 @@
             <div class="assembly-verdict hidden" id="assembly-verdict"></div>
             <p class="assembly-caption">Models built from the measurements; error shift = largest hole-spacing error measured on a real photo (1.28 mm). Material flex, printer tolerance and the entered thicknesses are not simulated.</p>
           </div>
-          <div class="voice-card" id="voice-card">
+          <div class="voice-card tab-parameters-only" id="voice-card">
             <div class="voice-top">
               <button class="mic" id="voice-mic" title="Speak a command (Muse Voice Transcribe)" disabled><span class="icon">mic</span></button>
               <div class="voice-text">
@@ -335,7 +341,7 @@
             </div>
             <p class="break-note" id="voice-note"></p>
           </div>
-          <div class="exports-block">
+          <div class="exports-block tab-parameters-only">
             <span class="label">Export</span>
             <div class="exports">
               <button data-format="step"><strong>STEP</strong><span>Solid for CAD</span></button>

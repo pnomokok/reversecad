@@ -42,24 +42,44 @@ const mm = (value, digits = 2) => `${Number(value).toFixed(digits)} mm`;
 
 // ---------- screens ----------
 function setScreen(screen) {
+  // "match" is step 4: the edit screen with the Matching part tab (one source of truth for both).
   state.screen = screen;
-  document.querySelectorAll("#steps button, #rail button").forEach((b) => b.classList.toggle("active", b.dataset.screen === screen));
-  ["capture", "search", "edit", "export", "parts"].forEach((name) => $(`screen-${name}`).classList.toggle("hidden", name !== screen));
+  const section = screen === "match" ? "edit" : screen;
+  document.querySelectorAll("#steps button, #rail button").forEach((b) => b.classList.toggle("active",
+    b.dataset.screen === screen || (screen === "match" && b.dataset.screen === "edit" && b.closest("#rail"))));
+  ["capture", "search", "edit", "export", "parts"].forEach((name) => $(`screen-${name}`).classList.toggle("hidden", name !== section));
+  if (section === "edit") selectPanelTab(screen === "match" ? "matching" : "parameters");
   if (screen === "capture") render();
-  if (screen === "edit" && state.viewer) state.viewer.resize();
+  if (section === "edit" && state.viewer) state.viewer.resize();
   updateHeader();
 }
+
+function selectPanelTab(tab) {
+  // Instant show/hide only, so switching tabs keeps every slider value, input and verdict.
+  document.querySelectorAll(".panel-tab-button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  $("edit-panel").dataset.tab = tab;
+}
+
+document.querySelectorAll(".panel-tab-button").forEach((button) =>
+  button.addEventListener("click", () => setScreen(button.dataset.tab === "matching" ? "match" : "edit")));
+
+$("panel-wide").addEventListener("click", () => {
+  const wide = $("edit-panel").classList.toggle("wide");
+  $("panel-wide").title = wide ? "Narrow panel" : "Wide panel";
+  if (state.viewer) state.viewer.resize();  // the 3D view and its labels follow the new width
+});
 
 function enableSteps() {
   const canEdit = !!(state.done && state.done.result_source && !state.done.result_source.startsWith("none"));
   document.querySelectorAll('[data-screen="search"]').forEach((b) => (b.disabled = !state.analysis));
-  document.querySelectorAll('[data-screen="edit"], [data-screen="export"]').forEach((b) => (b.disabled = !canEdit));
+  document.querySelectorAll('[data-screen="edit"], [data-screen="match"], [data-screen="export"]').forEach((b) => (b.disabled = !canEdit));
 }
 
 document.querySelectorAll("#steps button, #rail button").forEach((button) =>
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     if (button.dataset.screen === "export") showExport();
     else if (button.dataset.screen === "edit" && !state.winner) showModel();
+    else if (button.dataset.screen === "match" && !state.winner) { await showModel(); setScreen("match"); }
     else if (button.dataset.screen === "parts") openParts();
     else setScreen(button.dataset.screen);
   }));
@@ -1065,7 +1085,6 @@ function setMatchingLayout(info) {
   // The Edit screen for a matching part (info) or the original (null).
   $("edit-panel").classList.toggle("matching-mode", !!info);
   $("matching-bar").classList.toggle("hidden", !info);
-  $("matching-choices").classList.add("hidden");
   $("matching-status").textContent = "";
   $("matching-status").classList.remove("warning");
   $("model-title").textContent = info ? `MATCHING · ${info.title}` : "ACTIVE MODEL";
@@ -1201,7 +1220,6 @@ function drawOverlay(original, matching, holesB, labelB, holesA) {
   $("overlay-matching-item").classList.toggle("hidden", split);
 }
 
-$("matching-open").addEventListener("click", () => $("matching-choices").classList.toggle("hidden"));
 document.querySelectorAll("#matching-choices button").forEach((b) => b.addEventListener("click", () =>
   (b.dataset.kind === "adapter" ? showAdapterPanel() : showMatching(b.dataset.kind))));
 $("matching-back").addEventListener("click", () => showModel(state.matching.base));
@@ -1217,7 +1235,6 @@ let adapterPresets = null;  // preset chips, loaded once from the server
 async function showAdapterPanel() {
   const panel = $("adapter-panel");
   panel.classList.toggle("hidden");
-  $("matching-choices").classList.add("hidden");
   if (panel.classList.contains("hidden")) return;
   clearAdapterPreview();
   $("adapter-status").textContent = "";
@@ -1532,7 +1549,6 @@ async function runAdapter(pattern, matingRun = null) {
   clearAdapterPreview();
   $("matching-status").textContent = "";
   $("matching-status").classList.remove("warning");
-  $("adapter-panel").classList.add("hidden");
   $("model-status").textContent = "Placing the patterns…";
   const placed = await postJSON(`/api/runs/${state.run}/matching/adapter/place`, { base, pattern });
   if (!placed.ok) {
@@ -2315,12 +2331,13 @@ async function openDeepLink(run, params) {
   await measure();
   if (step === "measure") return;
   await streamCandidates();
-  if (step !== "edit" && step !== "export") return;
+  if (step !== "edit" && step !== "export" && step !== "match") return;
   await showModel();
   if (params.get("match") === "adapter") {  // &pattern=N picks the preset (screenshots, videos)
     await showAdapterPanel();
     await runAdapter(adapterPresets[Number(params.get("pattern")) || 0] || adapterPresets[0]);
   } else if (params.get("match")) await showMatching(params.get("match"));
+  if (step === "match" || params.get("match")) setScreen("match");  // a match flow lands on its tab
   if (step === "export") {
     await showExport();
     return;

@@ -58,8 +58,10 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     const height = container.clientHeight || 600;
     renderer.setSize(width, height);
     labels.setSize(width, height);
-    if (assembly && part) fitProjected(framedBox(), framedBox().getCenter(new THREE.Vector3()));
-    else if (framedRadius) {
+    if (assembly && part) {
+      fitProjected(framedBox(), framedBox().getCenter(new THREE.Vector3()));
+      layoutSimLabels();  // tags follow the new width, as on a view change
+    } else if (framedRadius) {
       resetPan();
       setFrustum(framedRadius);
       panToClearLabels();
@@ -481,13 +483,16 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       entry.leader.geometry.dispose();
     }
     if ((!ghosts.length && !holes.length) || !part || assembly) return;  // in sim view all wait detached
+    labels.render(scene, camera);  // attach new label elements first, so every width below is measured, not estimated
     const stack = framedBox();
     camera.updateMatrixWorld();
     const mid = { x: (stack.min.x + stack.max.x) / 2, y: (stack.min.y + stack.max.y) / 2, z: (stack.min.z + stack.max.z) / 2 };
     const viewRect = container.getBoundingClientRect();
     const insetRect = document.querySelector(".fit-inset")?.getBoundingClientRect();
-    const clearLeft = (insetRect ? insetRect.right - viewRect.left : 0) + 78;
-    const clearRight = viewRect.width - 78;
+    // Strip margins past the widest tag's half-width ("MATING PART", ~80 px), so a label parked
+    // at the boundary still ends inside the viewport.
+    const clearLeft = (insetRect ? insetRect.right - viewRect.left : 0) + 88;
+    const clearRight = viewRect.width - 88;
     const camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
     const camUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     const mmPerPxX = (camera.right - camera.left) / (container.clientWidth || 800);
@@ -514,12 +519,15 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
         at[1] += camRight.y * step;
         at[2] += camRight.z * step;
       }
+      // One direction only (away from the first hit): reversing between two stacked labels
+      // would oscillate and end overlapped, while a monotone climb always terminates clear.
+      let dir = 0;
       for (let lift = 0; lift < 12; lift++) {
         const [sx, sy] = project(at);
         const hit = placed.find(([px, py, pw, ph]) =>
           Math.abs(sx - px) < pw + hw + 6 && Math.abs(sy - py) < ph + hh + 6);
         if (!hit) break;
-        const dir = sy <= hit[1] ? 1 : -1;
+        if (!dir) dir = sy <= hit[1] ? 1 : -1;
         const step = ((hit[3] + hh + 6) - Math.abs(sy - hit[1]) + 2) * mmPerPxY * dir;
         at[0] += camUp.x * step;
         at[1] += camUp.y * step;
@@ -606,12 +614,15 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
         tagAt[1] += camRight.y * step;
         tagAt[2] += camRight.z * step;
       }
+      // One direction only (away from the first hit): reversing between two stacked labels
+      // would oscillate and end overlapped, while a monotone climb always terminates clear.
+      let dir = 0;
       for (let lift = 0; lift < 12; lift++) {
         const [sx, sy] = project(tagAt);
         const hit = placed.find(([px, py, pw, ph]) =>
           Math.abs(sx - px) < pw + 58 + 6 && Math.abs(sy - py) < ph + 16 + 6);
         if (!hit) break;
-        const dir = sy <= hit[1] ? 1 : -1;  // lift away from the label underneath
+        if (!dir) dir = sy <= hit[1] ? 1 : -1;  // lift away from the label underneath
         const step = ((hit[3] + 16 + 6) - Math.abs(sy - hit[1]) + 2) * mmPerPxY * dir;
         tagAt[0] += camUp.x * step;
         tagAt[1] += camUp.y * step;
@@ -819,6 +830,9 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   }
 
   window.addEventListener("resize", resize);
+  // Label placement reads rendered text metrics, so place again once webfonts arrive;
+  // whichever finishes first, the final layout uses final metrics.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => resize());
   resize();
   loop();
   // Triangles of the shown part's mesh (the STL the viewer loaded).
