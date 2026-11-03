@@ -244,6 +244,7 @@ function dimensionBeside(p, q, center, gap) {
 }
 
 let occupied = [];  // boxes of the labels drawn so far in this render: [left, top, right, bottom]
+let placedLines = [];  // dimension stubs drawn so far: labels keep clear of them
 
 function labelBox(text, x, y, fontPx = Number(css("--callout-font-px"))) {
   const s = scale();
@@ -252,21 +253,112 @@ function labelBox(text, x, y, fontPx = Number(css("--callout-font-px"))) {
   return [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
 }
 
-function fits(box) {
+function fits(box, extra = []) {
+  // Inside the photo, and clear of the labels placed so far plus any extra boxes (shapes to avoid).
   const pad = 4 * scale();
   const inPhoto = box[0] > 0 && box[1] > 0 && box[2] < canvas.width && box[3] < canvas.height;
-  return inPhoto && !occupied.some((o) => box[0] < o[2] + pad && box[2] > o[0] - pad && box[1] < o[3] + pad && box[3] > o[1] - pad);
+  return inPhoto && ![...occupied, ...extra].some((o) => box[0] < o[2] + pad && box[2] > o[0] - pad && box[1] < o[3] + pad && box[3] > o[1] - pad);
 }
 
-function edgeDimension(edges, center, text, gap) {
-  // Draw the dimension beside one of two parallel edges: outside the shape if its label fits in the
-  // photo without covering another label, else inside (gap toward the center).
-  const options = [...edges.map(([p, q]) => dimensionBeside(p, q, center, gap)),
-                   ...edges.map(([p, q]) => dimensionBeside(p, q, center, -gap))];
-  const found = options.find((d) => fits(labelBox(text, ...d.middle)));
-  const { a, b } = found || options[0];
-  const middle = found ? found.middle : clampInside(text, options[0].middle);  // never cut off by the photo edge
-  dimensionLine(a[0], a[1], b[0], b[1]);
+function segsCross(p, q, r, s) {
+  // Whether the segments p→q and r→s touch (touching counts).
+  const dir = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  return dir(p, q, r) * dir(p, q, s) <= 0 && dir(r, s, p) * dir(r, s, q) <= 0;
+}
+
+function segHitsBox(p, q, box) {
+  // Whether the segment p→q touches the rectangle (keeps dimension lines and leaders off labels).
+  const [left, top, right, bottom] = box;
+  const inside = ([x, y]) => x >= left && x <= right && y >= top && y <= bottom;
+  if (inside(p) || inside(q)) return true;
+  const corners = [[left, top], [right, top], [right, bottom], [left, bottom]];
+  return corners.some((c, i) => segsCross(p, q, c, corners[(i + 1) % 4]));
+}
+
+function lineFits(a, b, extra = []) {
+  // Both ends inside the photo, and the line clear of placed labels plus any extra boxes.
+  // Non-strict: stubs are clamped exactly onto this margin before scoring.
+  const pad = 4 * scale();
+  const inside = ([x, y]) => x >= pad && y >= pad && x <= canvas.width - pad && y <= canvas.height - pad;
+  if (!inside(a) || !inside(b)) return false;
+  return ![...occupied, ...extra].some((o) => segHitsBox(a, b, [o[0] - pad, o[1] - pad, o[2] + pad, o[3] + pad]));
+}
+
+function pointInPoly([x, y], poly) {
+  // Ray casting: an odd number of edge crossings to the right means inside.
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function segHitsPoly(p, q, poly) {
+  // Whether the segment p→q touches the polygon (an end inside, or an edge crossed).
+  if (pointInPoly(p, poly) || pointInPoly(q, poly)) return true;
+  return segCrossesPoly(p, q, poly);
+}
+
+function segCrossesPoly(p, q, poly) {
+  // Whether the segment crosses the polygon's boundary (ends inside do not count: a leader
+  // from an inside label to an inside hole is clean unless it leaves through a notch).
+  return poly.some((c, i) => segsCross(p, q, c, poly[(i + 1) % poly.length]));
+}
+
+function boxHitsPoly(box, poly) {
+  // Whether the rectangle touches the polygon (a corner or the center inside, or an edge crossed).
+  const [l, t, r, b] = box;
+  if ([[l, t], [r, t], [r, b], [l, b], [(l + r) / 2, (t + b) / 2]].some((p) => pointInPoly(p, poly))) return true;
+  return poly.some((c, i) => segHitsBox(c, poly[(i + 1) % poly.length], box));
+}
+
+function labelFits(box, avoidPolys) {
+  // Inside the photo, clear of placed labels and dimension lines, and off every avoided shape.
+  if (!fits(box)) return false;
+  if (avoidPolys.some((poly) => boxHitsPoly(box, poly))) return false;
+  return !placedLines.some(([a, b]) => segHitsBox(a, b, box));
+}
+
+function edgeDimension(edges, center, text, gap, ownPoly, avoidPolys) {
+  // A short dimension stub parallel to one of two edges, just outside the shape, with the label on
+  // its middle — or just past a corner, or one step further out, when the middle is crowded. The
+  // first fully clean candidate wins (near first); else the fewest violations, so one is always drawn.
+  const s = scale();
+  const [halfW, halfH] = labelBox(text, 0, 0).slice(2);
+  const stubHalf = Math.hypot(halfW, halfH) + 20 * s;
+  const pastEnd = stubHalf + 12 * s;
+  const lines = [...edges.map(([p, q]) => dimensionBeside(p, q, center, gap)),
+                 ...edges.map(([p, q]) => dimensionBeside(p, q, center, 2 * gap)),
+                 ...edges.map(([p, q]) => dimensionBeside(p, q, center, -gap))];
+  const directed = lines.map((d) => {
+    const length = Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1]) || 1;
+    return { d, ux: (d.b[0] - d.a[0]) / length, uy: (d.b[1] - d.a[1]) / length };
+  });
+  const stubAt = ({ ux, uy }, [mx, my]) => ({ a: [mx - ux * stubHalf, my - uy * stubHalf],
+    b: [mx + ux * stubHalf, my + uy * stubHalf], middle: [mx, my] });
+  const spots = ({ d, ux, uy }) => [d.middle,
+    ...[0.25, 0.75].map((t) => [d.a[0] + (d.b[0] - d.a[0]) * t, d.a[1] + (d.b[1] - d.a[1]) * t]),
+    ...[1, 1.5, 2, 3].flatMap((k) => [[d.a[0] - ux * pastEnd * k, d.a[1] - uy * pastEnd * k],
+      [d.b[0] + ux * pastEnd * k, d.b[1] + uy * pastEnd * k]])];
+  const middles = directed.map((l) => stubAt(l, spots(l)[0]));
+  const quarters = directed.flatMap((l) => spots(l).slice(1, 3).map((m) => stubAt(l, m)));
+  const ends = directed.flatMap((l) => spots(l).slice(3).map((m) => stubAt(l, m)));
+  const pad = 4 * s;
+  const clampPt = ([x, y]) => [Math.min(Math.max(x, pad), canvas.width - pad),
+    Math.min(Math.max(y, pad), canvas.height - pad)];
+  const candidates = [...middles, ...quarters, ...ends]
+    .map((c) => ({ ...c, a: clampPt(c.a), b: clampPt(c.b) }));  // stubs trim at the photo edge
+  const polys = [ownPoly, ...avoidPolys];
+  const stubFits = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]) >= 60 * s
+    && lineFits(a, b) && !polys.some((poly) => segHitsPoly(a, b, poly));
+  const scored = candidates.map((c) => ({ ...c,
+    violations: (labelFits(labelBox(text, ...c.middle), polys) ? 0 : 1) + (stubFits(c.a, c.b) ? 0 : 1) }));
+  scored.sort((x, y) => x.violations - y.violations);
+  const best = scored[0];
+  const middle = best.violations === 0 ? best.middle : clampInside(text, best.middle);
+  dimensionLine(best.a[0], best.a[1], best.b[0], best.b[1]);
+  placedLines.push([best.a, best.b]);
   callout(text, middle[0], middle[1]);
   occupied.push(labelBox(text, ...middle));
 }
@@ -283,39 +375,46 @@ function sidePairs(corners) {
   return { longPair, shortPair };
 }
 
-function drawCard(corners) {
-  // The card's known size (ID-1, 85.60 × 53.98 mm) beside one long and one short edge.
+function drawCard(corners, ownPoly, avoidPolys) {
+  // The card's known size (ID-1, 85.60 × 53.98 mm) along one long and one short edge, just outside.
   const center = [corners.reduce((s, p) => s + p[0], 0) / 4, corners.reduce((s, p) => s + p[1], 0) / 4];
   const { longPair, shortPair } = sidePairs(corners);
-  const gap = 40 * scale();
-  edgeDimension(longPair, center, "85.60 mm", gap);
-  edgeDimension([shortPair[1], shortPair[0]], center, "53.98 mm", gap);  // left short edge first
+  const gap = 30 * scale();
+  edgeDimension(longPair, center, "85.60 mm", gap, ownPoly, avoidPolys);
+  edgeDimension([shortPair[1], shortPair[0]], center, "53.98 mm", gap, ownPoly, avoidPolys);  // left short edge first
 }
 
 function drawMeasurements(a, fx) {
   fx = fx || { outline: 1, dims: 1 };  // measure intro: the contour draws itself, then the dimensions fade in
   const s = scale();
   occupied = [];
+  placedLines = [];
   polygon(a.card_corners_px, css("--color-overlay-card"), 2);
   polygon(a.outline_px, css("--color-overlay-part"), Number(css("--overlay-line-width")), true, true, fx.outline);
   a.holes.forEach((hole) => polygon(hole.contour_px, css("--color-overlay-hole"), 2));
 
   const box = orientedBox(a.outline_px);
-  const shapeBox = (points) => {  // the shape's own rectangle: labels stay off the card and the part
-    const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
-    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-  };
-  occupied.push(shapeBox(a.card_corners_px), shapeBox(a.outline_px));
-  if (state.click) occupied.push([state.click[0] - 70 * s, state.click[1] - 30 * s, state.click[0] + 70 * s, state.click[1] + 62 * s]);
+  const cardPoly = a.card_corners_px;
+  const partPoly = a.outline_px;
+  const holePolys = a.holes.map((hole) => hole.contour_px);
+  if (state.click) occupied.push([state.click[0] - 70 * s, state.click[1] + 34 * s, state.click[0] + 70 * s, state.click[1] + 64 * s]);
 
-  // The part's outline first (its labels matter most), along its own axes; then the holes; then the card.
+  // The part's extents first (their labels matter most), along its own axes; then the holes; then the card.
   context.save();
   context.globalAlpha = fx.dims;
   const { longPair, shortPair } = sidePairs(box.corners);
-  edgeDimension(longPair, box.center, mm(a.outline_mm.length), 56 * s);
-  edgeDimension(shortPair, box.center, mm(a.outline_mm.width), 56 * s);
-  holeGroups(a.holes).forEach((group) => drawHoleGroup(group, box));
-  drawCard(a.card_corners_px);
+  edgeDimension(longPair, box.center, mm(a.outline_mm.length), 30 * s, partPoly, [cardPoly]);
+  edgeDimension(shortPair, box.center, mm(a.outline_mm.width), 30 * s, partPoly, [cardPoly]);
+  const pxPerMm = 1 / a.card_mm_per_pixel;
+  for (const group of holeGroups(a.holes)) {
+    const placed = group.holes.length > 1
+      && placeHoleLabel(group.holes, a.holes, holeGroupText(group), holePolys, cardPoly, partPoly,
+        LEADER_LIMIT_MM * pxPerMm);
+    if (!placed) for (const hole of group.holes) {
+      placeHoleLabel([hole], a.holes, holeGroupText({ ...group, holes: [hole] }), holePolys, cardPoly, partPoly, null);
+    }
+  }
+  drawCard(a.card_corners_px, cardPoly, [partPoly]);
   context.restore();
 }
 
@@ -342,27 +441,67 @@ function holeGroupText(group) {
   return `${count}${group.holes[0].size.replace(" mm", "")}`;
 }
 
-function drawHoleGroup(group, box) {
-  // One label for the group, at the first free spot near the holes, with a thin leader to each hole.
+const LEADER_LIMIT_MM = 12;  // equal holes share one label only while every leader (center to
+  // center) stays this short: about 5 mm of visible leader. Tighter admits nothing — the label alone
+  // needs ~11 mm of span to clear two adjacent holes — while spread holes still split (their shared
+  // label would have to cover a hole to keep every leader short).
+
+function ringSpots([cx, cy], base, radii) {
+  // Candidate label centers on rings around a point, nearest first; the 8 compass points first
+  // (labels aligned with the part read best), then the 8 half-offset angles, so a valid spot
+  // between grid points — e.g. a shared label just inside a tilted edge — is still found.
   const s = scale();
-  const text = holeGroupText(group);
-  const centers = group.holes.map((h) => h.center_px);
-  const middle = [centers.reduce((t, c) => t + c[0], 0) / centers.length, centers.reduce((t, c) => t + c[1], 0) / centers.length];
-  const step = 48 * s;
-  const half = (axis) => Math.max(...box.corners.map(([x, y]) => Math.abs((x - box.center[0]) * axis[0] + (y - box.center[1]) * axis[1])));
-  const outside = [1, 2].flatMap((k) => [[box.v, half(box.v) + step * k], [box.v, -(half(box.v) + step * k)],
-    [box.u, half(box.u) + step * k], [box.u, -(half(box.u) + step * k)]]
-    .map(([axis, d]) => [middle[0] + axis[0] * d, middle[1] + axis[1] * d]));
-  const spots = [...outside, middle, ...[1, -1, 2, -2].map((k) => [middle[0] + box.v[0] * step * k, middle[1] + box.v[1] * step * k]),
-                 ...centers.map(([x, y]) => [x + (box.center[0] - x) * 0.35, y + (box.center[1] - y) * 0.35])];
-  const [x, y] = spots.find((p) => fits(labelBox(text, ...p, 16))) || clampInside(text, spots[0], 16);
-  context.strokeStyle = css("--color-overlay-hole");
-  context.lineWidth = 1.5 * s;
-  context.beginPath();
-  for (const [hx, hy] of centers) { context.moveTo(x, y); context.lineTo(hx, hy); }
-  context.stroke();
+  const steps = [0, 1, 2, 3, 4, 5, 6, 7, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5];
+  return radii.flatMap((extra) => steps.map((k) => {
+    const angle = (k / 8) * 2 * Math.PI;
+    return [cx + Math.cos(angle) * (base + extra * s), cy + Math.sin(angle) * (base + extra * s)];
+  }));
+}
+
+function holeRadiusPx(hole) {
+  const xs = hole.contour_px.map(([x]) => x), ys = hole.contour_px.map(([, y]) => y);
+  return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2;
+}
+
+function leaderBlocked(from, to, self, holePolys, cardPoly, partPoly) {
+  // A leader may not cross a label, the card, the part's edge, or another hole (its own hole is where it ends).
+  const pad = 4 * scale();
+  if ([...occupied].some((o) => segHitsBox(from, to, [o[0] - pad, o[1] - pad, o[2] + pad, o[3] + pad]))) return true;
+  if (segHitsPoly(from, to, cardPoly)) return true;
+  if (segCrossesPoly(from, to, partPoly)) return true;
+  return holePolys.some((poly, j) => j !== self && segHitsPoly(from, to, poly));
+}
+
+function placeHoleLabel(holes, allHoles, text, holePolys, cardPoly, partPoly, limitPx) {
+  // One label next to these holes with a short leader to each; a group that cannot keep every
+  // leader short reports back, so the caller labels each hole instead. Singles always draw.
+  const s = scale();
+  const centers = holes.map((h) => h.center_px);
+  const ids = holes.map((h) => allHoles.indexOf(h));
+  const middle = [centers.reduce((t, c) => t + c[0], 0) / centers.length,
+                  centers.reduce((t, c) => t + c[1], 0) / centers.length];
+  const base = holes.length > 1 ? 0 : holeRadiusPx(holes[0]);
+  const spots = ringSpots(middle, base, holes.length > 1 ? [30, 60, 100, 160] : [30, 60, 100]);
+  const avoid = [cardPoly, ...holePolys];
+  for (const [x, y] of spots) {
+    if (!labelFits(labelBox(text, x, y, 16), avoid)) continue;
+    const leaders = centers.map((c) => [[x, y], c]);
+    if (limitPx != null && leaders.some(([[x0, y0], [x1, y1]]) => Math.hypot(x1 - x0, y1 - y0) > limitPx)) continue;
+    if (leaders.some(([p, c], i) => leaderBlocked(p, c, ids[i], holePolys, cardPoly, partPoly))) continue;
+    context.strokeStyle = css("--color-overlay-hole");
+    context.lineWidth = 1.5 * s;
+    context.beginPath();
+    for (const [hx, hy] of centers) { context.moveTo(x, y); context.lineTo(hx, hy); }
+    context.stroke();
+    callout(text, x, y, 16);
+    occupied.push(labelBox(text, x, y, 16));
+    return true;
+  }
+  if (holes.length > 1) return false;
+  const [x, y] = clampInside(text, middle, 16);  // no free spot: on the hole, like before
   callout(text, x, y, 16);
   occupied.push(labelBox(text, x, y, 16));
+  return true;
 }
 
 function clampInside(text, [x, y], fontPx) {
