@@ -155,7 +155,9 @@ def test_sample_run_replays_like_a_fresh_clone(monkeypatch):
     monkeypatch.setattr(server, "REPLAY_DELAY_S", 0)
     replay.analysis.cache_clear()
     try:
-        assert client.get("/api/runs").json()["runs"] == ["A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken"]
+        assert client.get("/api/runs").json()["runs"] == ["A_brushed", "A_light", "A_light_repair",
+                                                            "A_torn_fallback", "C_wood", "D_black_plastic",
+                                                            "D_tab_broken", "E_glossy_white"]
         assert client.get("/api/runs/A_light/photo").headers["content-type"] == "image/jpeg"
         assert client.get("/api/runs/A_light/analysis").json()["table"]["hole_count"] == 4
         events = _events(client.get("/api/runs/A_light/candidates/stream").text)

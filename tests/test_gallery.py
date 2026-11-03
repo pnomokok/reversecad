@@ -97,13 +97,28 @@ def test_samples_keep_their_cards():
     assert gallery.card("A_light_repair")["source"] == "Muse Wonder repair"
     assert gallery.card("A_torn_fallback")["source"] == "Fallback"
     assert gallery.card("D_tab_broken")["source"] == "Winner"
+    assert gallery.card("A_brushed") == {"name": "A_brushed", "length_mm": pytest.approx(79.51, abs=0.01),
+                                         "width_mm": pytest.approx(40.51, abs=0.01), "hole_count": 4,
+                                         "source": "Winner", "kind": "Synthetic"}
+    assert gallery.card("C_wood") == {"name": "C_wood", "length_mm": pytest.approx(69.67, abs=0.01),
+                                      "width_mm": pytest.approx(50.59, abs=0.01), "hole_count": 2,
+                                      "source": "Winner", "kind": "Synthetic"}
+    assert gallery.card("D_black_plastic") == {"name": "D_black_plastic",
+                                               "length_mm": pytest.approx(49.66, abs=0.01),
+                                               "width_mm": pytest.approx(37.41, abs=0.01), "hole_count": 2,
+                                               "source": "Winner", "kind": "Synthetic"}
+    assert gallery.card("E_glossy_white") == {"name": "E_glossy_white",
+                                              "length_mm": pytest.approx(69.56, abs=0.01),
+                                              "width_mm": pytest.approx(40.45, abs=0.01), "hole_count": 2,
+                                              "source": "Winner", "kind": "Synthetic"}
 
 
 def test_demo_sources_list_samples_only(monkeypatch):
     """The demo narrows SOURCES to samples/; the gallery follows it with no extra code."""
     monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
     names = {c["name"] for c in gallery.gallery_runs()}
-    assert names == {"A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken"}
+    assert names == {"A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken",
+                       "A_brushed", "C_wood", "D_black_plastic", "E_glossy_white"}
 
 
 def test_parts_endpoint_shape():

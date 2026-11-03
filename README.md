@@ -132,7 +132,7 @@ python -m venv .venv
 
 On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe`; tested on Linux (Python 3.13, fresh clone: install, tests, web app start); macOS not tested.
 
-Open **http://127.0.0.1:8000**. Four saved synthetic runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), and `D_tab_broken` (a snapped-off tab with its completion card).
+Open **http://127.0.0.1:8000**. Eight saved synthetic runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), and four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`).
 
 ### Live mode (your own photos)
 
@@ -158,7 +158,7 @@ copy .env.example .env      # then write your keys into .env
 
 Every model call is logged per run with its tokens and estimated cost (`usage.jsonl`, shown on the search screen).
 
-Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the four samples in the browser; live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
+Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the eight samples in the browser; live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
 
 ## Taking a photo
 
