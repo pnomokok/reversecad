@@ -229,10 +229,33 @@ def features(result):
             "holes": holes, "hole_kinds": hole_kinds(result, top), "solids": len(result.solids().vals())}
 
 
+def _polyline_is_slot(wire, tolerance_mm=0.05):
+    """Whether a hole made only of straight edges traces a slot (two half circles joined by two straight
+    sides) within tolerance_mm: a matching part cuts the original's slot as its 0.01 mm profile points, so
+    it arrives as many short lines. Naming only; the geometry is not touched."""
+    import numpy as np
+
+    points = np.array([(v.X, v.Y) for v in wire.Vertices()])
+    if len(points) < 8:
+        return False
+    centered = points - points.mean(axis=0)
+    axis = np.linalg.svd(centered, full_matrices=False)[2][0]
+    along, across = centered @ axis, centered @ np.array([-axis[1], axis[0]])
+    along -= (along.max() + along.min()) / 2
+    across -= (across.max() + across.min()) / 2
+    radius = (across.max() - across.min()) / 2
+    half = (along.max() - along.min()) / 2 - radius  # half length of the straight sides
+    if radius <= 0 or half <= 0.05 * radius:
+        return False
+    distance = np.hypot(along - np.clip(along, -half, half), across)
+    return bool(np.all(np.abs(distance - radius) <= max(tolerance_mm, 0.01 * radius)))
+
+
 def hole_kinds(result, top):
     """How many holes of each shape the top faces have, for naming the count ("1 round hole + 1 slot"):
-    a single circle is round, two arcs joined by two lines a slot, four lines a rectangular hole, anything
-    else shaped. Read from the built model's edges; no measurement involved."""
+    a single circle is round, two arcs joined by two lines a slot (or straight edges tracing one, as in a
+    matching part), four lines a rectangular hole, anything else shaped. Read from the built model's
+    edges; no measurement involved."""
     kinds = {"round": 0, "slot": 0, "rectangular": 0, "shaped": 0}
     for solid in result.solids().vals():
         for face in solid.Faces():
@@ -246,6 +269,8 @@ def hole_kinds(result, top):
                     kinds["slot"] += 1
                 elif types == ["LINE"] * 4:
                     kinds["rectangular"] += 1
+                elif set(types) == {"LINE"} and _polyline_is_slot(wire):
+                    kinds["slot"] += 1
                 else:
                     kinds["shaped"] += 1
     return kinds

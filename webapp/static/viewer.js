@@ -263,6 +263,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       // half of it: then the frustum is refit (direction kept) so a small part is never left tiny.
       const radius = framedBox().getSize(new THREE.Vector3()).length() / 2;
       if (radius < framedRadius * 0.5 || radius > framedRadius * 1.35) setView();
+      else if (!assembly) {  // same direction and frame; the pan is recomputed for the new part and labels
+        resetPan();
+        setFrustum(framedRadius);
+        panToClearLabels();
+        layoutPartLabels();
+        controls.update();
+      }
     }
   }
 
@@ -456,43 +463,63 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
         if (o.isCSS2DObject && o.element.style.display !== "none" && !o.element.dataset.movable) fixed.push(o);
       });
     }
-    if (!fixed.length) return;
+    if (!fixed.length && !part) return;
     camera.updateMatrixWorld();
     const viewRect = container.getBoundingClientRect();
     const insetRect = document.querySelector(".fit-inset")?.getBoundingClientRect();
     const clearLeft = (insetRect ? insetRect.right - viewRect.left : 0) + 8;
     const clearRight = viewRect.width - 8;
-    const span = () => {
+    // The model itself (part, ghosts and a shown suggestion) must stay inside the viewer too, so a
+    // pan for the labels never pushes it under the right panel. Its screen box is its framed box's
+    // projected corners; it only has to stay inside the viewer, not clear of the floating overlay.
+    const modelBox = part ? framedBox() : null;
+    if (modelBox && suggestion) modelBox.expandByObject(suggestion);
+    if (modelBox && annotations) {  // its dimension and extension lines too (labels are bounded above)
+      const leaders = new Set((annotations.userData.holes || []).map((entry) => entry.leader));
+      annotations.traverse((o) => { if (o.isLine && !leaders.has(o)) modelBox.expandByObject(o); });
+    }
+    const modelSpan = () => {
       let lo = Infinity;
       let hi = -Infinity;
-      for (const o of fixed) {
-        const [sx, , hw] = screenRect(o);
-        lo = Math.min(lo, sx - hw);
-        hi = Math.max(hi, sx + hw);
-      }
+      const corner = new THREE.Vector3();
+      for (const x of [modelBox.min.x, modelBox.max.x])
+        for (const y of [modelBox.min.y, modelBox.max.y])
+          for (const z of [modelBox.min.z, modelBox.max.z]) {
+            const sx = (corner.set(x, y, z).project(camera).x * 0.5 + 0.5) * viewRect.width;
+            lo = Math.min(lo, sx);
+            hi = Math.max(hi, sx);
+          }
       return [lo, hi];
     };
-    // When the labels are wider than the visible strip, no pan can clear both sides: zoom out
-    // until they fit, then pan. One pass suffices (the zoom is computed from the same span).
-    for (let pass = 0; pass < 2; pass++) {
-      const [lo, hi] = span();
-      if (hi - lo <= clearRight - clearLeft) break;
-      const factor = (hi - lo + 16) / (clearRight - clearLeft);
-      camera.left *= factor;
-      camera.right *= factor;
-      camera.top *= factor;
-      camera.bottom *= factor;
+    const needs = () => {  // how far the picture must move right (left) and left (right) to fit
+      let left = -Infinity;
+      let right = -Infinity;
+      for (const o of fixed) {
+        const [sx, , hw] = screenRect(o);
+        left = Math.max(left, clearLeft - (sx - hw));
+        right = Math.max(right, (sx + hw) - clearRight);
+      }
+      if (modelBox) {
+        const [lo, hi] = modelSpan();
+        left = Math.max(left, 8 - lo);
+        right = Math.max(right, hi - (viewRect.width - 8));
+      }
+      return [left, right];
+    };
+    // When no pan can satisfy both sides (labels and model wider than their strips), zoom out
+    // step by step until one can; label boxes keep their pixel size, so this converges.
+    for (let pass = 0; pass < 24; pass++) {
+      const [left, right] = needs();
+      if (left + right <= 0) break;
+      camera.left *= 1.08;
+      camera.right *= 1.08;
+      camera.top *= 1.08;
+      camera.bottom *= 1.08;
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
     }
-    let left = 0;
-    let right = 0;
-    for (const o of fixed) {
-      const [sx, , hw] = screenRect(o);
-      left = Math.max(left, clearLeft - (sx - hw));
-      right = Math.max(right, (sx + hw) - clearRight);
-    }
-    const px = left > 0 ? left : -right;
+    const [left, right] = needs();
+    const px = left > 0 ? left : right > 0 ? -right : 0;
     if (!px) return;
     // Moving the rig along +right shifts the picture left, so the pan goes the other way.
     const mm = -px * ((camera.right - camera.left) / (container.clientWidth || 800));

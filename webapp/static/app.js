@@ -2615,6 +2615,7 @@ function applyConfig(config) {
   state.config = config;
   if (!config.live) {
     offNote(document.querySelector(".dropzone"), "Your own photos", true);
+    $("stage-empty").textContent = "Try an example.";  // no upload control on this server
     offNote($("repair-again"), "Repair");
     offNote($("mating-row"), "Pattern from a photo");
   }
@@ -2663,7 +2664,7 @@ async function showExport() {
 
 function drawingSVG(data) {
   // A drawing sheet (420 × 297 units): top view with overall dimensions and hole callouts, front view with
-  // the thickness and hidden holes, a hole table from the lower-left corner, and a title block.
+  // the thickness and hidden holes, a hole table of centers from the lower-left corner, and a title block.
   const p = data.profile;
   const [x0, y0, x1, y1] = p.box;
   const [length, width, thickness] = [x1 - x0, y1 - y0, p.thickness];
@@ -2751,17 +2752,19 @@ function drawingSVG(data) {
   arrowhead(fl, fy + ft, 0, -1);
   box(fmt(thickness), fl - 18, fy + ft / 2);
 
-  // Hole table (from the lower-left corner, 0,0) and, for a shaped outline, its corners.
+  // Hole table (every hole's center, from the lower-left corner, 0,0) and, for a shaped outline, its corners.
+  // A shaped hole's center is the middle of its extent (exact for rectangles and slots, symmetric shapes).
   const tx = 12;
   const ty = 222;
   const span = (h, k) => [Math.min(...h.points.map((q) => q[k])), Math.max(...h.points.map((q) => q[k]))];
+  const mid = (h, k) => (span(h, k)[0] + span(h, k)[1]) / 2;
   const rows = p.holes.map((h, i) => (h.type === "circle"
     ? [`H${i + 1}`, fmt(h.center[0] - x0), fmt(h.center[1] - y0), `Ø${fmt(h.diameter)}`]
-    : [`H${i + 1}`, fmt(span(h, 0)[0] - x0), fmt(span(h, 1)[0] - y0),
+    : [`H${i + 1}`, fmt(mid(h, 0) - x0), fmt(mid(h, 1) - y0),
        `${fmt(span(h, 0)[1] - span(h, 0)[0])} × ${fmt(span(h, 1)[1] - span(h, 1)[0])}`]));
   const columns = [0, 18, 50, 82];
-  out.push(`<text class="view-title" x="${tx}" y="${ty - 4}">HOLE TABLE · from 0,0</text>`);
-  [["HOLE", "X", "Y", "SIZE"], ...rows].slice(0, 12).forEach((cells, i) => {
+  out.push(`<text class="view-title" x="${tx}" y="${ty - 4}">HOLE TABLE · centers from 0,0</text>`);
+  [["HOLE", "CENTER X", "CENTER Y", "SIZE"], ...rows].slice(0, 12).forEach((cells, i) => {
     cells.forEach((cell, j) => out.push(`<text class="table-text" x="${tx + columns[j]}" y="${ty + 5 + i * 6.4}">${cell}</text>`));
     out.push(`<line class="table-line" x1="${tx}" y1="${ty + 6.8 + i * 6.4}" x2="${tx + 120}" y2="${ty + 6.8 + i * 6.4}"/>`);
   });
