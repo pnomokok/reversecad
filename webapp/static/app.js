@@ -183,21 +183,26 @@ function polygon(points, color, width, closed = true, glow = false, progress = 1
   context.restore();
 }
 
-function callout(text, x, y, fontPx = Number(css("--callout-font-px"))) {
-  // A dimension box: dark fill, white border, white monospace text, centered on (x, y).
+function callout(text, x, y, fontPx = Number(css("--callout-font-px")), angle = 0) {
+  // A dimension box: dark fill, white border, white monospace text, centered on (x, y); turned by
+  // `angle` (radians) when it runs along a steep dimension line.
   const s = scale();
+  context.save();
+  context.translate(x, y);
+  context.rotate(angle);
   context.font = `700 ${fontPx * s}px ${css("--font-mono")}`;
   const width = context.measureText(text).width + 16 * s;
   const height = fontPx * 1.6 * s;
   context.fillStyle = css("--color-callout-bg");
-  context.fillRect(x - width / 2, y - height / 2, width, height);
+  context.fillRect(-width / 2, -height / 2, width, height);
   context.strokeStyle = css("--color-dimension");
   context.lineWidth = Number(css("--callout-border-px")) * s;
-  context.strokeRect(x - width / 2, y - height / 2, width, height);
+  context.strokeRect(-width / 2, -height / 2, width, height);
   context.fillStyle = css("--color-dimension");
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillText(text, x, y + 1 * s);
+  context.fillText(text, 0, 1 * s);
+  context.restore();
 }
 
 function dimensionLine(x1, y1, x2, y2) {
@@ -217,39 +222,92 @@ function dimensionLine(x1, y1, x2, y2) {
   context.stroke();
 }
 
-function orientedBox(points) {
-  // The part's box along its own main axis (principal axes of the outline points): center, axes, corners.
-  const n = points.length;
-  const [cx, cy] = [points.reduce((s, p) => s + p[0], 0) / n, points.reduce((s, p) => s + p[1], 0) / n];
-  let [sxx, syy, sxy] = [0, 0, 0];
-  for (const [x, y] of points) { sxx += (x - cx) ** 2; syy += (y - cy) ** 2; sxy += (x - cx) * (y - cy); }
-  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-  const u = [Math.cos(angle), Math.sin(angle)];
-  const v = [-u[1], u[0]];
-  const along = (p, axis) => (p[0] - cx) * axis[0] + (p[1] - cy) * axis[1];
-  const us = points.map((p) => along(p, u));
-  const vs = points.map((p) => along(p, v));
-  const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
-  const at = (a, b) => [cx + u[0] * a + v[0] * b, cy + u[1] * a + v[1] * b];
-  return { center: [cx, cy], u, v, corners: [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)] };
+function convexHull(points) {
+  // Monotone chain: the hull's corners in order.
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list) => {
+    const h = [];
+    for (const p of list) {
+      while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop();
+      h.push(p);
+    }
+    h.pop();
+    return h;
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
 }
 
-function dimensionBeside(p, q, center, gap) {
-  // The dimension line for edge p→q, moved by `gap` to the side away from `center`.
-  const length = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
-  let [nx, ny] = [-(q[1] - p[1]) / length, (q[0] - p[0]) / length];
-  if (((p[0] + q[0]) / 2 - center[0]) * nx + ((p[1] + q[1]) / 2 - center[1]) * ny < 0) [nx, ny] = [-nx, -ny];
-  const [a, b] = [[p[0] + nx * gap, p[1] + ny * gap], [q[0] + nx * gap, q[1] + ny * gap]];
-  return { a, b, middle: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+function minAreaBox(points) {
+  // The shape's minimum-area rectangle — the same box cv2.minAreaRect gives the measurement table,
+  // so each drawn extent lies along the axis it was measured on. u is the long axis (length, pointing
+  // right), v the short one (width, u turned +90°); range.u / range.v are the extents along them, as
+  // plain projections (a point is u·a + v·b).
+  const hull = convexHull(points);
+  const span = (axis) => {
+    const c = hull.map((h) => h[0] * axis[0] + h[1] * axis[1]);
+    return [Math.min(...c), Math.max(...c)];
+  };
+  let best = null;
+  for (let i = 0; i < hull.length; i++) {
+    const [p, q] = [hull[i], hull[(i + 1) % hull.length]];
+    const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (length < 1e-9) continue;
+    const e = [(q[0] - p[0]) / length, (q[1] - p[1]) / length];
+    const [se, sn] = [span(e), span([-e[1], e[0]])];
+    const area = (se[1] - se[0]) * (sn[1] - sn[0]);
+    if (!best || area < best.area) best = { area, e, long: se[1] - se[0] >= sn[1] - sn[0] };
+  }
+  let u = best.long ? best.e : [-best.e[1], best.e[0]];
+  if (u[0] < 0 || (u[0] === 0 && u[1] < 0)) u = [-u[0], -u[1]];
+  const v = [-u[1], u[0]];
+  return { u, v, range: { u: span(u), v: span(v) } };
+}
+
+function extentGeometry(points, box, along, side, gap) {
+  // One extent dimension of a shape. `along` is "u" (length) or "v" (width); `side` −1 or +1 picks the
+  // shape's low or high side across it. The dimension line runs parallel to `along`, `gap` outside the
+  // shape, between the two extreme points' projections; an extension line runs from each extreme point
+  // (the one nearest this side, when several are extreme) to just past the dimension line.
+  const s = scale();
+  const across = along === "u" ? "v" : "u";
+  const [m, c] = [box[along], box[across]];
+  const [m0, m1] = box.range[along];
+  const [c0, c1] = box.range[across];
+  const coord = (p, axis) => p[0] * axis[0] + p[1] * axis[1];
+  const at = (a, b) => [m[0] * a + c[0] * b, m[1] * a + c[1] * b];
+  const line = side < 0 ? c0 - gap : c1 + gap;
+  // Points this close to an extreme count as extreme too (a mask edge is never perfectly straight),
+  // so the extension line starts at the extreme corner nearest this side, not across the shape.
+  const [tol, startGap, past] = [Math.max(2, 0.02 * (m1 - m0)), 4 * s, 8 * s];
+  const extension = (end) => {
+    const extremes = points.filter((p) => Math.abs(coord(p, m) - end) <= tol).map((p) => coord(p, c));
+    const from = side < 0 ? Math.min(...extremes) : Math.max(...extremes);
+    return [at(end, from + side * startGap), at(end, line + side * past)];
+  };
+  return { a: at(m0, line), b: at(m1, line), ext: [extension(m0), extension(m1)] };
+}
+
+function preferredSide(box, along, avoidPolys) {
+  // The side facing away from the first shape to avoid (the other object), across `along`.
+  const axis = box[along === "u" ? "v" : "u"];
+  const [c0, c1] = box.range[along === "u" ? "v" : "u"];
+  if (!avoidPolys.length) return -1;
+  const other = avoidPolys[0].reduce((t, p) => t + p[0] * axis[0] + p[1] * axis[1], 0) / avoidPolys[0].length;
+  return other > (c0 + c1) / 2 ? -1 : 1;
 }
 
 let occupied = [];  // boxes of the labels drawn so far in this render: [left, top, right, bottom]
-let placedLines = [];  // dimension stubs drawn so far: labels keep clear of them
+let placedLines = [];  // dimension and extension lines drawn so far: labels keep clear of them
+let dimensionLines = [];  // the dimension lines alone: hole leaders may cross extension lines, not these
 
-function labelBox(text, x, y, fontPx = Number(css("--callout-font-px"))) {
+function labelBox(text, x, y, fontPx = Number(css("--callout-font-px")), angle = 0) {
+  // The label's screen box [left, top, right, bottom]; for a turned label, the box around it.
   const s = scale();
   context.font = `700 ${fontPx * s}px ${css("--font-mono")}`;
-  const [w, h] = [context.measureText(text).width + 16 * s, fontPx * 1.6 * s];
+  const [tw, th] = [context.measureText(text).width + 16 * s, fontPx * 1.6 * s];
+  const [c, n] = [Math.abs(Math.cos(angle)), Math.abs(Math.sin(angle))];
+  const [w, h] = [c * tw + n * th, n * tw + c * th];
   return [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
 }
 
@@ -313,75 +371,86 @@ function boxHitsPoly(box, poly) {
   return poly.some((c, i) => segHitsBox(c, poly[(i + 1) % poly.length], box));
 }
 
-function labelFits(box, avoidPolys) {
-  // Inside the photo, clear of placed labels and dimension lines, and off every avoided shape.
+function labelFits(box, avoidPolys, turned = null) {
+  // Inside the photo, clear of placed labels and dimension lines, and off every avoided shape. A
+  // turned label (`turned`: its four corners) is checked against shapes and lines by its own
+  // rectangle, not the larger screen box around it.
   if (!fits(box)) return false;
+  if (turned) {
+    if (avoidPolys.some((poly) => polysTouch(turned, poly))) return false;
+    return !placedLines.some(([a, b]) => segHitsPoly(a, b, turned));
+  }
   if (avoidPolys.some((poly) => boxHitsPoly(box, poly))) return false;
   return !placedLines.some(([a, b]) => segHitsBox(a, b, box));
 }
 
-function edgeDimension(edges, center, text, gap, ownPoly, avoidPolys) {
-  // A short dimension stub parallel to one of two edges, just outside the shape, with the label on
-  // its middle — or just past a corner, or one step further out, when the middle is crowded. The
-  // first fully clean candidate wins (near first); else the fewest violations, so one is always drawn.
-  const s = scale();
-  const [halfW, halfH] = labelBox(text, 0, 0).slice(2);
-  const stubHalf = Math.hypot(halfW, halfH) + 20 * s;
-  const pastEnd = stubHalf + 12 * s;
-  const lines = [...edges.map(([p, q]) => dimensionBeside(p, q, center, gap)),
-                 ...edges.map(([p, q]) => dimensionBeside(p, q, center, 2 * gap)),
-                 ...edges.map(([p, q]) => dimensionBeside(p, q, center, -gap))];
-  const directed = lines.map((d) => {
-    const length = Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1]) || 1;
-    return { d, ux: (d.b[0] - d.a[0]) / length, uy: (d.b[1] - d.a[1]) / length };
-  });
-  const stubAt = ({ ux, uy }, [mx, my]) => ({ a: [mx - ux * stubHalf, my - uy * stubHalf],
-    b: [mx + ux * stubHalf, my + uy * stubHalf], middle: [mx, my] });
-  const spots = ({ d, ux, uy }) => [d.middle,
-    ...[0.25, 0.75].map((t) => [d.a[0] + (d.b[0] - d.a[0]) * t, d.a[1] + (d.b[1] - d.a[1]) * t]),
-    ...[1, 1.5, 2, 3].flatMap((k) => [[d.a[0] - ux * pastEnd * k, d.a[1] - uy * pastEnd * k],
-      [d.b[0] + ux * pastEnd * k, d.b[1] + uy * pastEnd * k]])];
-  const middles = directed.map((l) => stubAt(l, spots(l)[0]));
-  const quarters = directed.flatMap((l) => spots(l).slice(1, 3).map((m) => stubAt(l, m)));
-  const ends = directed.flatMap((l) => spots(l).slice(3).map((m) => stubAt(l, m)));
-  const pad = 4 * s;
-  const clampPt = ([x, y]) => [Math.min(Math.max(x, pad), canvas.width - pad),
-    Math.min(Math.max(y, pad), canvas.height - pad)];
-  const candidates = [...middles, ...quarters, ...ends]
-    .map((c) => ({ ...c, a: clampPt(c.a), b: clampPt(c.b) }));  // stubs trim at the photo edge
-  const polys = [ownPoly, ...avoidPolys];
-  const stubFits = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]) >= 60 * s
-    && lineFits(a, b) && !polys.some((poly) => segHitsPoly(a, b, poly));
-  const scored = candidates.map((c) => ({ ...c,
-    violations: (labelFits(labelBox(text, ...c.middle), polys) ? 0 : 1) + (stubFits(c.a, c.b) ? 0 : 1) }));
-  scored.sort((x, y) => x.violations - y.violations);
-  const best = scored[0];
-  const middle = best.violations === 0 ? best.middle : clampInside(text, best.middle);
-  dimensionLine(best.a[0], best.a[1], best.b[0], best.b[1]);
-  placedLines.push([best.a, best.b]);
-  callout(text, middle[0], middle[1]);
-  occupied.push(labelBox(text, ...middle));
+function polysTouch(p, q) {
+  // Whether two polygons overlap: a corner of one inside the other, or two edges crossing.
+  if (p.some((pt) => pointInPoly(pt, q)) || q.some((pt) => pointInPoly(pt, p))) return true;
+  return p.some((c, i) => segCrossesPoly(c, p[(i + 1) % p.length], q));
 }
 
-function sidePairs(corners) {
-  // The two pairs of opposite edges of a quadrilateral, each pair ordered: upper/left edge first.
-  const edges = corners.map((p, i) => [p, corners[(i + 1) % 4]]);
-  const length = (e) => Math.hypot(e[1][0] - e[0][0], e[1][1] - e[0][1]);
-  const middle = (e) => [(e[0][0] + e[1][0]) / 2, (e[0][1] + e[1][1]) / 2];
-  const longPair = length(edges[0]) >= length(edges[1]) ? [edges[0], edges[2]] : [edges[1], edges[3]];
-  const shortPair = longPair[0] === edges[0] ? [edges[1], edges[3]] : [edges[0], edges[2]];
-  longPair.sort((a, b) => middle(a)[1] - middle(b)[1]);  // upper long edge first
-  shortPair.sort((a, b) => middle(b)[0] - middle(a)[0]);  // right short edge first
-  return { longPair, shortPair };
+function labelCorners(text, [x, y], angle, fontPx = Number(css("--callout-font-px"))) {
+  // The four corners of a label turned by `angle` around its center.
+  const [halfW, halfH] = labelBox(text, 0, 0, fontPx).slice(2);
+  const [c, n] = [Math.cos(angle), Math.sin(angle)];
+  return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]
+    .map(([dx, dy]) => [x + dx * c - dy * n, y + dx * n + dy * c]);
+}
+
+function extentDimension(points, along, text, ownPoly, avoidPolys) {
+  // One extent of a shape, drawn parallel to the axis it measures, just outside the shape: first on
+  // the side facing away from the other object — with an upright label, then, for a steep line, with
+  // the label turned to run along it (it then needs only its height of room, not its width) — then
+  // the same on the opposite side; then each one gap further out. The label sits on its dimension line (middle first, then slid along it).
+  // The first fully clean candidate wins; else the one with the fewest violations — still beside
+  // its own shape, never floating.
+  const s = scale();
+  const box = minAreaBox(points);
+  const [halfW, halfH] = labelBox(text, 0, 0).slice(2);
+  const across = box[along === "u" ? "v" : "u"];
+  const steep = Math.abs(across[0]) > Math.abs(across[1]);
+  // The line keeps half the label's size across it, plus a margin, away from the shape.
+  const gapFor = (turned) => Math.max(30 * s,
+    (turned ? halfH : Math.abs(across[0]) * halfW + Math.abs(across[1]) * halfH) + 10 * s);
+  const away = preferredSide(box, along, avoidPolys);
+  const modes = steep ? [false, true] : [false];
+  const candidates = [];
+  for (const k of [1, 1.8]) for (const side of [away, -away]) for (const turned of modes) {
+    const g = extentGeometry(points, box, along, side, gapFor(turned) * k);
+    let [dx, dy] = [g.b[0] - g.a[0], g.b[1] - g.a[1]];
+    if (dy > 0) [dx, dy] = [-dx, -dy];  // a turned label reads bottom to top
+    const angle = turned ? Math.atan2(dy, dx) : 0;
+    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+      candidates.push({ ...g, angle, middle: [g.a[0] + (g.b[0] - g.a[0]) * t, g.a[1] + (g.b[1] - g.a[1]) * t] });
+    }
+  }
+  const polys = [ownPoly, ...avoidPolys];
+  const clear = (p, q) => lineFits(p, q) && !polys.some((poly) => segHitsPoly(p, q, poly))
+    && !placedLines.some(([r, t]) => segsCross(p, q, r, t));
+  const violations = (c) => (labelFits(labelBox(text, ...c.middle, undefined, c.angle), polys,
+    c.angle ? labelCorners(text, c.middle, c.angle) : null) ? 0 : 1)
+    + (clear(c.a, c.b) ? 0 : 1) + c.ext.filter(([p, q]) => !clear(p, q)).length;
+  const scored = candidates.map((c) => ({ ...c, violations: violations(c) }));
+  const best = scored.find((c) => c.violations === 0)
+    || scored.reduce((x, y) => (y.violations < x.violations ? y : x));
+  const middle = best.violations === 0 ? best.middle : clampInside(text, best.middle);
+  context.strokeStyle = css("--color-dimension");
+  context.lineWidth = 1.5 * s;
+  context.beginPath();
+  for (const [p, q] of best.ext) { context.moveTo(...p); context.lineTo(...q); }
+  context.stroke();
+  dimensionLine(best.a[0], best.a[1], best.b[0], best.b[1]);
+  placedLines.push([best.a, best.b], ...best.ext);
+  dimensionLines.push([best.a, best.b]);
+  callout(text, middle[0], middle[1], undefined, best.angle);
+  occupied.push(labelBox(text, ...middle, undefined, best.angle));
 }
 
 function drawCard(corners, ownPoly, avoidPolys) {
-  // The card's known size (ID-1, 85.60 × 53.98 mm) along one long and one short edge, just outside.
-  const center = [corners.reduce((s, p) => s + p[0], 0) / 4, corners.reduce((s, p) => s + p[1], 0) / 4];
-  const { longPair, shortPair } = sidePairs(corners);
-  const gap = 30 * scale();
-  edgeDimension(longPair, center, "85.60 mm", gap, ownPoly, avoidPolys);
-  edgeDimension([shortPair[1], shortPair[0]], center, "53.98 mm", gap, ownPoly, avoidPolys);  // left short edge first
+  // The card's known size (ID-1, 85.60 × 53.98 mm) along its long and short side, just outside.
+  extentDimension(corners, "u", "85.60 mm", ownPoly, avoidPolys);
+  extentDimension(corners, "v", "53.98 mm", ownPoly, avoidPolys);
 }
 
 function drawMeasurements(a, fx) {
@@ -389,22 +458,24 @@ function drawMeasurements(a, fx) {
   const s = scale();
   occupied = [];
   placedLines = [];
+  dimensionLines = [];
   polygon(a.card_corners_px, css("--color-overlay-card"), 2);
   polygon(a.outline_px, css("--color-overlay-part"), Number(css("--overlay-line-width")), true, true, fx.outline);
   a.holes.forEach((hole) => polygon(hole.contour_px, css("--color-overlay-hole"), 2));
 
-  const box = orientedBox(a.outline_px);
   const cardPoly = a.card_corners_px;
   const partPoly = a.outline_px;
   const holePolys = a.holes.map((hole) => hole.contour_px);
-  if (state.click) occupied.push([state.click[0] - 70 * s, state.click[1] + 34 * s, state.click[0] + 70 * s, state.click[1] + 64 * s]);
+  if (state.click) {  // the tap marker drawn on top: its reticle and its "SELECTED PART" tag
+    occupied.push([state.click[0] - 30 * s, state.click[1] - 30 * s, state.click[0] + 30 * s, state.click[1] + 30 * s]);
+    occupied.push([state.click[0] - 70 * s, state.click[1] + 34 * s, state.click[0] + 70 * s, state.click[1] + 64 * s]);
+  }
 
   // The part's extents first (their labels matter most), along its own axes; then the holes; then the card.
   context.save();
   context.globalAlpha = fx.dims;
-  const { longPair, shortPair } = sidePairs(box.corners);
-  edgeDimension(longPair, box.center, mm(a.outline_mm.length), 30 * s, partPoly, [cardPoly]);
-  edgeDimension(shortPair, box.center, mm(a.outline_mm.width), 30 * s, partPoly, [cardPoly]);
+  extentDimension(partPoly, "u", mm(a.outline_mm.length), partPoly, [cardPoly]);
+  extentDimension(partPoly, "v", mm(a.outline_mm.width), partPoly, [cardPoly]);
   const pxPerMm = 1 / a.card_mm_per_pixel;
   for (const group of holeGroups(a.holes)) {
     const placed = group.holes.length > 1
@@ -463,12 +534,14 @@ function holeRadiusPx(hole) {
   return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2;
 }
 
-function leaderBlocked(from, to, self, holePolys, cardPoly, partPoly) {
-  // A leader may not cross a label, the card, the part's edge, or another hole (its own hole is where it ends).
+function leaderBlocked(from, to, self, holePolys, cardPoly, partPoly, outside = false) {
+  // A leader may not cross a label, the card, the part's edge, or another hole (its own hole is where
+  // it ends). From a label outside the part (`outside`), it crosses the part's edge once to reach in.
   const pad = 4 * scale();
   if ([...occupied].some((o) => segHitsBox(from, to, [o[0] - pad, o[1] - pad, o[2] + pad, o[3] + pad]))) return true;
   if (segHitsPoly(from, to, cardPoly)) return true;
-  if (segCrossesPoly(from, to, partPoly)) return true;
+  if (!outside && segCrossesPoly(from, to, partPoly)) return true;
+  if (dimensionLines.some(([a, b]) => segsCross(from, to, a, b))) return true;  // nor a dimension line
   return holePolys.some((poly, j) => j !== self && segHitsPoly(from, to, poly));
 }
 
@@ -481,13 +554,25 @@ function placeHoleLabel(holes, allHoles, text, holePolys, cardPoly, partPoly, li
   const middle = [centers.reduce((t, c) => t + c[0], 0) / centers.length,
                   centers.reduce((t, c) => t + c[1], 0) / centers.length];
   const base = holes.length > 1 ? 0 : holeRadiusPx(holes[0]);
-  const spots = ringSpots(middle, base, holes.length > 1 ? [30, 60, 100, 160] : [30, 60, 100]);
   const avoid = [cardPoly, ...holePolys];
-  for (const [x, y] of spots) {
-    if (!labelFits(labelBox(text, x, y, 16), avoid)) continue;
+  // Inside the part first (the label clear of its edge, the leader staying inside); a single hole
+  // whose part has no room left gets its label just outside the part instead.
+  // Spots are tried nearest first; an outside spot counts one ring step farther than it is.
+  const tries = ringSpots(middle, base, holes.length > 1 ? [30, 60, 100, 160] : [30, 60, 100])
+    .map((spot, order) => ({ spot, outside: false, cost: Math.hypot(spot[0] - middle[0], spot[1] - middle[1]), order }));
+  if (holes.length === 1) {
+    tries.push(...ringSpots(middle, base, [30, 60, 100, 140, 180, 240]).map((spot, order) => ({ spot, outside: true,
+      cost: Math.hypot(spot[0] - middle[0], spot[1] - middle[1]) + 40 * s, order: order + 1000 })));
+  }
+  tries.sort((p, q) => p.cost - q.cost || p.order - q.order);
+  for (const { spot: [x, y], outside } of tries) {
+    const box = labelBox(text, x, y, 16);
+    if (!labelFits(box, outside ? [...avoid, partPoly] : avoid)) continue;
+    const padded = [box[0] - 3 * s, box[1] - 3 * s, box[2] + 3 * s, box[3] + 3 * s];
+    if (partPoly.some((c, i) => segHitsBox(c, partPoly[(i + 1) % partPoly.length], padded))) continue;  // off the part's edge
     const leaders = centers.map((c) => [[x, y], c]);
     if (limitPx != null && leaders.some(([[x0, y0], [x1, y1]]) => Math.hypot(x1 - x0, y1 - y0) > limitPx)) continue;
-    if (leaders.some(([p, c], i) => leaderBlocked(p, c, ids[i], holePolys, cardPoly, partPoly))) continue;
+    if (leaders.some(([p, c], i) => leaderBlocked(p, c, ids[i], holePolys, cardPoly, partPoly, outside))) continue;
     context.strokeStyle = css("--color-overlay-hole");
     context.lineWidth = 1.5 * s;
     context.beginPath();
