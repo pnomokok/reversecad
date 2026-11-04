@@ -17,6 +17,7 @@ import numpy as np
 from break_cues import ROUGH_RMS_MM, find_break_cues
 from completion import topdown_photo, verified_stored_parts
 from repair import REPAIR_NUMBER
+from repair_inputs import MAX_FAILED_SHOWN, failure_reasons
 from resolution import card_long_edge_px, resolution_warning
 from tilt_warning import card_tilt, tilt_warning
 from design_intent import parameters, replace_defaults
@@ -234,6 +235,29 @@ def result_note(name, summary):
     return "No candidate passed every check; the measured shape is shown."
 
 
+def round_label(name, round_name):
+    """The round in plain words ("Round 1 · medium effort"): its place among the run's saved rounds, oldest
+    first, and the reasoning effort the folder name records (none when the round predates the setting)."""
+    try:
+        folder = run_dir(name)
+    except FileNotFoundError:
+        return None
+    saved = [r for r in reversed(CANDIDATE_ROUNDS) if (folder / f"5_summary_{r}.json").exists()]
+    number = saved.index(round_name) + 1 if round_name in saved else len(saved) + 1
+    effort = round_name.rsplit("_effort_", 1)[1] if "_effort_" in round_name else None
+    return f"Round {number}" + (f" · {effort} effort" if effort else "")
+
+
+def repair_inputs_count(name, round_name, rows):
+    """How many failed candidates Muse Wonder was given in repair round 1, by the same rule as
+    repair_inputs.pick_failed: failures that built (best IoU first), then build failures that left code,
+    at most MAX_FAILED_SHOWN. Returns (given, failed in total)."""
+    built = [r for r in rows if "iou" in r and failure_reasons(r)]
+    crashed = [r for r in rows if "error" in r and _program_path(name, round_name, r["file"]).exists()]
+    failed = [r for r in rows if "error" in r or ("iou" in r and failure_reasons(r))]
+    return min(MAX_FAILED_SHOWN, len(built) + len(crashed)), len(failed)
+
+
 def done_event(summary, round_name, note=None, name=None):
     """The end of a candidate round: the winner (or the fallback), counts, and why if it fell back."""
     winner = (summary.get("winner") or {}).get("candidate")
@@ -243,7 +267,8 @@ def done_event(summary, round_name, note=None, name=None):
         fallback = {"iou": baseline["iou"], "fit_mm": fit_to_measurements_mm(baseline),
                     "outline_mm": baseline.get("outline_mm"), "parameters": baseline.get("parameter_count"),
                     "silhouette": f"/api/runs/{name}/candidates/0/silhouette.png?round={round_name}" if name else None}
-    return {"type": "done", "round": round_name, "winner": winner, "note": note, "fallback": fallback,
+    return {"type": "done", "round": round_name, "round_label": round_label(name, round_name) if name else None,
+            "winner": winner, "note": note, "fallback": fallback,
             "result_source": summary.get("result_source", "candidate" if winner else None),
             "compiled": summary["compiled"], "candidate_count": summary["candidate_count"],
             "durations": summary.get("durations"),  # measured stage seconds; runs before them have none
@@ -261,7 +286,10 @@ def candidate_events(name, round_name=None):
     repaired = summary.get("repair") or {}
     events += [e for entry in repaired.get("rounds", []) for e in ({"type": "repair_started", "round": entry.get("round"), "seconds": entry.get("seconds")}, {"type": "repair", **entry})]
     if repaired.get("passed"):
-        events.append(candidate_event(name, repaired["result"]))
+        event = candidate_event(name, repaired["result"])
+        if (repaired.get("rounds") or [{}])[-1].get("round") == 1:  # round 1 saw only the candidates
+            event["repair_given"], event["failed_count"] = repair_inputs_count(name, round_name, summary["candidates"])
+        events.append(event)
     return events + [done_event(summary, round_name, result_note(name, summary), name)]
 
 

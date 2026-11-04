@@ -84,8 +84,15 @@ function selectPanelTab(tab) {
   $("edit-panel").dataset.tab = tab;
 }
 
+function goEdit() {
+  // Step 3 / the Parameters tab: the original's parameters. While a matching part is shown its own sliders
+  // live on the Matching part tab (step 4), so this goes back to the original, as "Back to original" does.
+  if (state.matching) return showModel(state.matching.base);
+  setScreen("edit");
+}
+
 document.querySelectorAll(".panel-tab-button").forEach((button) =>
-  button.addEventListener("click", () => setScreen(button.dataset.tab === "matching" ? "match" : "edit")));
+  button.addEventListener("click", () => (button.dataset.tab === "matching" ? setScreen("match") : goEdit())));
 
 $("panel-wide").addEventListener("click", () => {
   const wide = $("edit-panel").classList.toggle("wide");
@@ -103,6 +110,7 @@ document.querySelectorAll("#steps button, #rail button").forEach((button) =>
   button.addEventListener("click", async () => {
     if (button.dataset.screen === "export") showExport();
     else if (button.dataset.screen === "edit" && !state.winner) showModel();
+    else if (button.dataset.screen === "edit") goEdit();
     else if (button.dataset.screen === "match" && !state.winner) { await showModel(); setScreen("match"); }
     else if (button.dataset.screen === "parts") openParts();
     else setScreen(button.dataset.screen);
@@ -986,15 +994,42 @@ function winnerCard(event) {
     ? `<div class="truth-line">${event.ground_truth.kind === "ruler" ? "vs ruler (±0.5 mm)" : "vs ground truth"}: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
       + ` vs ${event.ground_truth.length[1].toFixed(2)} × ${event.ground_truth.width[1].toFixed(2)} mm`
       + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
+  // What Muse Wonder was given (counted by the same rule as repair_inputs.pick_failed), under its own text.
+  const given = event.repair_given == null ? ""
+    : `<span class="repair-given">Muse Wonder was given ${event.repair_given === event.failed_count
+      ? `all ${event.failed_count} failed candidates` : `the ${event.repair_given} closest of the ${event.failed_count} failed candidates`}</span>`;
   const diagnosis = event.label && event.diagnosis  // a repaired program says what was wrong with the rest
-    ? `<div class="repair-diagnosis"><span class="label">Repaired by Muse Wonder</span>${escapeAttribute(event.diagnosis)}</div>` : "";
+    ? `<div class="repair-diagnosis"><span class="label">Repaired by Muse Wonder</span>${escapeAttribute(event.diagnosis)}${given}</div>` : "";
+  if (diagnosis) card.classList.add("repaired");  // text beside the drawing, so the drawing keeps its size
   card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${idOf(event)}</span>${event.label ? "REPAIRED" : "BEST MATCH"}</span>`
     + `<span class="winner-chip">Selected · ${event.parameters} params</span></div>`
     + `<div class="shape">${length}<img class="shape-ref" src="/api/runs/${state.run}/reference.png" alt="" onerror="this.remove()">`
     + `<img class="shape-cand" src="${event.silhouette}" alt="selected candidate silhouette"></div>`
     + `${diagnosis}<div class="winner-scores"><div><span class="label">Overlap (IoU)</span><span class="big-accent">IoU ${event.iou.toFixed(4)}</span></div>`
     + `${fit}</div>${truth}`;
+  fitDimensionLine(card, card.querySelector("img.shape-cand"));
   return card;
+}
+
+const SILHOUETTE_PAD_PX = 20;  // the margin replay.silhouette_png leaves around the cropped silhouette
+
+function fitDimensionLine(card, image) {
+  // The length line spans the drawn part exactly: the silhouette image is the part's x-extent plus a fixed
+  // margin, so its ends follow from where the image sits and how much it is scaled. Kept right on resize.
+  const line = card.querySelector(".dimension .line");
+  const shape = card.querySelector(".shape");
+  if (!line || !image || !shape) return;
+  const place = () => {
+    if (!image.naturalWidth || !image.isConnected) return;
+    const box = image.getBoundingClientRect();
+    const frame = shape.getBoundingClientRect();
+    const pad = SILHOUETTE_PAD_PX * (box.width / image.naturalWidth);
+    line.style.left = `${box.left - frame.left + pad}px`;
+    line.style.right = `${frame.right - box.right + pad}px`;
+  };
+  if (image.complete) requestAnimationFrame(place);
+  image.addEventListener("load", place);
+  new ResizeObserver(place).observe(shape);
 }
 
 function layoutGrid() {
@@ -1011,12 +1046,15 @@ function layoutGrid() {
       + `<div class="shape">waiting</div><div class="scores"><span>–</span></div>`;
     grid.appendChild(card);
   }
-  const cells = Math.max(arrived + waiting + (grid.querySelector(".winner") ? 3 : 0), 1);
+  // A repaired winner spans the full width (its text sits beside the drawing); others take 2 × 2.
+  const repaired = !!grid.querySelector(".winner.repaired");
+  const cells = Math.max(arrived + waiting + (grid.querySelector(".winner") && !repaired ? 3 : 0), 1);
   const [width, height] = [grid.clientWidth || 1000, grid.clientHeight || 700];
   let best = null;
   for (let columns = 2; columns <= 8; columns++) {
     // The measured-shape panel (no candidate passed) spans the full width and two rows.
-    const rows = Math.ceil((cells + (grid.querySelector(".fallback-card") ? 2 * columns - 1 : 0)) / columns);
+    const wide = grid.querySelector(".fallback-card") || repaired ? 2 * columns - 1 : 0;
+    const rows = Math.ceil((cells + wide) / columns);
     const size = Math.min(width / columns / 1.15, height / rows);  // the card height its cell allows
     if (!best || size > best.size) best = { columns, rows, size };
   }
@@ -1041,7 +1079,9 @@ function updateSummary() {
   const seen = state.seen;
   const passed = seen.filter((e) => e.status === "passed");
   $("search-count").textContent = seen.length;
-  $("search-total").textContent = `${state.done ? state.done.candidate_count : state.expected || seen.length} requested`;
+  const repairs = seen.filter((e) => e.label).length;  // Muse Wonder's repaired programs (R1, R2) come on top
+  $("search-total").textContent = `${state.done ? state.done.candidate_count : state.expected || seen.length} requested`
+    + (repairs ? ` + ${repairs} repair${repairs > 1 ? "s" : ""}` : "");
   $("search-split").innerHTML = `<strong>${passed.length} passed</strong> · ${seen.length - passed.length} rejected or failed`;
   // The selected candidate once the round is done; until then the passed one with the highest IoU.
   const chosen = state.done ? seen.find((e) => e.candidate === state.done.winner)
@@ -1152,7 +1192,10 @@ function streamCandidates() {
       wonderCard.hide();
       state.done = JSON.parse(m.data);
       watch.finish(state.done.durations);
-      $("search-round").innerHTML = `Round <strong>${state.done.round}</strong>`;
+      // In plain words ("Round 1 · medium effort"); the folder name stays on hover.
+      $("search-round").innerHTML = state.done.round_label ? `<strong>${esc(state.done.round_label)}</strong>`
+        : `Round <strong>${esc(state.done.round)}</strong>`;
+      $("search-round").title = state.done.round;
       const chosen = state.seen.find((e) => e.candidate === state.done.winner);
       if (chosen) {
         $(`candidate-${chosen.candidate}`).replaceWith(winnerCard(chosen));
@@ -1186,6 +1229,7 @@ function fallbackCard(fallback) {
   const length = fallback.outline_mm ? `<div class="dimension"><span class="line" style="left:14%;right:14%"></span>`
     + `<span>${mm(fallback.outline_mm[0])}</span></div>` : "";
   const fit = fallback.fit_mm == null ? "" : `<span>Fit <strong>${mm(fallback.fit_mm)}</strong></span>`;
+  requestAnimationFrame(() => fitDimensionLine(card, card.querySelector(".shape img")));
   card.innerHTML = `<div class="fallback-head"><span class="fallback-title">Measured shape</span>`
     + `<span class="fallback-chip">Fallback</span><span class="fallback-scores"><span>IoU <strong>${fallback.iou.toFixed(4)}</strong></span>${fit}</span></div>`
     + `<div class="shape">${length}<img src="${fallback.silhouette}" alt="the measured shape"></div>`
@@ -1266,6 +1310,10 @@ function postJSON(url, body) {
   return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...runHeaders() },
     body: JSON.stringify(body) });
 }
+
+// One program name everywhere (Edit and Export subbars, drawing title block): the downloaded .py's name,
+// as the server builds it (reversecad_<run>[_<kind>].py, see server.download).
+const programFile = () => `reversecad_${state.run}${state.matching ? `_${state.matching.kind}` : ""}.py`;
 
 // What the model, drawing and download requests add for a matching part (nothing for the original).
 const matchQuery = (separator = "?") => (state.matching ? `${separator}match=${state.matching.kind}` : "");
@@ -1395,11 +1443,12 @@ async function showModel(sliderValues = {}) {
   state.splitWarning = null;
   updateSplitButtons();
   setMatchingLayout(null);
+  closeAdapterPanel();  // the original: no adapter panel left open from an earlier adapter
   state.viewer.showCompanion(null);
   state.viewer.showMating(null);
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
-  $("model-program").textContent = `Program ${w.name}.py`;  // display name; w.program is the internal file
+  $("model-program").textContent = `Program ${programFile()}`;  // the downloaded .py's name; w.program is the internal file
   $("model-source").textContent = w.note || `Source: ${sourceLabel(w.source)}`;
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
   showCaptureFit(w);
@@ -1418,6 +1467,8 @@ $("to-model").addEventListener("click", () => showModel());
 function setMatchingLayout(info) {
   // The Edit screen for a matching part (info) or the original (null).
   $("edit-panel").classList.toggle("matching-mode", !!info);
+  // A matching part's sliders and downloads sit on the Matching part tab; Parameters means the original.
+  document.querySelector('.panel-tab-button[data-tab="parameters"]').title = info ? "Back to the original part's parameters" : "";
   $("matching-bar").classList.toggle("hidden", !info);
   $("matching-status").textContent = "";
   $("matching-status").classList.remove("warning");
@@ -1458,7 +1509,8 @@ async function showMatching(kind) {
   state.matching = { kind, base };
   const w = state.winner;
   setMatchingLayout(w);
-  $("model-program").textContent = `Program ${w.program}`;
+  closeAdapterPanel();  // a cover or spacer: the adapter's pattern panel does not belong to it
+  $("model-program").textContent = `Program ${programFile()}`;
   $("model-source").textContent = `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
@@ -1556,7 +1608,17 @@ function drawOverlay(original, matching, holesB, labelB, holesA) {
 }
 
 document.querySelectorAll("#matching-choices button").forEach((b) => b.addEventListener("click", () =>
-  (b.dataset.kind === "adapter" ? showAdapterPanel() : showMatching(b.dataset.kind))));
+  (b.dataset.kind === "adapter" ? openAdapter() : showMatching(b.dataset.kind))));
+
+async function openAdapter() {
+  // The Adapter plate card always opens the adapter on the first click. A cover or spacer on screen is
+  // replaced by the original first, exactly as when the adapter is opened fresh; an adapter stays.
+  if (state.matching && state.matching.kind !== "adapter") {
+    await showModel(state.matching.base);
+    setScreen("match");
+  }
+  await showAdapterPanel();
+}
 $("matching-back").addEventListener("click", () => showModel(state.matching.base));
 
 // ---------- adapter plate: the original's holes plus a new hole pattern ----------
@@ -1567,10 +1629,13 @@ $("matching-back").addEventListener("click", () => showModel(state.matching.base
 let adapterPattern = null;  // the parsed pattern waiting for Apply
 let adapterPresets = null;  // preset chips, loaded once from the server
 
+function closeAdapterPanel() {
+  $("adapter-panel").classList.add("hidden");
+}
+
 async function showAdapterPanel() {
-  const panel = $("adapter-panel");
-  panel.classList.toggle("hidden");
-  if (panel.classList.contains("hidden")) return;
+  // Opens the pattern B panel (never closes it: a choice card always opens its kind).
+  $("adapter-panel").classList.remove("hidden");
   clearAdapterPreview();
   $("adapter-status").textContent = "";
   $("adapter-status").classList.remove("warning");
@@ -1921,7 +1986,7 @@ async function runAdapter(pattern, matingRun = null) {
   if (ghost.ok) state.matching.ghosts.mating = await (await fetch((await ghost.json()).stl)).arrayBuffer();
   const w = state.winner;
   setMatchingLayout(w);
-  $("model-program").textContent = `Program ${w.program}`;
+  $("model-program").textContent = `Program ${programFile()}`;
   // The adapter source is already a full label ("Outline: …"); other sources get the "Source:" prefix.
   $("model-source").textContent = w.source.startsWith("Outline:") ? w.source : `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
@@ -2112,7 +2177,7 @@ $("view-assembly").addEventListener("click", async () => {
 function loadAdapterProgram(info) {
   // Swap the adapter program (Exact ↔ Slotted variant): new sliders, rebuilt, ghosts follow.
   state.winner = info;
-  $("model-program").textContent = `Program ${info.program}`;
+  $("model-program").textContent = `Program ${programFile()}`;
   $("model-source").textContent = info.source.startsWith("Outline:") ? info.source : `Source: ${sourceLabel(info.source)}`;
   $("sliders").innerHTML = "";
   info.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
@@ -2535,7 +2600,8 @@ async function showExport() {
   const p = data.profile;
   const [x0, y0, x1, y1] = p.box;
   $("export-name").innerHTML = `<strong>${data.name}</strong> · ${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${p.thickness.toFixed(2)} mm`
-    + ` · ${data.program} (${data.source})`;
+    + ` · ${programFile()} (${data.source})`;
+  $("export-name").title = $("export-name").textContent;  // the full line when a narrow window shortens it
   $("drawing-facts").textContent = `${p.holes.length} holes · outline ${p.outline.length} points · all dimensions in mm`;
   $("drawing").innerHTML = drawingSVG(data);
   $("fact-stl").textContent = state.viewer ? `${state.viewer.triangleCount().toLocaleString("en-US")} triangles` : "";
@@ -2664,7 +2730,7 @@ function drawingSVG(data) {
   out.push(`<text class="small" x="${bx + 3}" y="${by + 5}">PART NAME</text><text class="block-title" x="${bx + 3}" y="${by + 13}">${data.name}</text>`);
   out.push(`<text class="small" x="${bx + 3}" y="${by + 22}">SCALE</text><text class="value" x="${bx + 3}" y="${by + 30}">1:1</text>`);
   out.push(`<text class="small" x="${bx + 77}" y="${by + 22}">UNITS</text><text class="value" x="${bx + 77}" y="${by + 30}">mm</text>`);
-  out.push(`<text class="small" x="${bx + 3}" y="${by + 39}">PROGRAM</text><text class="table-text" x="${bx + 3}" y="${by + 46}">${data.program}</text>`);
+  out.push(`<text class="small" x="${bx + 3}" y="${by + 39}">PROGRAM</text><text class="table-text" x="${bx + 3}" y="${by + 46}"${programFile().length > 26 ? ' textLength="70" lengthAdjust="spacingAndGlyphs"' : ""}>${programFile()}</text>`);
   out.push(`<text class="small" x="${bx + 77}" y="${by + 39}">DATE · PROJECTION</text><text class="table-text" x="${bx + 77}" y="${by + 46}">`
     + `${new Date().toISOString().slice(0, 10)} · 3rd angle</text>`);
   return out.join("");

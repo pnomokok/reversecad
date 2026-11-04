@@ -80,11 +80,11 @@ button:disabled { opacity: 0.4; cursor: default; }
   height: var(--subbar-height); flex-shrink: 0; display: flex; align-items: center; gap: var(--space-4);
   padding: 0 var(--space-5); background: var(--color-low); font-family: var(--font-mono); font-size: var(--font-size-label-lg);
 }
-.subbar-title { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-text-strong); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.subbar-title { flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-text-strong); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .subbar-sep { color: var(--color-text-faint); }
-.subbar-text { color: var(--color-text-muted); }
+.subbar-text { color: var(--color-text-muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .subbar-text strong, .subbar-right strong { color: var(--color-text-strong); font-weight: 600; }
-.subbar-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-5); color: var(--color-text-muted); }
+.subbar-right { margin-left: auto; flex-shrink: 0; white-space: nowrap; display: flex; align-items: center; gap: var(--space-5); color: var(--color-text-muted); }
 .subbar-status { color: var(--color-selected); display: inline-flex; align-items: center; gap: var(--space-2); }
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--color-selected); }
 .split { flex: 1; min-height: 0; display: flex; }
@@ -179,6 +179,9 @@ table.values { width: 100%; border-collapse: collapse; }
 table.values td { padding: 3px 0; font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); text-transform: uppercase; vertical-align: top; }
 table.values td.number { text-align: right; color: var(--color-text-strong); text-transform: none; font-size: var(--font-size-label-lg); }
 .inspector-actions { display: flex; flex-direction: column; gap: var(--space-2); }
+/* The main action stays in view on short windows: pinned to the bottom of the scrolling panel. */
+.inspector-actions, .export-actions { position: sticky; bottom: calc(-1 * var(--space-5)); z-index: 5; background: var(--color-low); margin: 0 calc(-1 * var(--space-5)) calc(-1 * var(--space-5)); padding: var(--space-3) var(--space-5) var(--space-5); }
+.export-actions { display: flex; flex-direction: column; gap: var(--space-2); bottom: calc(-1 * var(--space-4)); margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4)); padding: var(--space-3) var(--space-4) var(--space-4); }
 .cta {
   width: 100%; height: 56px; display: flex; align-items: center; justify-content: center; gap: var(--space-4);
   background: var(--color-selected); color: var(--color-text-on-accent); font-family: var(--font-heading); font-size: var(--font-size-headline);
@@ -247,6 +250,17 @@ table.values td.number { text-align: right; color: var(--color-text-strong); tex
 .truth-line { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); padding: 0 var(--space-1); }
 .repair-diagnosis { font-size: var(--font-size-body); line-height: 1.4; color: var(--color-text); padding: 0 var(--space-1); }
 .repair-diagnosis .label { display: block; margin-bottom: 2px; }
+.repair-given { display: block; margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); }
+/* A repaired winner: Wonder's text beside the drawing instead of under it, so the drawing keeps a readable size. */
+.candidate-card.winner.repaired {
+  grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "head head" "shape text" "shape scores" "truth truth"; column-gap: var(--space-4);
+}
+.candidate-card.winner.repaired .winner-head { grid-area: head; }
+.candidate-card.winner.repaired .shape { grid-area: shape; min-height: 160px; }
+.candidate-card.winner.repaired .repair-diagnosis { grid-area: text; overflow-y: auto; align-self: start; }
+.candidate-card.winner.repaired .winner-scores { grid-area: scores; }
+.candidate-card.winner.repaired .truth-line { grid-area: truth; }
 .best-box table.values td, .fit-inset table.values td { text-transform: none; white-space: nowrap; padding: 2px 0; }
 table.values tr.heading td { padding-top: var(--space-2); color: var(--color-text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-size: var(--font-size-label-sm); }
 .fit-inset table.values td.number, .best-box table.values td.number { font-size: var(--font-size-label); }
@@ -311,6 +325,17 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .panel-tabs .icon-button { margin-left: auto; flex-shrink: 0; }
 .edit-panel[data-tab="parameters"] .tab-matching-only { display: none; }
 .edit-panel[data-tab="matching"] .tab-parameters-only { display: none; }
+/* A matching part on screen: its own head, sliders and downloads show on the Matching part tab, under its
+   controls (Parameters then means the original, see goEdit in app.js). */
+.edit-panel.matching-mode[data-tab="matching"] .edit-panel-head,
+.edit-panel.matching-mode[data-tab="matching"] .sliders,
+.edit-panel.matching-mode[data-tab="matching"] .exports-block { display: flex; }
+.edit-panel.matching-mode .matching-bar { order: 1; }
+.edit-panel.matching-mode .matching-block { order: 2; }
+.edit-panel.matching-mode .edit-panel-head { order: 3; }
+.edit-panel.matching-mode .sliders { order: 4; }
+.edit-panel.matching-mode .assembly-block { order: 5; }
+.edit-panel.matching-mode .exports-block { order: 6; }
 .edit-panel-head { display: flex; justify-content: space-between; align-items: center; }
 .edit-panel-head > div { display: flex; flex-direction: column; gap: 2px; }
 .icon-button { width: 36px; height: 36px; display: grid; place-items: center; background: var(--color-container); color: var(--color-text-muted); }
