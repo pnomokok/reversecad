@@ -10,7 +10,7 @@ The core of ReverseCAD — writing every candidate CAD program — runs on Muse 
 
 ![ReverseCAD result](reports/ui/A_light_edit.png)
 
-Demo video: <!-- TODO: video link, Nov 3 -->
+Demo video: VIDEO_LINK_PENDING
 
 Built during the Meta Global AI Developer Hackathon (Oct 26 – Nov 4); the repo history starts Oct 27. Everything below was written during the hackathon.
 
@@ -23,7 +23,7 @@ A flat bracket, cover, or gasket breaks or is discontinued, and the device it be
 ### Why this matters
 
 - ["what im not sure about is the scaling."](https://forum.prusaprinters.org/forum/original-prusa-i3-mk3s-mk3-how-do-i-print-this-printing-help/designing-from-a-photo/)
-- ["This seems the perfect answer to a discontinued part."](https://hubs.com/talk/t/in-baltimore-area-need-item-scanned-then-printed/6079)
+- ["I have a broken latch I would like to get made, …"](https://hubs.com/talk/t/in-baltimore-area-need-item-scanned-then-printed/6079)
 - ["How do I accurately measure the distance between these two holes?"](https://www.reddit.com/r/3Dprinting/comments/1vwv5zy/how_do_i_accurately_measure_the_distance_between/)
 
 ## Scope
@@ -102,7 +102,7 @@ On both photos all 5 Spark candidates were rejected on hole positions (the hand-
 
 Broken corners of the same part: BREAK1 (corner cut, holes intact) restored to −0.05 / +0.47 mm (−0.0 / +0.5%) of the intact extents; BREAK2 (cut through a hole) to +0.93 / +1.12 mm (+0.9 / +1.2%), with the restored hole 6.19 mm off by mirroring but 0.60 mm off by arc fit. BREAK3 (a second broken corner, held out: no code changed before or during its run) restored the big corner only — extents −0.35 / −0.3% and +0.10 / +0.1%, outline deviation max 12.36 / mean 1.21 mm, 2 of 4 holes — because the small cut was invisible to every cue. After the scope fix (after-fix, not held-out), two runs both restored the corner with no invented notch: max/mean 12.36/0.72 and 13.09/1.43 mm.
 
-<!-- TODO: cardboard test parts, Nov 2 -->
+The BREAK1 photo went through the live app twice, and both runs ship as samples. In the second run (Nov 4, the run in the demo video) all 5 of 5 Spark candidates were rejected — 4 on hole position (0.90–2.28 mm against the 0.5 mm limit), 1 on hole count — and the Muse Wonder repair passed in round 1 (IoU 0.9674, fit 1.14 mm); its completion adds 253.5 mm³. The first run (Nov 3) also ended with a round-1 repair (IoU 0.9688, fit 0.43 mm). Both are kept to show that model results vary between runs.
 
 Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the project's working notes).
 
@@ -124,7 +124,7 @@ The Parts screen shows every finished run as a card with a rotating 3D preview �
 
 ## Live, recorded and synthetic
 
-- **Without keys** you can replay the ten samples: each replays recorded outputs from an earlier run (measurements, candidates, repairs, completions); no model is called in replay. Works on a local server and in the online demo.
+- **Without keys** you can replay the ten samples: each replays recorded outputs from an earlier run (measurements, candidates, repairs, completions); no model is called in replay. Works on a local server and in the online demo. On the video run, the "2 × M5 · 60 mm" adapter preset replays the recorded Muse Spark Open outline after Apply, as in the video (labeled "recorded"); anywhere else the adapter gets the deterministic fallback outline. Voice commands cannot be replayed.
 - **With keys** you get live mode: new photos, voice editing, and new candidate searches and repairs.
 - Eight samples are **synthetic renders** (`A_light`, `A_light_repair`, `A_torn_fallback`, `D_tab_broken`, `A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`); two are **real photos** of the same BREAK1 cardboard part (the QR code on its card was removed with a generative-erase tool before the runs, nothing else changed; ruler truth ±0.5 mm): `live-20261104-220642-d6003c`, the run shown in the demo video, and `live-20261103-224610-c8b8df`, an earlier recorded live run.
 
@@ -142,7 +142,7 @@ python -m venv .venv
 
 On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe`; tested on Linux (Python 3.13, fresh clone: install, tests, web app start); macOS not tested.
 
-Open **http://127.0.0.1:8000**. Ten saved runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`), and two recorded real-photo runs of the broken cardboard part (5 rejected candidates, a Wonder repair, a completion suggestion each): `live-20261104-220642-d6003c` is the run in the demo video (after Apply, the "2 × M5 · 60 mm" adapter preset replays its recorded Muse Spark Open outline, labeled "recorded"), `live-20261103-224610-c8b8df` the earlier one.
+Open **http://127.0.0.1:8000**. Ten saved runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`), and two recorded real-photo runs of the broken cardboard part (5 rejected candidates, a Wonder repair, a completion suggestion each): `live-20261104-220642-d6003c` is the run in the demo video (after Apply, the "2 × M5 · 60 mm" adapter preset replays its recorded Muse Spark Open outline, labeled "recorded"; otherwise the fallback outline), `live-20261103-224610-c8b8df` the earlier one.
 
 ### Live mode (your own photos)
 
@@ -168,7 +168,7 @@ copy .env.example .env      # then write your keys into .env
 
 Every model call is logged per run with its tokens and estimated cost (`usage.jsonl`, shown on the search screen).
 
-Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the nine samples in the browser; live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
+Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the ten samples in the browser (two real photos, eight synthetic renders); live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
 
 ## Taking a photo
 
@@ -190,6 +190,7 @@ Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-de
 
 ![Assembly check](reports/ui/A_light_assembly_exact_blocked.png)
 *With the worst measured spacing error (1.28 mm), all 6 exact-hole screws block; slots let them pass.*
+
 5. **Export**: the technical drawing and download packages: STL, STEP, DXF, the 1:1 print template, or the CadQuery program (`.py`) with the slider values as its defaults.
 
 ## Command-line scripts
@@ -204,7 +205,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 | `run_broken_scenes.py` | Synthetic broken parts end to end, then a completion suggestion compared with the true design | yes |
 | `run_random_parts.py` | The 300-part large test (`outputs/random_test/report.json`) | yes |
 | `compare_rounds.py` | Compile rate, correct topology, tokens and time per candidate round | no |
-| `make_sample.py A_light A_light_repair D_tab_broken` | Copies synthetic runs into `samples/` in compact form | no |
+| `make_sample.py A_light A_light_repair D_tab_broken` | Copies synthetic runs (and reviewed real-photo runs) into `samples/` in compact form | no |
 | `try_sam.py`, `try_two_cards.py`, `try_homography.py`, `try_baseten.py` | The measurement experiments recorded in `CLAUDE.md` | some |
 
 ## Tests
@@ -213,7 +214,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 .venv\Scripts\python.exe -m pytest
 ```
 
-275 passed, 9 skipped in a fresh clone (Linux, Python 3.13, at 56c44d4); the frontend files also pass `node --check`. The tests never call an API. The 9 skips need local-only files (the private BREAK live runs, private real photos, local `outputs/` scenes, saved SAM answers) or are the opt-in full SAM check (`FULL_SAM_CHECK=1`); the samples in `samples/` cover the web app.
+344 passed, 9 skipped in a fresh clone (Windows 11, Python 3.13, at 08b2b10); the frontend files also pass `node --check`. The tests never call an API. The 9 skips need local-only files (the private BREAK live runs, private real photos, local `outputs/` scenes, saved SAM answers) or are the opt-in full SAM check (`FULL_SAM_CHECK=1`); the samples in `samples/` cover the web app.
 
 ## Project layout
 
@@ -229,12 +230,12 @@ All scripts run from the repository root with the virtual environment's Python. 
 | `sam_decode.py`, `usage_ledger.py` | Fast SAM mask decoding (identical to the library's), per-run model usage and cost |
 | `webapp/` | FastAPI back end (`server.py`, `replay.py`, `live.py`, `builder.py`, `gallery.py`) and the page (`static/`; all styling variables in `tokens.css`) |
 | `parts/`, `synthetic_scene.py` | Template test parts with ground truth, broken versions with their intact design, and their synthetic photos |
-| `samples/` | Compact saved runs for replay without API keys (8 synthetic, 1 recorded real photo) |
+| `samples/` | Compact saved runs for replay without API keys (8 synthetic, 2 recorded real photos) |
 | `tests/` | pytest suite |
 
 ## Built with
 
-Muse Code is the main coding agent (43 [muse-code] commits, from the adapter 2dba37f..8ebaa30 on); the earlier 58 commits were written with Claude Code.
+Muse Code is the main coding agent: 57 [muse-code] commits, from the adapter (2dba37f) to the capture-overlay labels (1d5adc3). The 58 commits before them and the final fixes after them (9 commits, including this README pass) were made with Claude Code.
 
 ## License
 
