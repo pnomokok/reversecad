@@ -26,7 +26,10 @@
 <body>
   <!-- icon rail: the three screens -->
   <aside class="rail">
-    <div class="rail-logo"><span class="icon">deployed_code</span></div>
+    <!-- the mark: an ID-1 card outline (85.6 : 54) with one hole in its right third (card for scale, part with a hole) -->
+    <div class="rail-logo" title="ReverseCAD"><svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="3" y="7.8" width="26" height="16.4" rx="1.8" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="24.4" cy="16" r="2.6" fill="currentColor"/></svg></div>
     <nav class="rail-nav" id="rail">
       <button data-screen="capture" title="Capture"><span class="icon">photo_camera</span></button>
       <button data-screen="search" title="Search" disabled><span class="icon">travel_explore</span></button>
@@ -71,7 +74,7 @@
           </div>
           <div class="canvas-stage grid-bg">
             <p class="stage-empty" id="stage-empty">Upload a photo of the part next to a card, or try an example.</p>
-            <canvas id="photo-canvas" class="hidden"></canvas>
+            <canvas id="photo-canvas" class="hidden" title="Sizes measured from the photo"></canvas>
             <div class="scanline hidden" id="scanline"></div>
             <div class="badge badge-left hidden" id="scale-badge"></div>
             <div class="badge badge-right hidden" id="found-badge"></div>
@@ -171,7 +174,7 @@
         <aside class="search-side">
           <div class="side-card">
             <span class="label">Search summary</span>
-            <div class="headline"><span id="search-count">0</span> candidates</div>
+            <div class="headline"><span id="search-count">0 candidates</span></div>
             <div class="split-line" id="search-split"></div>
             <div class="nodesign hidden" id="nodesign">
               <span class="nodesign-flag"><span class="icon">warning</span>No design found · showing the measured shape</span>
@@ -209,7 +212,7 @@
     <section class="screen hidden" id="screen-edit">
       <div class="subbar">
         <span class="subbar-title"><span class="dot-accent"></span><span id="model-title">ACTIVE MODEL</span></span>
-        <span class="subbar-text" id="model-size"></span>
+        <span class="subbar-text subbar-keep" id="model-size"></span>
         <span class="chip-muted" id="model-program"></span>
         <span class="subbar-right">
           <span class="chip-muted" id="model-source"></span>
@@ -248,7 +251,7 @@
             <button class="icon-button" id="panel-wide" title="Wide panel"><span class="icon">swap_horiz</span></button>
           </div>
           <div class="edit-panel-head tab-parameters-only">
-            <div><h2>Design parameters</h2><span class="label">named in the program</span></div>
+            <div><h2>Design parameters</h2><span class="label">program values, named in the program</span></div>
             <button class="icon-button" id="reset-parameters" title="Reset to the program's values"><span class="icon">restart_alt</span></button>
           </div>
           <div class="break-card hidden tab-parameters-only" id="break-card">

@@ -180,9 +180,16 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     const gap = size * 0.14;
     const group = new THREE.Group();
     group.userData.holes = [];  // movable hole labels: {label, leader, hole, home}, placed per view
-    dimension(group, "length", `${(x1 - x0).toFixed(2)} mm`, [x0, y0, z0], [x1, y0, z0], [0, -gap, 0]);
-    dimension(group, "width", `${(y1 - y0).toFixed(2)} mm`, [x1, y0, z0], [x1, y1, z0], [gap, 0, 0]);
-    dimension(group, "thickness", `${(z1 - z0).toFixed(2)} mm`, [x0, y0, z0], [x0, y0, z1], [-gap * 0.7, -gap * 0.7, 0]);
+    // The numbers are the model's own (program values); a suggested feature (orange) only pushes the
+    // dimension lines past its extent, so no line or label sits on the material it would add.
+    const s = suggestionBox;
+    const below = s ? Math.max(0, y0 - s.min.y) : 0;
+    const right = s ? Math.max(0, s.max.x - x1) : 0;
+    const left = s ? Math.max(0, x0 - s.min.x) : 0;
+    dimension(group, "length", `${(x1 - x0).toFixed(2)} mm`, [x0, y0, z0], [x1, y0, z0], [0, -(gap + below), 0]);
+    dimension(group, "width", `${(y1 - y0).toFixed(2)} mm`, [x1, y0, z0], [x1, y1, z0], [gap + right, 0, 0]);
+    dimension(group, "thickness", `${(z1 - z0).toFixed(2)} mm`, [x0, y0, z0], [x0, y0, z1],
+      [-(gap * 0.7 + left), -(gap * 0.7 + below), 0]);
 
     // Holes: one label per diameter, each pinned to that diameter's hole nearest the viewer's
     // side and stacked with a two-gap step, so no two labels overlap in the iso view.
@@ -208,6 +215,26 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     return group;
   }
 
+  let lastFeatures = null;  // the shown model's features, to re-annotate when a suggestion comes or goes
+
+  function removeAnnotations() {
+    if (!annotations) return;
+    scene.remove(annotations);
+    annotations.traverse((o) => { if (o.isCSS2DObject) o.element.remove(); });
+    annotations = null;
+  }
+
+  function reannotate() {
+    // Dimension lines follow the shown suggestion's extent: rebuild them (same numbers) and re-place labels.
+    if (!part || !lastFeatures) return;
+    removeAnnotations();
+    annotations = annotate(lastFeatures);
+    annotations.visible = labelsVisible;
+    if (!assembly) scene.add(annotations);
+    panToClearLabels();
+    layoutPartLabels();
+  }
+
   function show(stlBuffer, features) {
     const geometry = new STLLoader().parse(stlBuffer);
     geometry.computeVertexNormals();
@@ -215,10 +242,8 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       scene.remove(part);
       part.traverse((o) => o.geometry && o.geometry.dispose());
     }
-    if (annotations) {
-      scene.remove(annotations);
-      annotations.traverse((o) => { if (o.isCSS2DObject) o.element.remove(); });
-    }
+    lastFeatures = features;
+    removeAnnotations();
     part = new THREE.Group();
     part.add(new THREE.Mesh(geometry, material));
     part.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial));
@@ -301,6 +326,7 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
   }
 
   let suggestion = null;
+  let suggestionBox = null;  // the suggested material's box (model coordinates), or null
   const suggestionMaterial = new THREE.MeshStandardMaterial({
     color: css("--color-selected"), transparent: true, opacity: 0.55, metalness: 0, roughness: 0.6, depthWrite: false,
   });
@@ -316,9 +342,16 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       });
       suggestion = null;
     }
-    if (!stlBuffer) return;
+    const hadBox = !!suggestionBox;
+    suggestionBox = null;
+    if (!stlBuffer) {
+      if (hadBox) reannotate();
+      return;
+    }
     const geometry = new STLLoader().parse(stlBuffer);
     geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    suggestionBox = geometry.boundingBox.clone();
     const orange = new THREE.LineBasicMaterial({ color: css("--color-selected") });
     suggestion = new THREE.Group();
     suggestion.add(new THREE.Mesh(geometry, suggestionMaterial));
@@ -329,15 +362,19 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       const center = box.getCenter(new THREE.Vector3());
       const lift = Math.max(box.getSize(new THREE.Vector3()).length(), 8);
       const end = center.clone().add(new THREE.Vector3(-lift * 0.6, -lift * 0.2, lift * 0.9));
-      suggestion.add(line([[center.x, center.y, box.max.z], [end.x, end.y, end.z]], orange));
+      const leader = line([[center.x, center.y, box.max.z], [end.x, end.y, end.z]], orange);
+      suggestion.add(leader);
       const element = document.createElement("div");
       element.className = "dim-label suggestion-label";
       element.textContent = labelText;
+      element.dataset.movable = "suggestion";  // placed per view, clear of the orange material (layoutPartLabels)
       const tag = new CSS2DObject(element);
       tag.position.copy(end);
       suggestion.add(tag);
+      suggestion.userData.entry = { label: tag, leader, hole: [center.x, center.y, box.max.z], home: [end.x, end.y, end.z], material: orange };
     }
     if (!assembly) scene.add(suggestion);
+    reannotate();
   }
 
   // ---------- assembly check simulation ----------
@@ -482,7 +519,13 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       annotations.remove(entry.leader);
       entry.leader.geometry.dispose();
     }
-    if ((!ghosts.length && !holes.length) || !part || assembly) return;  // in sim view all wait detached
+    // The suggested feature's tag is placed like the hole labels (its leader stays on the orange material).
+    const tagged = suggestion && labelsVisible && !assembly ? suggestion.userData.entry : null;
+    if (tagged) {
+      suggestion.remove(tagged.leader);
+      tagged.leader.geometry.dispose();
+    }
+    if ((!ghosts.length && !holes.length && !tagged) || !part || assembly) return;  // in sim view all wait detached
     labels.render(scene, camera);  // attach new label elements first, so every width below is measured, not estimated
     const stack = framedBox();
     camera.updateMatrixWorld();
@@ -502,6 +545,15 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
       return [(v.x * 0.5 + 0.5) * viewRect.width, (-v.y * 0.5 + 0.5) * viewRect.height];
     };
     const placed = [];
+    if (suggestion && suggestionBox) {  // the orange material itself: no label may sit on it
+      let [lx, ly, hx, hy] = [Infinity, Infinity, -Infinity, -Infinity];
+      const b = suggestionBox;
+      for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
+        const [sx, sy] = project([x, y, z]);
+        [lx, ly, hx, hy] = [Math.min(lx, sx), Math.min(ly, sy), Math.max(hx, sx), Math.max(hy, sy)];
+      }
+      placed.push([(lx + hx) / 2, (ly + hy) / 2, (hx - lx) / 2, (hy - ly) / 2]);
+    }
     for (const group of [annotations, suggestion]) {
       if (group && labelsVisible) group.traverse((o) => {
         if (o.isCSS2DObject && o.element.style.display !== "none" && !o.element.dataset.movable) {
@@ -509,33 +561,54 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
         }
       });
     }
+    const clearTop = 12;  // labels stay inside the viewport vertically too (never cut at its top or bottom)
+    const clearBottom = viewRect.height - 12;
+    const move = (at, axis, px) => {
+      at[0] += axis.x * px;
+      at[1] += axis.y * px;
+      at[2] += axis.z * px;
+    };
+    const inside = (at, hh) => { const sy = project(at)[1]; return sy - hh >= clearTop && sy + hh <= clearBottom; };
     const settle = (start, hw, hh) => {  // clamp into the strip, then lift past placed labels
       const at = [...start];
-      for (let nudge = 0; nudge < 24; nudge++) {
-        const sx = project(at)[0];
-        if (sx >= clearLeft && sx <= clearRight) break;
-        const step = Math.sign(sx < clearLeft ? clearLeft - sx : clearRight - sx) * mmPerPxX * 8;
-        at[0] += camRight.x * step;
-        at[1] += camRight.y * step;
-        at[2] += camRight.z * step;
-      }
+      // Into the strip and the viewport in one exact move each (the label's own half size included).
+      const sx = project(at)[0];
+      const tx = Math.min(Math.max(sx, Math.max(clearLeft, hw + 12)), Math.min(clearRight, viewRect.width - hw - 12));
+      move(at, camRight, (tx - sx) * mmPerPxX);
+      const sy = project(at)[1];  // screen y grows downward, camUp points up
+      const ty = Math.min(Math.max(sy, clearTop + hh), clearBottom - hh);
+      move(at, camUp, (sy - ty) * mmPerPxY);
       // One direction only (away from the first hit): reversing between two stacked labels
       // would oscillate and end overlapped, while a monotone climb always terminates clear.
-      let dir = 0;
-      for (let lift = 0; lift < 12; lift++) {
-        const [sx, sy] = project(at);
-        const hit = placed.find(([px, py, pw, ph]) =>
-          Math.abs(sx - px) < pw + hw + 6 && Math.abs(sy - py) < ph + hh + 6);
-        if (!hit) break;
-        if (!dir) dir = sy <= hit[1] ? 1 : -1;
-        const step = ((hit[3] + hh + 6) - Math.abs(sy - hit[1]) + 2) * mmPerPxY * dir;
-        at[0] += camUp.x * step;
-        at[1] += camUp.y * step;
-        at[2] += camUp.z * step;
+      // A climb that leaves the viewport is redone the other way.
+      const climb = (from, forced) => {
+        const pos = [...from];
+        let dir = forced;
+        for (let lift = 0; lift < 16; lift++) {
+          const [sx, sy] = project(pos);
+          const hit = placed.find(([px, py, pw, ph]) =>
+            Math.abs(sx - px) < pw + hw + 6 && Math.abs(sy - py) < ph + hh + 6);
+          if (!hit) return { pos, clear: true, dir };
+          if (!dir) dir = sy <= hit[1] ? 1 : -1;
+          move(pos, camUp, ((hit[3] + hh + 6) - Math.abs(sy - hit[1]) + 2) * mmPerPxY * dir);
+        }
+        return { pos, clear: false, dir };
+      };
+      let best = climb(at, 0);
+      if (!best.clear || !inside(best.pos, hh)) {
+        const other = climb(at, -(best.dir || 1));
+        if (other.clear && inside(other.pos, hh)) best = other;
       }
-      placed.push([...project(at), hw, hh]);
-      return at;
+      placed.push([...project(best.pos), hw, hh]);
+      return best.pos;
     };
+    if (tagged) {
+      const [hw, hh] = labelSize(tagged.label.element);
+      const at = settle(tagged.home, hw, hh);
+      tagged.label.position.set(...at);
+      tagged.leader = line([tagged.hole, at], tagged.material);
+      suggestion.add(tagged.leader);
+    }
     for (const entry of holes) {
       const [hw, hh] = labelSize(entry.label.element);
       const at = settle(entry.home, hw, hh);

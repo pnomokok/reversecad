@@ -63,6 +63,8 @@ function loadImage(url) {
 const pad2 = (n) => String(n).padStart(2, "0");
 const idOf = (event) => event.label || pad2(event.candidate);  // repaired programs are R1, R2
 const mm = (value, digits = 2) => `${Number(value).toFixed(digits)} mm`;
+// "1 hole", "2 holes": app-written counts with correct grammar (model-written text is never touched).
+const plural = (n, word, many = `${word}s`) => `${n} ${Number(n) === 1 ? word : many}`;
 
 // ---------- screens ----------
 function setScreen(screen) {
@@ -123,8 +125,9 @@ function updateHeader() {
   const kind = state.live ? "Real photo" : state.runKind === "Synthetic" ? (state.sample ? "Synthetic sample" : "Synthetic")
     : state.runKind || "";
   // The kind always shows in full; only the run name is shortened when the window is narrow.
-  chip.innerHTML = state.run ? `${kind ? `<span class="run-kind">${esc(kind)} ·</span>` : ""}<span class="run-name">${esc(state.run)}</span>` : "";
-  chip.title = chip.textContent;
+  const shown = !state.live && state.runTitle ? state.runTitle : state.run;
+  chip.innerHTML = state.run ? `${kind ? `<span class="run-kind">${esc(kind)} ·</span>` : ""}<span class="run-name">${esc(shown || "")}</span>` : "";
+  chip.title = state.run ? `${chip.textContent} (${state.run})` : "";  // the folder name on hover
   // Replay never calls a model: say so for as long as a saved run is on screen (live mode never shows it).
   $("replay-chip").classList.toggle("hidden", !state.run || state.live);
   const searching = state.screen === "search" && !!state.analysis;
@@ -715,7 +718,7 @@ function updateProcedure() {
     ? `Card edges differ ${a.card_edge_differences_pct.map((d) => Math.abs(d).toFixed(1)).join(" / ")} %`
     : "Checked from the card's edges";
   $("step-click-sub").textContent = a
-    ? `Part found · ${a.outline_mm.corners} corners · ${a.holes.length} holes`
+    ? `Part found · ${plural(a.outline_mm.corners, "corner")} · ${plural(a.holes.length, "hole")}`
     : state.click ? "Clicked: press Measure" : "Click the part, not a hole";
   const t = thickness();
   document.querySelectorAll("#thickness-presets button").forEach((b) => b.classList.toggle("active", Number(b.dataset.thickness) === t));
@@ -728,7 +731,8 @@ function showSummary(a) {
   const rows = [["Part extents", `${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} × ${t ? t.toFixed(2) : "?"} mm`],
                 ["Corners", a.outline_mm.corners], [`Holes (${a.holes.length})`, sizes || "none"],
                 ["Scale", `1 px = ${a.card_mm_per_pixel} mm`]];
-  $("measure-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td class="number">${v}</td></tr>`).join("");
+  $("measure-table").innerHTML = `<tr class="heading"><td colspan="2">Measured from photo</td></tr>`
+    + rows.map(([k, v]) => `<tr><td>${k}</td><td class="number">${v}</td></tr>`).join("");
   const warning = a.resolution_warning;
   $("resolution-warning").classList.toggle("hidden", !warning);
   if (warning) $("resolution-warning-text").textContent = warning;
@@ -746,7 +750,7 @@ function updateCaptureBars() {
       + `<span>MASKS <strong>SAM 3.1</strong></span>` : "";
   $("capture-footer-values").innerHTML = a
     ? `<span>Card edges <strong>${a.card_edge_differences_pct.join(" / ")} %</strong></span>`
-      + `<span>Keypoints <strong>${a.outline_mm.corners} corners / ${a.holes.length} holes</strong></span>`
+      + `<span>Keypoints <strong>${plural(a.outline_mm.corners, "corner")} / ${plural(a.holes.length, "hole")}</strong></span>`
       + `<span>Holes by <strong>${a.hole_method}</strong></span>` : "";
 }
 
@@ -792,6 +796,7 @@ async function chooseRun(name) {
   state.click = about.click_px;  // the example's own click
   state.runKind = about.kind;  // "Synthetic" or "Real photo", the same source as the gallery badge
   state.sample = about.sample;
+  state.runTitle = about.title || name;  // a sample's readable name, else the folder name
   updateHeader();
   showPhoto();
   $("analyze").disabled = false;
@@ -929,7 +934,8 @@ function resultRows(event) {
   const truth = event.ground_truth;
   if (truth) {
     const ruler = truth.kind === "ruler";
-    rows.push([ruler ? "vs ruler (±0.5 mm)" : "vs ground truth", null]);  // a heading row
+    // a heading row; these sizes are measured on the candidate's render (the program values are on the sliders)
+    rows.push([`${ruler ? "vs ruler (±0.5 mm)" : "vs ground truth"} · measured on the render`, null]);
     for (const key of ["length", "width"]) {
       const [model, real] = truth[key];
       rows.push([key === "length" ? "Length" : "Width", `${model.toFixed(2)} vs ${real.toFixed(2)} (${percent(model, real)})`]);
@@ -953,12 +959,26 @@ const sourceLabel = (source) => (source === "candidate" ? "candidate · Muse Spa
 function usageRows(usage) {
   // One row per model this run called (from the run's usage ledger), then the total of the known prices.
   const rows = Object.entries(usage.models).map(([model, t]) => {
-    const amount = t.images ? `${t.images} images` : `${(t.input_tokens + t.output_tokens).toLocaleString("en-US")} tokens`;
+    const amount = t.images ? plural(t.images, "image") : plural((t.input_tokens + t.output_tokens).toLocaleString("en-US"), "token");
     const price = t.cost_usd == null ? "price unknown" : `$${t.cost_usd.toFixed(3)}${t.price_unverified ? " (unverified)" : ""}`;
-    return [MODEL_NAMES[model] || model, `${t.calls} calls · ${amount} · ${price}`];
+    return [MODEL_NAMES[model] || model, `${plural(t.calls, "call")} · ${amount} · ${price}`];
   });
   rows.push(["Known cost", `$${usage.known_cost_usd.toFixed(3)}`]);
   return rows;
+}
+
+// Muse Wonder's own words, exactly as recorded: only snake_case identifiers and coordinate lists inside them
+// are set in code style (the text itself is escaped and never changed).
+const IDENTIFIER_OR_COORDS = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b|[\[(]\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*[\])]/g;
+function modelText(text) {
+  const parts = [];
+  let last = 0;
+  for (const match of String(text).matchAll(IDENTIFIER_OR_COORDS)) {
+    parts.push(esc(text.slice(last, match.index)), `<code class="model-code">${esc(match[0])}</code>`);
+    last = match.index + match[0].length;
+  }
+  parts.push(esc(String(text).slice(last)));
+  return parts.join("");
 }
 
 const tableHTML = (rows) => rows.map(([k, v]) => (v === null
@@ -986,12 +1006,12 @@ function winnerCard(event) {
   const card = document.createElement("div");
   card.className = "candidate-card winner";
   card.id = `candidate-${event.candidate}`;
-  const length = event.outline_mm ? `<div class="dimension"><span class="line" style="left:12%;right:12%"></span>`
+  const length = event.outline_mm ? `<div class="dimension" title="Measured on the render"><span class="line" style="left:12%;right:12%"></span>`
     + `<span>${mm(event.outline_mm[0])}</span></div>` : "";
   const fit = event.fit_mm == null ? ""
     : `<div><span class="label">Fit to measurements</span><span class="big-plain">${mm(event.fit_mm)}</span></div>`;
   const truth = event.ground_truth
-    ? `<div class="truth-line">${event.ground_truth.kind === "ruler" ? "vs ruler (±0.5 mm)" : "vs ground truth"}: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
+    ? `<div class="truth-line">Measured on the render, ${event.ground_truth.kind === "ruler" ? "vs ruler (±0.5 mm)" : "vs ground truth"}: ${event.ground_truth.length[0].toFixed(2)} × ${event.ground_truth.width[0].toFixed(2)}`
       + ` vs ${event.ground_truth.length[1].toFixed(2)} × ${event.ground_truth.width[1].toFixed(2)} mm`
       + ` (${percent(...event.ground_truth.length)} / ${percent(...event.ground_truth.width)})</div>` : "";
   // What Muse Wonder was given (counted by the same rule as repair_inputs.pick_failed), under its own text.
@@ -999,7 +1019,7 @@ function winnerCard(event) {
     : `<span class="repair-given">Muse Wonder was given ${event.repair_given === event.failed_count
       ? `all ${event.failed_count} failed candidates` : `the ${event.repair_given} closest of the ${event.failed_count} failed candidates`}</span>`;
   const diagnosis = event.label && event.diagnosis  // a repaired program says what was wrong with the rest
-    ? `<div class="repair-diagnosis"><span class="label">Repaired by Muse Wonder</span>${escapeAttribute(event.diagnosis)}${given}</div>` : "";
+    ? `<div class="repair-diagnosis"><span class="label">Repaired by Muse Wonder</span>${modelText(event.diagnosis)}${given}</div>` : "";
   if (diagnosis) card.classList.add("repaired");  // text beside the drawing, so the drawing keeps its size
   card.innerHTML = `<div class="winner-head"><span class="winner-id"><span class="winner-number">#${idOf(event)}</span>${event.label ? "REPAIRED" : "BEST MATCH"}</span>`
     + `<span class="winner-chip">Selected · ${event.parameters} params</span></div>`
@@ -1078,7 +1098,7 @@ function streamItem(tag, tagClass, text, detail = "") {
 function updateSummary() {
   const seen = state.seen;
   const passed = seen.filter((e) => e.status === "passed");
-  $("search-count").textContent = seen.length;
+  $("search-count").textContent = plural(seen.length, "candidate");
   const repairs = seen.filter((e) => e.label).length;  // Muse Wonder's repaired programs (R1, R2) come on top
   $("search-total").textContent = `${state.done ? state.done.candidate_count : state.expected || seen.length} requested`
     + (repairs ? ` + ${repairs} repair${repairs > 1 ? "s" : ""}` : "");
@@ -1094,7 +1114,7 @@ function updateSummary() {
   $("usage-box").classList.toggle("hidden", !(usage && Object.keys(usage.models).length));
   if (usage) $("usage-table").innerHTML = tableHTML(usageRows(usage));
   const a = state.analysis;
-  $("search-target").innerHTML = a ? `Target <strong>${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} mm · ${a.holes.length} holes</strong>` : "";
+  $("search-target").innerHTML = a ? `Target · measured from photo <strong>${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} mm · ${plural(a.holes.length, "hole")}</strong>` : "";
   $("search-state").innerHTML = state.done ? "" : `<span class="pulse"></span>Checking ${seen.length + 1}${state.expected ? ` / ${state.expected}` : ""}`;
   $("stream-dot").classList.toggle("idle", !!state.done);
   updateHeader();
@@ -1226,7 +1246,7 @@ function fallbackCard(fallback) {
   // No candidate passed: the measured shape (the baseline built straight from the measurements), full width.
   const card = document.createElement("div");
   card.className = "candidate-card fallback-card";
-  const length = fallback.outline_mm ? `<div class="dimension"><span class="line" style="left:14%;right:14%"></span>`
+  const length = fallback.outline_mm ? `<div class="dimension" title="Measured on the render"><span class="line" style="left:14%;right:14%"></span>`
     + `<span>${mm(fallback.outline_mm[0])}</span></div>` : "";
   const fit = fallback.fit_mm == null ? "" : `<span>Fit <strong>${mm(fallback.fit_mm)}</strong></span>`;
   requestAnimationFrame(() => fitDimensionLine(card, card.querySelector(".shape img")));
@@ -1250,7 +1270,7 @@ async function showNoDesign(show) {
   const rejected = state.seen.filter((e) => e.status !== "passed").length;
   $("nodesign-text").textContent = (r.rough_edges
     ? `Rough edges make up ${Math.round(100 * r.rough_share)}% of the outline (worst ${r.worst_roughness_mm} mm from a straight or round edge; designed edges stay under ${r.roughness_limit_mm} mm). `
-    : "") + `None of the ${state.seen.length} candidates stayed within the measurement limits (${rejected} rejected or failed), so the shape built straight from the measurements is shown.`;
+    : "") + `None of the ${plural(state.seen.length, "candidate")} stayed within the measurement limits (${rejected} rejected or failed), so the shape built straight from the measurements is shown.`;
   const rows = [
     ["Rough edges", r.rough_edges ? `${r.rough_length_mm} of ${r.perimeter_mm} mm` : "none", r.rough_share || 0],
     ["Missing material vs mirror image", r.missing_material_mm2 ? `${r.missing_material_mm2} mm²` : "none", null],
@@ -1314,6 +1334,10 @@ function postJSON(url, body) {
 // One program name everywhere (Edit and Export subbars, drawing title block): the downloaded .py's name,
 // as the server builds it (reversecad_<run>[_<kind>].py, see server.download).
 const programFile = () => `reversecad_${state.run}${state.matching ? `_${state.matching.kind}` : ""}.py`;
+function showProgramName() {
+  $("model-program").textContent = `Program ${programFile()}`;
+  $("model-program").title = $("model-program").textContent;  // full name when the subbar shortens it
+}
 
 // What the model, drawing and download requests add for a matching part (nothing for the original).
 const matchQuery = (separator = "?") => (state.matching ? `${separator}match=${state.matching.kind}` : "");
@@ -1342,12 +1366,13 @@ async function rebuild() {
   state.viewer.setChanged(changedLabels());
   if (features) {
     const [x0, y0, z0, x1, y1, z1] = features.box;
+    $("model-size").title = "Program values: the built model's size";
     $("model-size").innerHTML = `<strong>${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${(z1 - z0).toFixed(2)} mm</strong>`
       + ` · ${holeCountText(features)}`;
   }
   if (state.matching) await showAlignment(build);
   if (build !== state.builds) return;
-  status.textContent = `Built in ${((performance.now() - started) / 1000).toFixed(1)} s`;
+  status.textContent = `Program values · built in ${((performance.now() - started) / 1000).toFixed(1)} s`;  // the 3D labels
   // Slider moves in sim view re-run the check (the viewer animates the color change).
   if (assembly.view === "sim" && state.matching?.kind === "adapter") await runAssemblyCheck(false);
 }
@@ -1357,7 +1382,7 @@ function holeCountText(features) {
   // copies); everywhere else the built round holes are counted.
   const counts = state.matching?.kind === "adapter" && state.matching.holeStyle === "slotted"
     ? state.matching.slottedInfo?.hole_counts : null;
-  if (!counts) return `${features.holes.length} round holes`;
+  if (!counts) return plural(features.holes.length, "round hole");
   const parts = [];
   if (counts.slots) parts.push(`${counts.slots} slot${counts.slots === 1 ? "" : "s"}`);
   if (counts.shaped) parts.push(`${counts.shaped} shaped hole${counts.shaped === 1 ? "" : "s"}`);
@@ -1448,8 +1473,9 @@ async function showModel(sliderValues = {}) {
   state.viewer.showMating(null);
   state.winner = await getJSON(`/api/runs/${state.run}/winner`);
   const w = state.winner;
-  $("model-program").textContent = `Program ${programFile()}`;  // the downloaded .py's name; w.program is the internal file
+  showProgramName();  // the downloaded .py's name; w.program is the internal file
   $("model-source").textContent = w.note || `Source: ${sourceLabel(w.source)}`;
+  $("model-source").title = $("model-source").textContent;  // full text when the subbar shortens it
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
   showCaptureFit(w);
   const sliders = $("sliders");
@@ -1510,7 +1536,7 @@ async function showMatching(kind) {
   const w = state.winner;
   setMatchingLayout(w);
   closeAdapterPanel();  // a cover or spacer: the adapter's pattern panel does not belong to it
-  $("model-program").textContent = `Program ${programFile()}`;
+  showProgramName();
   $("model-source").textContent = `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
   w.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
@@ -1986,7 +2012,7 @@ async function runAdapter(pattern, matingRun = null) {
   if (ghost.ok) state.matching.ghosts.mating = await (await fetch((await ghost.json()).stl)).arrayBuffer();
   const w = state.winner;
   setMatchingLayout(w);
-  $("model-program").textContent = `Program ${programFile()}`;
+  showProgramName();
   // The adapter source is already a full label ("Outline: …"); other sources get the "Source:" prefix.
   $("model-source").textContent = w.source.startsWith("Outline:") ? w.source : `Source: ${sourceLabel(w.source)}`;
   $("sliders").innerHTML = "";
@@ -2177,7 +2203,7 @@ $("view-assembly").addEventListener("click", async () => {
 function loadAdapterProgram(info) {
   // Swap the adapter program (Exact ↔ Slotted variant): new sliders, rebuilt, ghosts follow.
   state.winner = info;
-  $("model-program").textContent = `Program ${programFile()}`;
+  showProgramName();
   $("model-source").textContent = info.source.startsWith("Outline:") ? info.source : `Source: ${sourceLabel(info.source)}`;
   $("sliders").innerHTML = "";
   info.parameters.forEach((p) => $("sliders").appendChild(slider(p)));
@@ -2210,7 +2236,7 @@ document.querySelectorAll("#assembly-style-row button").forEach((b) => b.addEven
 
 function adapterLine(answer) {
   // Pattern B as built: its label, hole count and the smallest edge margin, all computed.
-  return ` · Pattern B: ${esc(answer.label_b)} (${answer.holes_b.length} holes, `
+  return ` · Pattern B: ${esc(answer.label_b)} (${plural(answer.holes_b.length, "hole")}, `
     + `min margin ${answer.min_margin_mm.toFixed(1)} mm)`;
 }
 
@@ -2240,8 +2266,8 @@ async function showCompletion() {
   }
   const applied = c.decision === "apply";
   const check = c.check || {};
-  $("break-suggestion").textContent = c.suggestion || "";
-  $("break-rationale").textContent = c.rationale || "";
+  $("break-suggestion").innerHTML = modelText(c.suggestion || "");
+  $("break-rationale").innerHTML = modelText(c.rationale || "");
   $("break-parts").innerHTML = partsHTML(c.parts || [], c.answers || {}, applied);
   $("break-note").textContent = !c.valid ? `Not offered: ${(check.reasons || ["no program returned"]).join("; ")}`
     : applied ? "Applied: the parameters below belong to the completed program."
@@ -2249,7 +2275,7 @@ async function showCompletion() {
        check.removed_volume_mm3 > 0 ? `cuts ${check.removed_volume_mm3.toFixed(0)} mm³` : ""].filter(Boolean).join(", ");
   // The inset becomes the fracture view: the cues found, and how much material the suggestion adds.
   $("fit-title").textContent = "FRACTURE BOUNDARY";
-  $("fit-iou").textContent = `${(c.cues || []).length} BREAK CUES`;
+  $("fit-iou").textContent = plural((c.cues || []).length, "BREAK CUE", "BREAK CUES");
   const share = check.base_volume_mm3 ? (100 * ((check.added_volume_mm3 || 0) - (check.removed_volume_mm3 || 0)) / check.base_volume_mm3) : null;
   if (share !== null) {
     $("fit-table").innerHTML += tableHTML([["Added material", `${share >= 0 ? "+" : "−"}${Math.abs(share).toFixed(1)}% vol.`]]);
@@ -2602,14 +2628,14 @@ async function showExport() {
   $("export-name").innerHTML = `<strong>${data.name}</strong> · ${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${p.thickness.toFixed(2)} mm`
     + ` · ${programFile()} (${data.source})`;
   $("export-name").title = $("export-name").textContent;  // the full line when a narrow window shortens it
-  $("drawing-facts").textContent = `${p.holes.length} holes · outline ${p.outline.length} points · all dimensions in mm`;
+  $("drawing-facts").textContent = `${plural(p.holes.length, "hole")} · outline ${plural(p.outline.length, "point")} · all dimensions in mm`;
   $("drawing").innerHTML = drawingSVG(data);
   $("fact-stl").textContent = state.viewer ? `${state.viewer.triangleCount().toLocaleString("en-US")} triangles` : "";
   $("fact-dxf").textContent = `${1 + p.holes.length} closed contours`;
   const program = await postJSON(`/api/runs/${state.run}/download?format=py${matchQuery("&")}`, modelBody());
   const source = await program.text();
   $("code-preview").textContent = source.split("\n").filter((line) => line.trim()).slice(0, 8).join("\n");
-  $("fact-py").textContent = `${state.winner.parameters.length} named parameters`;
+  $("fact-py").textContent = plural(state.winner.parameters.length, "named parameter");
 }
 
 function drawingSVG(data) {
@@ -2741,8 +2767,9 @@ function drawingSVG(data) {
   setScreen("capture");
   updateProcedure();
   applyConfig(await getJSON("/api/config"));
-  const { runs, samples } = await getJSON("/api/runs");
-  $("example-list").innerHTML = samples.map((n) => `<button data-run="${n}">${n}</button>`).join("");
+  const { runs, samples, titles = {} } = await getJSON("/api/runs");
+  // Samples by their readable name; the folder name (the run's id in URLs) on hover.
+  $("example-list").innerHTML = samples.map((n) => `<button data-run="${n}" title="${n}">${esc(titles[n] || n)}</button>`).join("");
   const local = runs.filter((name) => !samples.includes(name));
   $("your-runs").classList.toggle("hidden", !local.length);
   $("your-runs-summary").textContent = `Your runs (${local.length})`;

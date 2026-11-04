@@ -111,7 +111,8 @@ def config():
 @app.get("/api/runs")
 def runs():
     """Saved runs that can be replayed, plus the recorded samples among them."""
-    return {"runs": replay.list_runs(), "samples": replay.list_samples()}
+    return {"runs": replay.list_runs(), "samples": replay.list_samples(),
+            "titles": {name: replay.display_name(name) for name in replay.list_samples()}}
 
 
 @app.get("/api/parts")
@@ -749,8 +750,9 @@ async def adapter_assembly(name: str, request: Request):
                                     else "pass")})
     watched.sort(key=lambda s: (s["pattern"], int(s["id"][1:])))
     blocked = [s for s in watched if s["verdict"] == "blocked"]
-    message = (f"All {len(watched)} screws pass" if not blocked
-               else f"{len(blocked)} of {len(watched)} screws blocked")
+    screws = "screw" if len(watched) == 1 else "screws"
+    message = ((f"All {len(watched)} screws pass" if len(watched) > 1 else f"The {screws} passes") if not blocked
+               else f"{len(blocked)} of {len(watched)} {screws} blocked")
     base = f"/api/runs/{name}/matching/adapter/assembly/{check_id}"
     return {"check_id": check_id, "verdict": "blocked" if blocked else "pass", "message": message,
             "hole_style": style, "error_case": error_case, "screws": watched, "skipped": skipped,

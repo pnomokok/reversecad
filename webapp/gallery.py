@@ -68,7 +68,7 @@ def card(name):
         kind = replay.run_kind(name)  # the same source as the run chip
         if kind == "Real photo" and _is_sample(folder):
             kind = "Real photo · recorded live run"
-        return {"name": name, "length_mm": outline["length_mm"], "width_mm": outline["width_mm"],
+        return {"name": name, "title": replay.display_name(name), "length_mm": outline["length_mm"], "width_mm": outline["width_mm"],
                 "hole_count": len(table["holes"]), "source": label, "kind": kind}
     except (FileNotFoundError, KeyError, ValueError, TypeError, OSError):
         return None  # unfinished or unreadable: no card, never a guess

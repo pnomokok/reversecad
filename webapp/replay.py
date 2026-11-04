@@ -531,6 +531,29 @@ def is_sample(name):
     return run_dir(name).parent == SAMPLES_DIR.resolve()
 
 
+# Readable names for the committed samples (shape + appearance or state); the folder name stays the run's
+# id in URLs and is shown as a tooltip. Other runs are shown by their folder name.
+SAMPLE_TITLES = {
+    "A_light": "Plate, 4 holes",
+    "A_light_repair": "Plate, 4 holes · broken candidates",
+    "A_torn_fallback": "Plate, 4 holes · torn edges",
+    "A_brushed": "Plate, 4 holes · brushed metal",
+    "C_wood": "Flat L, 2 holes · wood",
+    "D_black_plastic": "Tabbed plate, 2 holes · black plastic",
+    "D_tab_broken": "Tabbed plate · snapped tab",
+    "E_glossy_white": "Plate, square hole and slot · glossy white",
+    "live-20261103-224610-c8b8df": "Cardboard plate, broken corner",
+}
+
+
+def display_name(name):
+    """The run's readable name: a sample's title when it resolves to samples/, else its folder name."""
+    try:
+        return SAMPLE_TITLES.get(name, name) if is_sample(name) else name
+    except FileNotFoundError:
+        return name
+
+
 def run_kind(name):
     """"Real photo" or "Synthetic": live-* runs are uploaded photos, everything else is a rendered scene.
     The one source for the gallery badge and the run chip."""
@@ -543,7 +566,7 @@ def info(name):
     attempts = json.loads((folder / "2_sam_attempts.json").read_text(encoding="utf-8"))
     height, width = cv2.imread(str(_photo(folder)), cv2.IMREAD_GRAYSCALE).shape
     return {"name": name, "click_px": attempts.get("click"), "image_size": [width, height],
-            "kind": run_kind(name), "sample": is_sample(name)}
+            "kind": run_kind(name), "sample": is_sample(name), "title": display_name(name)}
 
 
 @functools.lru_cache(maxsize=16)

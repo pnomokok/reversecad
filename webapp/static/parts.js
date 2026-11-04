@@ -16,8 +16,8 @@ const previews = new Map();  // run name -> { card, stl } ; turntables come and 
 function cardHTML(part) {
   const holes = part.hole_count === 1 ? "1 hole" : `${part.hole_count} holes`;
   return `<span class="part-preview"><span class="preview-status">Building…</span></span>`
-    + `<span class="part-name">${esc(part.name)}</span>`
-    + `<span class="part-facts">${part.length_mm.toFixed(2)} × ${part.width_mm.toFixed(2)} mm · ${holes}</span>`
+    + `<span class="part-name" title="${esc(part.title || part.name)} (${esc(part.name)})">${esc(part.title || part.name)}</span>`
+    + `<span class="part-facts" title="Outline measured from the photo">Measured ${part.length_mm.toFixed(2)} × ${part.width_mm.toFixed(2)} mm · ${holes}</span>`
     + `<span class="part-chips"><span class="status-chip">${esc(part.source)}</span>`
     + `<span class="status-chip">${esc(part.kind)}</span></span>`;
 }

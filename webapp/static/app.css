@@ -45,7 +45,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: var(--color-lowest); display: flex; flex-direction: column; align-items: center; padding: var(--space-3) 0; gap: var(--space-2);
 }
 .rail-logo { width: 36px; height: 36px; display: grid; place-items: center; background: var(--color-low); color: var(--color-selected); margin-bottom: var(--space-3); }
-.rail-logo .icon { font-size: 22px; }
+.rail-logo .logo-mark { width: 26px; height: 26px; display: block; }
 .rail-nav { display: flex; flex-direction: column; gap: var(--space-1); }
 .rail-nav button { width: 36px; height: 36px; display: grid; place-items: center; background: transparent; color: var(--color-text-muted); border-left: 2px solid transparent; }
 .rail-nav button.active { background: var(--color-container); color: var(--color-selected); border-left-color: var(--color-selected); }
@@ -84,7 +84,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .subbar-sep { color: var(--color-text-faint); }
 .subbar-text { color: var(--color-text-muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .subbar-text strong, .subbar-right strong { color: var(--color-text-strong); font-weight: 600; }
-.subbar-right { margin-left: auto; flex-shrink: 0; white-space: nowrap; display: flex; align-items: center; gap: var(--space-5); color: var(--color-text-muted); }
+.subbar-right { margin-left: auto; flex-shrink: 1; min-width: 0; white-space: nowrap; display: flex; align-items: center; gap: var(--space-5); color: var(--color-text-muted); }
 .subbar-status { color: var(--color-selected); display: inline-flex; align-items: center; gap: var(--space-2); }
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--color-selected); }
 .split { flex: 1; min-height: 0; display: flex; }
@@ -325,16 +325,16 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .panel-tabs .icon-button { margin-left: auto; flex-shrink: 0; }
 .edit-panel[data-tab="parameters"] .tab-matching-only { display: none; }
 .edit-panel[data-tab="matching"] .tab-parameters-only { display: none; }
-/* A matching part on screen: its own head, sliders and downloads show on the Matching part tab, under its
-   controls (Parameters then means the original, see goEdit in app.js). */
+/* A matching part on screen: its own head, sliders and downloads show on the Matching part tab, after its
+   controls and the assembly check (Parameters then means the original, see goEdit in app.js). */
 .edit-panel.matching-mode[data-tab="matching"] .edit-panel-head,
 .edit-panel.matching-mode[data-tab="matching"] .sliders,
 .edit-panel.matching-mode[data-tab="matching"] .exports-block { display: flex; }
 .edit-panel.matching-mode .matching-bar { order: 1; }
 .edit-panel.matching-mode .matching-block { order: 2; }
-.edit-panel.matching-mode .edit-panel-head { order: 3; }
-.edit-panel.matching-mode .sliders { order: 4; }
-.edit-panel.matching-mode .assembly-block { order: 5; }
+.edit-panel.matching-mode .assembly-block { order: 3; }  /* the check right under the presets, in view after choosing one */
+.edit-panel.matching-mode .edit-panel-head { order: 4; }
+.edit-panel.matching-mode .sliders { order: 5; }
 .edit-panel.matching-mode .exports-block { order: 6; }
 .edit-panel-head { display: flex; justify-content: space-between; align-items: center; }
 .edit-panel-head > div { display: flex; flex-direction: column; gap: 2px; }
@@ -575,3 +575,9 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .part-name { font-family: var(--font-mono); font-size: var(--font-size-label-lg); font-weight: 700; color: var(--color-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .part-facts { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-muted); }
 .part-chips { display: flex; gap: var(--space-1); }
+
+/* Subbar chips shorten with an ellipsis instead of wrapping (full text on hover via title). */
+.subbar .chip-muted { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+.model-code { font-family: var(--font-mono); font-size: 0.92em; background: var(--color-container); padding: 0 3px; }
+.subbar-keep { flex-shrink: 0; }  /* the model's size never shortens; names and notes do */
+.best-box table.values tr.heading td, .fit-inset table.values tr.heading td { white-space: normal; }  /* long headings wrap, values keep their column */

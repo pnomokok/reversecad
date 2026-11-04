@@ -83,7 +83,8 @@ def test_runs_without_a_repair_say_nothing_about_one():
 
 def test_one_program_name_everywhere():
     assert 'const programFile = () => `reversecad_${state.run}${state.matching ? `_${state.matching.kind}` : ""}.py`;' in APP_JS
-    assert APP_JS.count("Program ${programFile()}") == 4  # original, cover/spacer, adapter, adapter style switch
+    assert APP_JS.count("Program ${programFile()}") == 1  # one helper for the Edit subbar chip ...
+    assert APP_JS.count("showProgramName();") == 4  # ... used for the original, cover/spacer, adapter, style switch
     assert "${data.program}" not in APP_JS  # export subbar and drawing title block use the same name
     name = client.post("/api/runs/A_light/download?format=py", json={"parameters": {}}).headers["Content-Disposition"]
     assert 'filename="reversecad_A_light.py"' in name
