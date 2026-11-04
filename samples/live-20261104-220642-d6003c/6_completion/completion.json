@@ -1,0 +1,99 @@
+{
+  "cues": [
+    {
+      "kind": "rough_edge",
+      "from": [
+        -52.66,
+        48.15
+      ],
+      "to": [
+        51.64,
+        35.14
+      ],
+      "length_mm": 105.11,
+      "roughness_mm": 2.184
+    },
+    {
+      "kind": "missing_material",
+      "mirror_axis": "u = 0",
+      "symmetry_iou": 0.964,
+      "area_mm2": 117.6,
+      "bbox_mm": [
+        37.0,
+        35.5,
+        53.0,
+        48.5
+      ]
+    },
+    {
+      "kind": "missing_material",
+      "mirror_axis": "v = 0",
+      "symmetry_iou": 0.956,
+      "area_mm2": 16.3,
+      "bbox_mm": [
+        9.25,
+        46.75,
+        22.25,
+        48.25
+      ]
+    },
+    {
+      "kind": "missing_material",
+      "mirror_axis": "v = 0",
+      "symmetry_iou": 0.956,
+      "area_mm2": 7.8,
+      "bbox_mm": [
+        22.75,
+        46.75,
+        29.0,
+        48.0
+      ]
+    }
+  ],
+  "winner": "repaired.py",
+  "broken": true,
+  "suggestion": "Restore the broken chamfered corner to the full rectangular corner using the new restored_corner_leg parameter and the existing length/width edges.",
+  "rationale": "The diagonal corner edge is identified as a rough break, and mirror-symmetry cues show a triangular missing-material region of about 117.6 mm2 with an approximately 13 mm leg at that corner. The remaining plate and four holes are nearly symmetric, so the chamfer is most likely lost material rather than the designed outline.",
+  "parts": [
+    {
+      "name": "restored_corner_leg",
+      "value": 13.0,
+      "basis": "measured",
+      "evidence": "missing_material bbox 37.0-53.0 by 35.5-48.5 and existing chamfer_size=13.0 fix the broken corner leg",
+      "question": null
+    }
+  ],
+  "input": "mask",
+  "seconds": 52.6,
+  "usage": {
+    "completion_tokens": 6566,
+    "prompt_tokens": 2505,
+    "total_tokens": 9071,
+    "completion_tokens_details": {
+      "accepted_prediction_tokens": null,
+      "audio_tokens": null,
+      "reasoning_tokens": 5912,
+      "rejected_prediction_tokens": null,
+      "text_tokens": null
+    },
+    "prompt_tokens_details": {
+      "audio_tokens": null,
+      "cache_write_tokens": null,
+      "cached_tokens": 0,
+      "image_tokens": null,
+      "text_tokens": null
+    }
+  },
+  "error": null,
+  "program": "completed.py",
+  "check": {
+    "ok": true,
+    "reasons": [],
+    "base_volume_mm3": 30277.5,
+    "result_volume_mm3": 30531.0,
+    "added_volume_mm3": 253.5,
+    "removed_volume_mm3": 0
+  },
+  "status": "suggested",
+  "valid": true
+}

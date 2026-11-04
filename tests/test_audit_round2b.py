@@ -70,7 +70,8 @@ def test_samples_have_readable_names_and_keep_their_folder_ids():
     answer = client.get("/api/runs").json()
     titles = answer["titles"]
     assert set(titles) == set(answer["samples"]) and len(set(titles.values())) == len(titles)
-    assert titles["live-20261103-224610-c8b8df"] == "Cardboard plate, broken corner"
+    assert titles["live-20261104-220642-d6003c"] == "the run in the video (Nov 4)"
+    assert titles["live-20261103-224610-c8b8df"] == "recorded live run (Nov 3)"
     assert all(titles[name] != name for name in titles)
     for name in answer["samples"]:
         assert client.get(f"/api/runs/{name}/info").json()["title"] == titles[name]

@@ -27,9 +27,9 @@ def _features(run, body, match=None):
 
 def test_gallery_shows_the_real_photo_first_with_two_short_chips():
     cards = gallery.gallery_runs()
-    assert cards[0]["name"] == "live-20261103-224610-c8b8df"
-    assert (cards[0]["kind"], cards[0]["recorded"]) == ("Real photo", True)
-    assert all(c["kind"] == "Synthetic" and not c["recorded"] for c in cards[1:])
+    assert [c["name"] for c in cards[:2]] == ["live-20261104-220642-d6003c", "live-20261103-224610-c8b8df"]
+    assert all((c["kind"], c["recorded"]) == ("Real photo", True) for c in cards[:2])
+    assert all(c["kind"] == "Synthetic" and not c["recorded"] for c in cards[2:])
     assert '<span class="status-chip">Recorded run</span>' in Path("webapp/static/parts.js").read_text(encoding="utf-8")
 
 

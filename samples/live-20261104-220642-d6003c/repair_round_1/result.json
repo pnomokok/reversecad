@@ -1,0 +1,11 @@
+{
+  "round": 1,
+  "diagnosis": "cand_3, cand_4 and cand_5 all use a centred symmetric 2x2 hole pattern, but the measured holes are offset and have different insets at each corner, putting them 0.9-2.3 mm from the measured centres; the rectangular outline with a bottom-right chamfer is otherwise correct.",
+  "passed": true,
+  "iou": 0.9674,
+  "reasons": [],
+  "seconds": 69.2,
+  "input_tokens": 5003,
+  "output_tokens": 7656,
+  "cost_usd": 0.173132
+}

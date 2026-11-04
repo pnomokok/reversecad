@@ -1,0 +1,127 @@
+{
+ "pattern": {
+  "holes": [
+   {
+    "x": -30.0,
+    "y": 0.0,
+    "d": 5.5
+   },
+   {
+    "x": 30.0,
+    "y": 0.0,
+    "d": 5.5
+   }
+  ],
+  "label": "2 holes · Ø5.5 · 60 mm apart"
+ },
+ "placement": {
+  "candidate": "centred",
+  "holes_b": [
+   {
+    "x": -31.52,
+    "y": -0.093,
+    "d": 5.5
+   },
+   {
+    "x": 28.48,
+    "y": -0.093,
+    "d": 5.5
+   }
+  ],
+  "walls": {
+   "aa": 68.377,
+   "ab": 32.229,
+   "bb": 54.5,
+   "min": 32.229
+  },
+  "transform": {
+   "dx": -1.52,
+   "dy": -0.093,
+   "rotated90": false
+  }
+ },
+ "holes_a": [
+  {
+   "type": "circle",
+   "center": [
+    38.58,
+    -37.585
+   ],
+   "diameter": 6.0
+  },
+  {
+   "type": "circle",
+   "center": [
+    -40.46,
+    -38.085
+   ],
+   "diameter": 6.0
+  },
+  {
+   "type": "circle",
+   "center": [
+    37.56,
+    36.785
+   ],
+   "diameter": 6.0
+  },
+  {
+   "type": "circle",
+   "center": [
+    -41.76,
+    38.515
+   ],
+   "diameter": 6.0
+  }
+ ],
+ "margin_default": 6.75,
+ "thickness": 3.0,
+ "outline_source": "Muse Spark Open",
+ "mating": null,
+ "winner": 1,
+ "candidates": [
+  {
+   "candidate": 1,
+   "style": "fewest_parameters",
+   "file": "cand1.py",
+   "seconds": 9.3,
+   "input_tokens": 1079,
+   "output_tokens": 2359,
+   "ok": true,
+   "reasons": [],
+   "matched": "6/6",
+   "min_margin_mm": 7.24,
+   "parameter_count": 6
+  },
+  {
+   "candidate": 2,
+   "style": "feature_based",
+   "file": "cand2.py",
+   "seconds": 9.3,
+   "input_tokens": 1099,
+   "output_tokens": 2776,
+   "ok": true,
+   "reasons": [],
+   "matched": "6/6",
+   "min_margin_mm": 6.75,
+   "parameter_count": 6
+  },
+  {
+   "candidate": 3,
+   "style": "symmetry_first",
+   "file": "cand3.py",
+   "seconds": 13.6,
+   "input_tokens": 1097,
+   "output_tokens": 3591,
+   "ok": true,
+   "reasons": [],
+   "matched": "6/6",
+   "min_margin_mm": 6.75,
+   "parameter_count": 6
+  }
+ ],
+ "recorded": {
+  "cache_key": "ff7e6a77ffaafc76b5f97b35",
+  "note": "Muse Spark Open adapter outline search of the run shown in the demo video (2026-11-04, pattern spoken as 'two metric five holes sixty millimeters apart'); replayed keyless"
+ }
+}

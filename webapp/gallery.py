@@ -80,5 +80,7 @@ def gallery_runs():
         entry = card(name)
         if entry is not None:
             cards.append(entry)
-    # Real photos first (the case the app is for), then the synthetic scenes; by name within each.
-    return sorted(cards, key=lambda c: (c["kind"] != "Real photo", c["name"]))
+    # Real photos first (the case the app is for), newest first (live-* names carry their timestamp, so
+    # the run shown in the demo video leads), then the synthetic scenes by name.
+    real = sorted((c for c in cards if c["kind"] == "Real photo"), key=lambda c: c["name"], reverse=True)
+    return real + sorted((c for c in cards if c["kind"] != "Real photo"), key=lambda c: c["name"])

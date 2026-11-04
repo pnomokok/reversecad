@@ -124,9 +124,9 @@ The Parts screen shows every finished run as a card with a rotating 3D preview �
 
 ## Live, recorded and synthetic
 
-- **Without keys** you can replay the nine samples: each replays recorded outputs from an earlier run (measurements, candidates, repairs, completions); no model is called in replay. Works on a local server and in the online demo.
+- **Without keys** you can replay the ten samples: each replays recorded outputs from an earlier run (measurements, candidates, repairs, completions); no model is called in replay. Works on a local server and in the online demo.
 - **With keys** you get live mode: new photos, voice editing, and new candidate searches and repairs.
-- Eight samples are **synthetic renders** (`A_light`, `A_light_repair`, `A_torn_fallback`, `D_tab_broken`, `A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`); one is a **real photo**: `live-20261103-224610-c8b8df` (the BREAK1 cardboard part; the QR code on its card was removed with a generative-erase tool before the run, nothing else changed; ruler truth ±0.5 mm).
+- Eight samples are **synthetic renders** (`A_light`, `A_light_repair`, `A_torn_fallback`, `D_tab_broken`, `A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`); two are **real photos** of the same BREAK1 cardboard part (the QR code on its card was removed with a generative-erase tool before the runs, nothing else changed; ruler truth ±0.5 mm): `live-20261104-220642-d6003c`, the run shown in the demo video, and `live-20261103-224610-c8b8df`, an earlier recorded live run.
 
 ## Run it
 
@@ -142,7 +142,7 @@ python -m venv .venv
 
 On macOS or Linux use `.venv/bin/python` instead of `.venv\Scripts\python.exe`; tested on Linux (Python 3.13, fresh clone: install, tests, web app start); macOS not tested.
 
-Open **http://127.0.0.1:8000**. Nine saved runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`), and one recorded real-photo run (`live-20261103-224610-c8b8df`: broken cardboard part, 5 rejected candidates, a Wonder repair, a completion suggestion).
+Open **http://127.0.0.1:8000**. Ten saved runs replay **without API keys**: `A_light` (the whole flow), `A_light_repair` (only broken candidates, repaired by Muse Wonder), `A_torn_fallback` (the "no design found" state), `D_tab_broken` (a snapped-off tab with its completion card), four surface-appearance runs (`A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`), and two recorded real-photo runs of the broken cardboard part (5 rejected candidates, a Wonder repair, a completion suggestion each): `live-20261104-220642-d6003c` is the run in the demo video (after Apply, the "2 × M5 · 60 mm" adapter preset replays its recorded Muse Spark Open outline, labeled "recorded"), `live-20261103-224610-c8b8df` the earlier one.
 
 ### Live mode (your own photos)
 

@@ -195,7 +195,7 @@ def test_sample_run_replays_like_a_fresh_clone(monkeypatch):
         assert body["runs"] == ["A_brushed", "A_light", "A_light_repair",
                                 "A_torn_fallback", "C_wood", "D_black_plastic",
                                 "D_tab_broken", "E_glossy_white",
-                                "live-20261103-224610-c8b8df"]
+                                "live-20261103-224610-c8b8df", "live-20261104-220642-d6003c"]
         assert body["samples"] == body["runs"]  # SOURCES is samples-only here, so every run is a sample
         assert client.get("/api/runs/A_light/photo").headers["content-type"] == "image/jpeg"
         assert client.get("/api/runs/A_light/analysis").json()["table"]["hole_count"] == 4

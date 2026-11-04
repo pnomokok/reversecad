@@ -67,6 +67,9 @@ def make_sample(name):
         for file in ("completion.json", "completed.py", "added.stl", "removed.stl", "compare.json"):
             if (completion / file).exists():
                 shutil.copy(completion / file, target / completion.name / file)
+    recorded = source / "7_adapter_recorded"
+    if recorded.exists():  # a recorded adapter outline search (and its voice/pattern inputs), replayed keyless
+        shutil.copytree(recorded, target / recorded.name)
     size = sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
     print(f"sample {target}: {size / 1e6:.2f} MB")
 

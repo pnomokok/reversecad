@@ -542,7 +542,8 @@ SAMPLE_TITLES = {
     "D_black_plastic": "Tabbed plate, 2 holes · black plastic",
     "D_tab_broken": "Tabbed plate · snapped tab",
     "E_glossy_white": "Plate, square hole and slot · glossy white",
-    "live-20261103-224610-c8b8df": "Cardboard plate, broken corner",
+    "live-20261104-220642-d6003c": "the run in the video (Nov 4)",  # the run the demo video shows
+    "live-20261103-224610-c8b8df": "recorded live run (Nov 3)",
 }
 
 

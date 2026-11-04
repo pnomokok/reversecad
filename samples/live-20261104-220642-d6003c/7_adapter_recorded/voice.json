@@ -1,0 +1,22 @@
+{
+ "transcript": "two metric five holes sixty millimeters apart",
+ "transcript_model": "muse-voice-transcribe-1.0",
+ "transcript_source": "read from the page during the recorded run (the server does not save transcripts)",
+ "parsed_pattern": {
+  "holes": [
+   {
+    "x": -30.0,
+    "y": 0.0,
+    "d": 5.5
+   },
+   {
+    "x": 30.0,
+    "y": 0.0,
+    "d": 5.5
+   }
+  ],
+  "label": "2 holes · Ø5.5 · 60 mm apart"
+ },
+ "parse_model": "meta-models/muse-spark-open-1026",
+ "parse_status": "Parsed by Muse Spark Open"
+}

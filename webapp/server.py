@@ -36,7 +36,7 @@ import drawing_export
 import matching_part
 import mating_measure
 import voice_edit
-from webapp import gallery, live, replay
+from webapp import gallery, live, recorded_outline, replay
 from webapp.builder import Builder
 
 load_dotenv()  # API keys from .env (never printed); live mode and repair need them
@@ -530,8 +530,12 @@ async def adapter_outline_program(name: str, request: Request):
         if not (mating_folder / "4_mating.json").exists():
             raise HTTPException(422, "the mating photo has not been measured yet — click the mating part first")
     program, meta_path = MATCHING_DIR / f"{key}.py", MATCHING_DIR / f"{key}.json"
-    if program.exists():
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    keyless = DEMO or not os.getenv("BASETEN_API_KEY")
+    cached_meta = json.loads(meta_path.read_text(encoding="utf-8")) if program.exists() else None
+    # A cached keyless fallback is looked at again, so a sample's recorded outline (recorded_outline) wins over it.
+    if cached_meta is not None and not (keyless and mode == "auto" and cached_meta["outline_source"] == "fallback"
+                                        and (replay.run_dir(name) / recorded_outline.FOLDER).exists()):
+        meta = cached_meta
         return {**_matching_info(name, "adapter", program),
                 "parameters": matching_part.slider_parameters(program.read_text(encoding="utf-8")),
                 "pattern": meta["pattern"], "placement": meta["placement"], "winner": meta["winner"],
@@ -545,9 +549,17 @@ async def adapter_outline_program(name: str, request: Request):
     holes_b = [{"circle": (h["x"], h["y"], h["d"])} for h in placed["holes_b"]]
     margin_default = adapter_place.default_margin(profile)
     if mode == "fallback" or DEMO or not os.getenv("BASETEN_API_KEY"):
-        source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
-                                                 pattern["label"], margin_default, f"{name}_adapter.py")
-        outline_source, rows, winner = "fallback", [], None
+        # Keyless: a sample's recorded Muse Spark Open outline for exactly these inputs, else the fallback.
+        recorded = None if mode == "fallback" else recorded_outline.find(
+            replay.run_dir(name), profile["holes"], placed["holes_b"], profile["thickness"], margin_default)
+        if recorded is not None:
+            source, recorded_meta = recorded
+            outline_source, rows = recorded_outline.SOURCE_LABEL, recorded_meta["candidates"]
+            winner = {"candidate": recorded_meta["winner"]}
+        else:
+            source = adapter_outline.fallback_source(profile["holes"], placed["holes_b"], profile["thickness"],
+                                                     pattern["label"], margin_default, f"{name}_adapter.py")
+            outline_source, rows, winner = "fallback", [], None
     else:
         rows = await asyncio.to_thread(adapter_outline.search_adapter_outlines, holes_a, holes_b,
                                        profile["thickness"], _adapter_build, MATCHING_DIR, key,

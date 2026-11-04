@@ -119,7 +119,7 @@ def test_demo_sources_list_samples_only(monkeypatch):
     names = {c["name"] for c in gallery.gallery_runs()}
     assert names == {"A_light", "A_light_repair", "A_torn_fallback", "D_tab_broken",
                        "A_brushed", "C_wood", "D_black_plastic", "E_glossy_white",
-                       "live-20261103-224610-c8b8df"}
+                       "live-20261103-224610-c8b8df", "live-20261104-220642-d6003c"}
 
 
 def test_demo_recorded_live_run_card(monkeypatch):
