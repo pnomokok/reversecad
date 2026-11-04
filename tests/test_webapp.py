@@ -1,5 +1,6 @@
 """Tests for the web app back end in replay mode (saved runs, no API calls)."""
 import json
+import urllib.parse
 
 import numpy as np
 import pytest
@@ -221,6 +222,18 @@ def test_saved_run_analysis():
     assert data["click_px"] and len(data["outline_px"]) > 4
 
 
+def _decide(base, decision, body=None):
+    """Post a completion decision; also return the header a browser would send next (sample runs keep the
+    answer in the browser, see replay.decisions_in_browser; other runs write decision.json)."""
+    response = client.post(f"{base}/completion/{decision}", json=body or {})
+    answer = response.json() if response.status_code == 200 else {}
+    headers = {}
+    if answer.get("stored") == "browser" and answer.get("decision"):
+        headers = {"X-Completion-Decision": urllib.parse.quote(
+            json.dumps({"decision": answer["decision"], "values": answer["answers"]}))}
+    return response, headers
+
+
 @pytest.mark.skipif("D_tab_broken" not in replay.list_runs(), reason="needs the saved run outputs/e2e/D_tab_broken")
 def test_completion_can_be_applied_and_undone():
     base = "/api/runs/D_tab_broken"
@@ -228,12 +241,13 @@ def test_completion_can_be_applied_and_undone():
     assert suggestion["available"] and suggestion["valid"] and suggestion["added_stl"]
     assert client.get(suggestion["added_stl"]).content[:5] != b""  # the added material, for the 3D view
     try:
-        assert client.post(f"{base}/completion/apply").json()["decision"] == "apply"
-        winner = client.get(f"{base}/winner").json()
+        response, headers = _decide(base, "apply")
+        assert response.json()["decision"] == "apply"
+        winner = client.get(f"{base}/winner", headers=headers).json()
         assert winner["program"] == "applied.py" and winner["source"] == replay.COMPLETION_SOURCE
-        assert client.post(f"{base}/model", json={"parameters": {}}).status_code == 200
+        assert client.post(f"{base}/model", json={"parameters": {}}, headers=headers).status_code == 200
     finally:
-        client.post(f"{base}/completion/undo")
+        _decide(base, "undo")
     assert client.get(f"{base}/winner").json()["program"] not in ("completed.py", "applied.py")
     assert client.post(f"{base}/completion/maybe").status_code == 400
 
@@ -243,16 +257,15 @@ def test_answers_to_the_completion_questions_become_the_program_defaults():
     base = "/api/runs/D_tab_broken"
     parts = {p["basis"]: p["name"] for p in client.get(f"{base}/completion").json()["parts"]}
     try:
-        answered = client.post(f"{base}/completion/apply",
-                               json={"values": {parts["estimated"]: 10.0, parts["optional"]: 6.0}}).json()
-        assert answered["answers"] == {parts["estimated"]: 10.0, parts["optional"]: 6.0}
-        defaults = {p["name"]: p["default"] for p in client.get(f"{base}/winner").json()["parameters"]}
+        response, headers = _decide(base, "apply", {"values": {parts["estimated"]: 10.0, parts["optional"]: 6.0}})
+        assert response.json()["answers"] == {parts["estimated"]: 10.0, parts["optional"]: 6.0}
+        defaults = {p["name"]: p["default"] for p in client.get(f"{base}/winner", headers=headers).json()["parameters"]}
         assert defaults[parts["estimated"]] == 10.0 and defaults[parts["optional"]] == 6.0
-        assert client.post(f"{base}/model", json={"parameters": {}}).status_code == 200
-        bad = client.post(f"{base}/completion/apply", json={"values": {"length": 99}})
+        assert client.post(f"{base}/model", json={"parameters": {}}, headers=headers).status_code == 200
+        bad, _ = _decide(base, "apply", {"values": {"length": 99}})
         assert bad.status_code == 422  # only the suggestion's own questions can be answered
     finally:
-        client.post(f"{base}/completion/undo")
+        _decide(base, "undo")
 
 
 def test_samples_replay_the_repair_and_the_completion_without_keys(monkeypatch):

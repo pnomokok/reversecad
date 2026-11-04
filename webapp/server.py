@@ -16,6 +16,7 @@ import math
 import os
 import re
 import threading
+import urllib.parse
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
@@ -68,6 +69,35 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="ReverseCAD", lifespan=lifespan)
+
+DECISION_HEADER = b"x-completion-decision"  # the browser's completion answer for a sample run (URL-encoded JSON)
+
+
+class BrowserDecision:
+    """Plain ASGI middleware: puts the browser's completion answer (if any) into replay.client_decision for
+    the request, so every endpoint that builds the result sees the same answer. It only counts for runs
+    under samples/ (replay.decisions_in_browser); other runs read decision.json."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        answer = None
+        if scope["type"] == "http":
+            raw = dict(scope.get("headers") or []).get(DECISION_HEADER)
+            if raw:
+                try:
+                    answer = json.loads(urllib.parse.unquote(raw.decode("latin-1")))
+                except (ValueError, UnicodeDecodeError):
+                    answer = None  # unreadable: treated as no answer, never a guess
+        token = replay.client_decision.set(answer)
+        try:
+            await self.inner(scope, receive, send)
+        finally:
+            replay.client_decision.reset(token)
+
+
+app.add_middleware(BrowserDecision)
 
 
 @app.get("/api/config")
@@ -892,18 +922,24 @@ async def completion_decision(name: str, decision: str, request: Request):
     """Apply or ignore the suggestion ("undo" clears the answer); applying makes the completed program the result.
 
     Body (optional): {"values": {parameter: number}}, the answers to the estimated and optional parts.
+    For a sample run nothing is written: the answer comes back ("stored": "browser") for the browser to
+    keep and send with later requests (header X-Completion-Decision).
     """
     if decision not in ("apply", "ignore", "undo"):
         raise HTTPException(400, "decision must be apply, ignore or undo")
     body = await request.body()
     values = (json.loads(body) or {}).get("values") if body else None
     try:
-        replay.decide_completion(name, None if decision == "undo" else decision, values)
+        answer = replay.decide_completion(name, None if decision == "undo" else decision, values)
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
     except ValueError as error:
         raise HTTPException(422, str(error))
-    return replay.completion(name)
+    token = replay.client_decision.set(answer)  # a browser-kept answer counts from this response on
+    try:
+        return replay.completion(name)
+    finally:
+        replay.client_decision.reset(token)
 
 
 @app.get("/api/runs/{name}/capture-fit.png")
@@ -971,9 +1007,13 @@ async def download(name: str, request: Request, format: str = "stl", match: str 
     return Response(data, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+PARTKIT = Path(__file__).resolve().parent.parent / "partkit.py"  # the helper library the programs import
+PY_HEADER = "# Needs CadQuery and partkit.py (included in the zip).\n"
+
+
 async def _download_data(program, overrides, format, label, profile=None):
     if format == "py":  # the parametric program itself, with the slider values as its new defaults
-        return replay.replace_defaults(program.read_text(encoding="utf-8"), overrides).encode("utf-8")
+        return (PY_HEADER + replay.replace_defaults(program.read_text(encoding="utf-8"), overrides)).encode("utf-8")
     if format == "dxf":
         return drawing_export.dxf_bytes(profile or await _profile(program, overrides), label)
     if format == "pdf":
@@ -987,6 +1027,8 @@ async def _download_data(program, overrides, format, label, profile=None):
                                      await _download_data(program, overrides, part, label, profile))
                 except ValueError:  # too large for the template: the other files still go in
                     continue
+            # The program imports partkit: ship it, so the .py runs in any folder with CadQuery installed.
+            archive.writestr("partkit.py", PARTKIT.read_bytes())
         return stream.getvalue()
     return await _export(program, overrides, DOWNLOADS[format][0])
 

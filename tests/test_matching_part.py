@@ -163,7 +163,7 @@ def test_every_sample_builds_with_the_original_holes(run, kind):
 def test_downloads_work_as_for_the_original(run):
     body = {"parameters": {"thickness": 2.0, "outline_offset": 1.0}, "base": {}}
     for format, start in (("stl", None), ("step", b"ISO-10303"), ("dxf", None), ("pdf", b"%PDF"),
-                          ("py", f'"""{run}_spacer.py: Spacer / gasket of the original part.'.encode())):
+                          ("py", f'# Needs CadQuery and partkit.py (included in the zip).\n"""{run}_spacer.py: Spacer / gasket'.encode())):
         response = client.post(f"/api/runs/{run}/download?format={format}&match=spacer", json=body)
         assert response.status_code == 200, format
         assert f"reversecad_{run}_spacer" in response.headers["Content-Disposition"]
@@ -176,7 +176,8 @@ def test_downloads_work_as_for_the_original(run):
     py = client.post(f"/api/runs/{run}/download?format=py&match=spacer", json=body).text
     assert "thickness=2.0" in py and "outline_offset=1.0" in py and check_code(py) == []
     archive = client.post(f"/api/runs/{run}/download?format=zip&match=spacer", json=body)
-    assert len(zipfile.ZipFile(io.BytesIO(archive.content)).namelist()) == 5
+    names = zipfile.ZipFile(io.BytesIO(archive.content)).namelist()
+    assert len(names) == 6 and "partkit.py" in names  # five formats plus the helper library the .py imports
 
 
 def test_the_slider_values_of_the_original_carry_over():

@@ -213,7 +213,7 @@ def test_adapter_end_to_end_with_the_fallback_outline(preset):
     stl = client.post("/api/runs/A_light/model?match=adapter", json={**body, "parameters": {}})
     assert stl.status_code == 200 and len(stl.content) > 84
     for format, start in (("stl", None), ("step", b"ISO-10303"), ("dxf", None), ("pdf", b"%PDF"),
-                          ("py", b'"""A_light_adapter.py: Adapter plate, pattern A plus pattern B')):
+                          ("py", b'# Needs CadQuery and partkit.py (included in the zip).' + bytes([10]) + b'"""A_light_adapter.py: Adapter plate')):
         response = client.post(f"/api/runs/A_light/download?format={format}&match=adapter",
                                json={**body, "parameters": {}})
         assert response.status_code == 200, format

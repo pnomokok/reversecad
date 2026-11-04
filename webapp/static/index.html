@@ -50,6 +50,7 @@
       <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
     </div>
     <div class="run-chip hidden" id="run-chip"></div>
+    <span class="replay-chip hidden" id="replay-chip" title="Saved outputs of an earlier run; no model is called">Replay of a recorded run</span>
     <span class="stopwatch hidden" id="stopwatch" title=""></span>
   </header>
 
@@ -261,6 +262,7 @@
               <button class="break-ignore" id="break-ignore">Ignore</button>
             </div>
           </div>
+          <button type="button" class="break-again hidden tab-parameters-only" id="break-again">Show suggestion again</button>
           <div class="sliders tab-parameters-only" id="sliders"></div>
           <div class="matching-bar hidden tab-matching-only" id="matching-bar">
             <span class="matching-name" id="matching-name"></span>

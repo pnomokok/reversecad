@@ -65,10 +65,9 @@ def card(name):
         # Live runs are uploaded photos; template scenes and samples are rendered, except a
         # recorded live run in samples/, which says so. (One older exception:
         # live-20261028-013118-d23896, a synthetic render uploaded as a test.)
-        if name.startswith("live-"):
-            kind = "Real photo · recorded live run" if _is_sample(folder) else "Real photo"
-        else:
-            kind = "Synthetic"
+        kind = replay.run_kind(name)  # the same source as the run chip
+        if kind == "Real photo" and _is_sample(folder):
+            kind = "Real photo · recorded live run"
         return {"name": name, "length_mm": outline["length_mm"], "width_mm": outline["width_mm"],
                 "hole_count": len(table["holes"]), "source": label, "kind": kind}
     except (FileNotFoundError, KeyError, ValueError, TypeError, OSError):

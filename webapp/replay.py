@@ -5,7 +5,9 @@ answers; no API is called (a missing cache file is an error, not a new request).
 The measurement functions are only reused, never changed.
 """
 import ast
+import contextvars
 import functools
+import hashlib
 import json
 from pathlib import Path
 
@@ -305,16 +307,63 @@ COMPLETION_SOURCE = "completion suggested by Muse Wonder"
 FALLBACK_SOURCE = "fallback: measured shape, no design intent"
 
 
+# Completion decisions for runs under samples/ (and so every run of the online demo) are kept by each
+# browser, never written to disk: the browser sends its answer with every request (X-Completion-Decision,
+# read by the server into this variable), so one visitor's Apply or Ignore never reaches another and
+# samples/ stays as committed. Runs of your own photos keep their answer in 6_completion/decision.json.
+client_decision = contextvars.ContextVar("client_decision", default=None)
+BROWSER_APPLIED_DIR = Path("outputs") / "web" / "applied"  # completed programs for browser-kept answers
+
+
+def decisions_in_browser(name):
+    """True when the run's completion answer is kept by the browser (a run under samples/)."""
+    return is_sample(name)
+
+
+def _checked_answer(data, decision, values):
+    """The answer {"decision", "values"} after the same checks for both kinds of storage; else ValueError."""
+    if decision not in (None, "apply", "ignore"):
+        raise ValueError("decision must be apply or ignore")
+    if decision == "apply" and not data.get("valid"):
+        raise ValueError("this suggestion did not pass its check")
+    asked = {part["name"] for part in data.get("parts") or [] if part["basis"] in ("estimated", "optional")}
+    values = values or {}
+    if not isinstance(values, dict):
+        raise ValueError("values must be an object")
+    for key, value in values.items():
+        if key not in asked or not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"not an answer to this suggestion's questions: {key}")
+    return {"decision": decision, "values": values}
+
+
+def _browser_answer(data):
+    """The browser's answer for this request, checked; a stale or broken one counts as no answer."""
+    answer = client_decision.get()
+    if not isinstance(answer, dict):
+        return {}
+    try:
+        return _checked_answer(data, answer.get("decision"), answer.get("values"))
+    except ValueError:
+        return {}
+
+
 def completion(name):
-    """The run's completion suggestion (6_completion/completion.json) with the user's decision, or None."""
+    """The run's completion suggestion (6_completion/completion.json) with the user's decision, or None.
+
+    "stored" says where the decision lives: "browser" (samples) or "server" (decision.json).
+    """
     folder = run_dir(name) / "6_completion"
     path = folder / "completion.json"
     if not path.exists():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
     data["parts"] = verified_stored_parts(folder.parent, data)
-    decision = folder / "decision.json"
-    answer = json.loads(decision.read_text(encoding="utf-8")) if decision.exists() else {}
+    if decisions_in_browser(name):
+        answer, data["stored"] = _browser_answer(data), "browser"
+    else:
+        decision = folder / "decision.json"
+        answer = json.loads(decision.read_text(encoding="utf-8")) if decision.exists() else {}
+        data["stored"] = "server"
     data["decision"], data["answers"] = answer.get("decision"), answer.get("values") or {}
     data["added_stl"] = f"/api/runs/{name}/completion/added.stl" if (folder / "added.stl").exists() else None
     data["added_volume_mm3"] = (data.get("check") or {}).get("added_volume_mm3")
@@ -322,31 +371,45 @@ def completion(name):
 
 
 def decide_completion(name, decision, values=None):
-    """Store the user's answer to the suggestion: "apply", "ignore", or None to undo it.
+    """Check and store the user's answer to the suggestion: "apply", "ignore", or None to undo it.
 
     values: the user's answers to the estimated and optional parts (parameter -> number; 0 leaves an
     optional feature out). Applying writes applied.py, the completed program with those as defaults.
+    For a run whose answer the browser keeps (samples/), nothing is written: the checked answer is
+    returned for the browser to store and send back.
     """
     data = completion(name)
     if data is None:
         raise FileNotFoundError("this run has no completion suggestion")
-    if decision == "apply" and not data.get("valid"):
-        raise ValueError("this suggestion did not pass its check")
+    answer = _checked_answer(data, decision, values)
+    if decisions_in_browser(name):
+        return answer
     folder = run_dir(name) / "6_completion"
-    asked = {part["name"] for part in data.get("parts") or [] if part["basis"] in ("estimated", "optional")}
-    values = values or {}
-    for key, value in values.items():
-        if key not in asked or not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
-            raise ValueError(f"not an answer to this suggestion's questions: {key}")
     path = folder / "decision.json"
     (folder / "applied.py").unlink(missing_ok=True)
     if decision is None:
         path.unlink(missing_ok=True)
-        return
+        return answer
     if decision == "apply":
         source = (folder / data["program"]).read_text(encoding="utf-8")
-        (folder / "applied.py").write_text(replace_defaults(source, values), encoding="utf-8")
-    path.write_text(json.dumps({"decision": decision, "values": values}), encoding="utf-8")
+        (folder / "applied.py").write_text(replace_defaults(source, answer["values"]), encoding="utf-8")
+    path.write_text(json.dumps(answer), encoding="utf-8")
+    return answer
+
+
+def _browser_applied_program(name, data):
+    """The completed program with the browser's answers as defaults, in a git-ignored cache folder
+    (named by a hash of what it is made from, so equal answers share one file)."""
+    source = (run_dir(name) / "6_completion" / data["program"]).read_text(encoding="utf-8")
+    text = replace_defaults(source, data["answers"])
+    key = hashlib.sha256(json.dumps([name, text]).encode("utf-8")).hexdigest()[:24]
+    path = BROWSER_APPLIED_DIR / key / "applied.py"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+    return path
 
 
 def result_program(name):
@@ -354,6 +417,8 @@ def result_program(name):
     baseline fallback."""
     applied = completion(name)
     if applied and applied["decision"] == "apply" and applied.get("valid"):
+        if applied["stored"] == "browser":
+            return _browser_applied_program(name, applied), COMPLETION_SOURCE
         folder = run_dir(name) / "6_completion"
         program = folder / "applied.py" if (folder / "applied.py").exists() else folder / applied["program"]
         return program, COMPLETION_SOURCE
@@ -433,12 +498,24 @@ def _pixels(points):
     return [[round(float(x), 1), round(float(y), 1)] for x, y in points]
 
 
+def is_sample(name):
+    """True when the run resolves to a folder inside samples/ (a committed example)."""
+    return run_dir(name).parent == SAMPLES_DIR.resolve()
+
+
+def run_kind(name):
+    """"Real photo" or "Synthetic": live-* runs are uploaded photos, everything else is a rendered scene.
+    The one source for the gallery badge and the run chip."""
+    return "Real photo" if name.startswith("live-") else "Synthetic"
+
+
 def info(name):
-    """Light data for screen 1: the saved click and the photo size (no mask decoding)."""
+    """Light data for screen 1: the saved click, the photo size (no mask decoding) and the run's kind."""
     folder = run_dir(name)
     attempts = json.loads((folder / "2_sam_attempts.json").read_text(encoding="utf-8"))
     height, width = cv2.imread(str(_photo(folder)), cv2.IMREAD_GRAYSCALE).shape
-    return {"name": name, "click_px": attempts.get("click"), "image_size": [width, height]}
+    return {"name": name, "click_px": attempts.get("click"), "image_size": [width, height],
+            "kind": run_kind(name), "sample": is_sample(name)}
 
 
 @functools.lru_cache(maxsize=16)

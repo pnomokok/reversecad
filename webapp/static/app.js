@@ -21,8 +21,32 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 const canvas = $("photo-canvas");
 const context = canvas.getContext("2d");
 
+// Completion answers for sample runs live in this browser only (the server never writes them for samples):
+// stored here and sent with every request, so each visitor of the shared demo has their own Apply/Ignore.
+const decisionKey = (run) => `reversecad.completion.${run}`;
+function storedDecision(run) {
+  try {
+    const text = run ? localStorage.getItem(decisionKey(run)) : null;
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;  // storage blocked or broken: no stored answer
+  }
+}
+function storeDecision(run, answer) {
+  try {
+    if (answer && answer.decision) localStorage.setItem(decisionKey(run), JSON.stringify(answer));
+    else localStorage.removeItem(decisionKey(run));
+  } catch {
+    // storage blocked (private window): the answer lasts until the next request without it
+  }
+}
+function runHeaders() {
+  const answer = storedDecision(state.run);
+  return answer ? { "X-Completion-Decision": encodeURIComponent(JSON.stringify(answer)) } : {};
+}
+
 async function getJSON(url) {
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: runHeaders() });
   if (!response.ok) throw new Error(`${url}: ${response.status} ${await response.text()}`);
   return response.json();
 }
@@ -87,15 +111,23 @@ document.querySelectorAll("#steps button, #rail button").forEach((button) =>
 function updateHeader() {
   const chip = $("run-chip");
   chip.classList.toggle("hidden", !state.run);
-  chip.textContent = state.run ? `${state.live ? "Live" : "Example"} · ${state.run}` : "";
+  // The kind of run: an upload in live mode is a real photo; a saved run says what it is.
+  const kind = state.live ? "Real photo" : state.runKind === "Synthetic" ? (state.sample ? "Synthetic sample" : "Synthetic")
+    : state.runKind || "";
+  // The kind always shows in full; only the run name is shortened when the window is narrow.
+  chip.innerHTML = state.run ? `${kind ? `<span class="run-kind">${esc(kind)} ·</span>` : ""}<span class="run-name">${esc(state.run)}</span>` : "";
+  chip.title = chip.textContent;
+  // Replay never calls a model: say so for as long as a saved run is on screen (live mode never shows it).
+  $("replay-chip").classList.toggle("hidden", !state.run || state.live);
   const searching = state.screen === "search" && !!state.analysis;
   $("progress").classList.toggle("hidden", !searching);
   if (!searching) return;
   const total = state.done ? state.done.candidate_count : state.expected;
   const count = state.seen.filter((e) => !e.label).length;  // requested candidates only, not repairs (R1, R2)
   const repaired = state.done && (state.done.result_source || "").startsWith("repair");
-  $("progress-label").textContent = repaired ? "Search finished · repaired by Muse Wonder"
-    : state.done ? "Search finished · Muse Spark Open"
+  const finished = state.live ? "Search finished" : "Replay finished";
+  $("progress-label").textContent = repaired ? `${finished} · repaired by Muse Wonder`
+    : state.done ? `${finished} · Muse Spark Open`
     : state.live ? "Generating with Muse Spark Open · Checking against the SAM 3.1 mask" : "Replaying a saved candidate round";
   $("progress-count").textContent = total ? `${Math.round((100 * count) / total)}% | ${count} / ${total}` : `${count}`;
   $("progress-fill").style.width = total ? `${(100 * count) / total}%` : "0";
@@ -143,8 +175,9 @@ const watch = {
       if (total != null) this.show(this.format(total), this.tip(durations), false);
       return;  // else the frozen client value stays: measured, never invented
     }
-    if (total != null) this.show(`Recorded run · ${this.format(total)}`, this.tip(durations), false);
-    else if (search != null) this.show(`Recorded search · ${this.format(search)}`, "", false);
+    // Replay: the run's own recorded durations; a run saved without them shows none (never invented).
+    if (total != null) this.show(`Took ${this.format(total)}`, `Recorded: ${this.tip(durations)}`, false);
+    else if (search != null) this.show(`Search took ${this.format(search)}`, "Recorded duration", false);
     else this.reset();
   },
   tip(durations) {
@@ -747,7 +780,11 @@ async function chooseRun(name) {
   document.querySelectorAll("#example-list button, #your-runs-list button")
     .forEach((b) => b.classList.toggle("active", b.dataset.run === name));
   state.image = await loadImage(`/api/runs/${name}/photo`);
-  state.click = (await getJSON(`/api/runs/${name}/info`)).click_px;  // the example's own click
+  const about = await getJSON(`/api/runs/${name}/info`);
+  state.click = about.click_px;  // the example's own click
+  state.runKind = about.kind;  // "Synthetic" or "Real photo", the same source as the gallery badge
+  state.sample = about.sample;
+  updateHeader();
   showPhoto();
   $("analyze").disabled = false;
 }
@@ -988,8 +1025,11 @@ function layoutGrid() {
 }
 
 function streamItem(tag, tagClass, text, detail = "") {
+  // Live: the wall clock. Replay: the time since the replay started (a replay is not a call made now).
   const now = new Date();
-  const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, "0")}`;
+  const time = state.live || state.streamStarted == null
+    ? `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, "0")}`
+    : `replay +${((performance.now() - state.streamStarted) / 1000).toFixed(1)} s`;
   const item = document.createElement("div");
   item.className = "stream-item";
   if (detail) item.title = detail;
@@ -1065,6 +1105,7 @@ function streamCandidates() {
     state.winner = null;
     state.seen = [];
     state.expected = state.live ? Number($("candidate-count").value) : null;
+    state.streamStarted = performance.now();  // replayed stream rows count from here
     setScreen("search");
     const grid = $("candidate-grid");
     grid.innerHTML = "";
@@ -1213,12 +1254,17 @@ function currentValues() {
   return values;
 }
 
+// The original part's values. While a matching part is shown the sliders are the matching part's own,
+// so every new matching part (another card or another adapter preset) starts from the saved base.
+const originalValues = () => state.matching?.base ?? currentValues();
+
 function changedLabels() {
   return [...document.querySelectorAll("#sliders .slider.changed input[type=\"range\"]")].map((i) => labelKey(i.name)).filter(Boolean);
 }
 
 function postJSON(url, body) {
-  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...runHeaders() },
+    body: JSON.stringify(body) });
 }
 
 // What the model, drawing and download requests add for a matching part (nothing for the original).
@@ -1356,9 +1402,7 @@ async function showModel(sliderValues = {}) {
   $("model-program").textContent = `Program ${w.name}.py`;  // display name; w.program is the internal file
   $("model-source").textContent = w.note || `Source: ${sourceLabel(w.source)}`;
   $("fit-image").src = `/api/runs/${state.run}/capture-fit.png`;
-  $("fit-iou").textContent = w.iou == null ? "" : `IoU ${w.iou.toFixed(4)}`;
-  // The program's own values (before any slider moves) against the measurements and, if known, the truth.
-  $("fit-table").innerHTML = tableHTML(resultRows({ fit_mm: w.fit_mm, ground_truth: w.ground_truth }));
+  showCaptureFit(w);
   const sliders = $("sliders");
   sliders.innerHTML = "";
   w.parameters.forEach((p) => sliders.appendChild(slider(p)));
@@ -1381,6 +1425,7 @@ function setMatchingLayout(info) {
   $("matching-name").textContent = info ? info.title : "";
   $("overlay-name").textContent = info ? info.title : "";
   ["overlay-view", "overlay-legend", "fit-check"].forEach((id) => $(id).classList.toggle("hidden", !info));
+  if (!info) $("fit-check").textContent = "";  // back on the original: no leftover check line
   ["fit-image", "fit-table"].forEach((id) => $(id).classList.toggle("hidden", !!info));
   if (info) {
     $("fit-title").textContent = "TOP VIEW OVERLAY";
@@ -1397,7 +1442,7 @@ function setMatchingLayout(info) {
 }
 
 async function showMatching(kind) {
-  const base = currentValues();
+  const base = originalValues();
   $("model-status").textContent = "Building…";
   const failed = async (response) => {
     $("model-status").textContent = "";
@@ -1835,7 +1880,7 @@ $("mating-apply").addEventListener("click", async () => {
 });
 
 async function runAdapter(pattern, matingRun = null) {
-  const base = currentValues();
+  const base = originalValues();
   clearAdapterPreview();
   $("matching-status").textContent = "";
   $("matching-status").classList.remove("warning");
@@ -1893,7 +1938,10 @@ function updateAdapterGhosts(thickness) {
   const ghosts = state.matching?.ghosts;
   if (!ghosts) return;
   state.viewer.showCompanion(ghosts.original, "ORIGINAL", { overlay: true, liftZ: thickness });
-  state.viewer.showMating(ghosts.mating, ghosts.mating ? "MATING PART" : null, thickness);
+  // A measured mating photo gives the real mating part; a preset or a typed pattern only a stand-in plate
+  // (the same tag as in the assembly simulation).
+  const tag = state.matching.mating ? "MATING PART" : "STAND-IN";
+  state.viewer.showMating(ghosts.mating, ghosts.mating ? tag : null, thickness);
 }
 
 // ---------- adapter plate: assembly check simulation ----------
@@ -1913,6 +1961,7 @@ function resetAssembly() {
   $("view-assembly").classList.remove("active");
   $("assembly-block").classList.add("hidden");
   $("assembly-verdict").classList.add("hidden");
+  markVerdictChecking(false);
   $("assembly-screws").innerHTML = "";
   $("assembly-status").textContent = "";
   document.querySelectorAll("#assembly-style-row button").forEach((b) => b.classList.toggle("active", b.dataset.style === "exact"));
@@ -1955,9 +2004,15 @@ function buildScrewSelects(data) {
   }
 }
 
+function markVerdictChecking(on) {
+  // While the check re-runs, the shown verdict belongs to the previous settings: dim it and say so.
+  $("assembly-verdict").classList.toggle("checking", on);
+}
+
 function updateVerdictBadge(data) {
   // The verdict, last: the overall line, then one computed line per blocked screw and skip note.
   const verdict = $("assembly-verdict");
+  markVerdictChecking(false);
   verdict.classList.remove("hidden");
   verdict.classList.toggle("bad", data.verdict === "blocked");
   verdict.innerHTML = esc(data.message)
@@ -1999,6 +2054,7 @@ async function runAssemblyCheck(intro) {
   const run = ++assembly.running;
   $("assembly-status").textContent = "Checking the assembly…";
   $("assembly-status").classList.remove("warning");
+  markVerdictChecking(true);  // the previous verdict stays readable but dimmed until the new one arrives
   let response;
   try {
     response = await postJSON(`/api/runs/${state.run}/matching/adapter/assembly`,
@@ -2008,12 +2064,16 @@ async function runAssemblyCheck(intro) {
     if (run !== assembly.running) return;
     $("assembly-status").textContent = "The connection was lost.";
     $("assembly-status").classList.add("warning");
+    $("assembly-verdict").classList.add("hidden");  // no verdict for the current settings
+    markVerdictChecking(false);
     return;
   }
   if (run !== assembly.running) return;
   if (!response.ok) {
     $("assembly-status").textContent = (await response.json()).detail;
     $("assembly-status").classList.add("warning");
+    $("assembly-verdict").classList.add("hidden");
+    markVerdictChecking(false);
     return;
   }
   const data = await response.json();
@@ -2063,6 +2123,7 @@ document.querySelectorAll("#assembly-style-row button").forEach((b) => b.addEven
   const style = b.dataset.style;
   if (style === state.matching.holeStyle) return;
   if (style === "slotted") {
+    markVerdictChecking(true);
     $("assembly-status").textContent = "Checking the slots…";
     $("assembly-status").classList.remove("warning");
     const { base, pattern, outline } = state.matching;
@@ -2070,6 +2131,7 @@ document.querySelectorAll("#assembly-style-row button").forEach((b) => b.addEven
     if (!response.ok) {
       $("assembly-status").textContent = (await response.json()).detail;
       $("assembly-status").classList.add("warning");
+      markVerdictChecking(false);  // Exact stays, and so does its verdict
       return;  // keep Exact, toggle untouched
     }
     state.matching.slottedInfo = await response.json();
@@ -2087,15 +2149,24 @@ function adapterLine(answer) {
     + `min margin ${answer.min_margin_mm.toFixed(1)} mm)`;
 }
 
+function showCaptureFit(w) {
+  // The inset as the capture fit: the program's own values (before any slider moves) against the
+  // measurements and, if known, the truth.
+  $("fit-title").textContent = "CAPTURE FIT";
+  $("fit-iou").textContent = w.iou == null ? "" : `IoU ${w.iou.toFixed(4)}`;
+  $("fit-table").innerHTML = tableHTML(resultRows({ fit_mm: w.fit_mm, ground_truth: w.ground_truth }));
+}
+
 async function showCompletion() {
   // The "possible break" card: shown when Muse Wonder suggested a completion and it was not ignored.
   const data = await getJSON(`/api/runs/${state.run}/completion`);
   const c = data.available ? data : null;
   state.completion = c;
   state.viewer.showSuggestion(null);
-  $("fit-title").textContent = "CAPTURE FIT";
+  showCaptureFit(state.winner);  // a shown suggestion turns the inset into the fracture view below
   const hidden = !c || c.broken === false || c.decision === "ignore";
   $("break-card").classList.toggle("hidden", hidden);
+  $("break-again").classList.toggle("hidden", !(c && c.decision === "ignore"));
   if (hidden) return;
   if (!state.live && typeof c.seconds === "number") {  // replay: the recorded wait, briefly
     wonderCard.show("completion", c.seconds, $("break-card").parentNode, $("break-card"), "tab-parameters-only");
@@ -2181,20 +2252,33 @@ function partAnswers() {
   return values;
 }
 
+async function decideCompletion(decision, values = null) {
+  // apply / ignore / undo. Own photos: the server writes decision.json. Samples: the server only checks the
+  // answer and returns it ("stored": "browser"); this browser keeps it and sends it with later requests.
+  const response = await postJSON(`/api/runs/${state.run}/completion/${decision}`, values ? { values } : {});
+  if (!response.ok) return (await response.json()).detail;
+  const answer = await response.json();
+  if (answer.stored === "browser") {
+    storeDecision(state.run, answer.decision ? { decision: answer.decision, values: answer.answers || {} } : null);
+  }
+  return null;
+}
+
 $("break-apply").addEventListener("click", async () => {
   const undo = state.completion.decision === "apply";
-  const response = await fetch(`/api/runs/${state.run}/completion/${undo ? "undo" : "apply"}`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(undo ? {} : { values: partAnswers() }),
-  });
-  if (!response.ok) {
-    $("break-note").textContent = `Not applied: ${(await response.json()).detail}`;
+  const error = await decideCompletion(undo ? "undo" : "apply", undo ? null : partAnswers());
+  if (error) {
+    $("break-note").textContent = `Not applied: ${error}`;
     return;
   }
   await showModel();  // the result program changed: new parameters, new model
 });
 $("break-ignore").addEventListener("click", async () => {
-  await fetch(`/api/runs/${state.run}/completion/ignore`, { method: "POST" });
+  await decideCompletion("ignore");
+  await showCompletion();
+});
+$("break-again").addEventListener("click", async () => {  // after Ignore: bring the suggestion back
+  await decideCompletion("undo");
   await showCompletion();
 });
 
@@ -2295,10 +2379,7 @@ function showVoiceChanges(result) {
 async function interpretCommand(command) {
   $("voice-state").textContent = "Understanding · Muse Spark Open";
   $("voice-note").textContent = "";
-  const response = await fetch(`/api/runs/${state.run}/voice/interpret`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, parameters: currentValues() }),
-  });
+  const response = await postJSON(`/api/runs/${state.run}/voice/interpret`, { command, parameters: currentValues() });
   $("voice-state").textContent = "Voice edit · Muse Spark Open";
   if (!response.ok) {
     $("voice-note").textContent = `Not understood: ${(await response.json()).detail}`;
@@ -2409,7 +2490,8 @@ function offNote(element, feature, plural = false) {
   const s = plural ? "" : "s";
   const where = state.config.demo ? `work${s} in the local app with API keys` : `need${s} API keys in .env`;
   const note = document.createElement("p");
-  note.className = "off-note";
+  // Keep the replaced control's tab class, so the note shows on the same panel tab only.
+  note.className = ["off-note", ...[...element.classList].filter((name) => name.startsWith("tab-"))].join(" ");
   note.innerHTML = `${feature} ${where} · <a href="${SETUP_URL}" target="_blank" rel="noopener">Setup</a>`;
   element.replaceWith(note);
 }
