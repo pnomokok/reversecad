@@ -186,8 +186,10 @@ export function createViewer(container, { shiftRight = 0 } = {}) {
     const below = s ? Math.max(0, y0 - s.min.y) : 0;
     const right = s ? Math.max(0, s.max.x - x1) : 0;
     const left = s ? Math.max(0, x0 - s.min.x) : 0;
-    dimension(group, "length", `${(x1 - x0).toFixed(2)} mm`, [x0, y0, z0], [x1, y0, z0], [0, -(gap + below), 0]);
-    dimension(group, "width", `${(y1 - y0).toFixed(2)} mm`, [x1, y0, z0], [x1, y1, z0], [gap + right, 0, 0]);
+    if (!(features.solids > 1)) {  // a split gasket has no single length or width (the box is one piece's)
+      dimension(group, "length", `${(x1 - x0).toFixed(2)} mm`, [x0, y0, z0], [x1, y0, z0], [0, -(gap + below), 0]);
+      dimension(group, "width", `${(y1 - y0).toFixed(2)} mm`, [x1, y0, z0], [x1, y1, z0], [gap + right, 0, 0]);
+    }
     dimension(group, "thickness", `${(z1 - z0).toFixed(2)} mm`, [x0, y0, z0], [x0, y0, z1],
       [-(gap * 0.7 + left), -(gap * 0.7 + below), 0]);
 

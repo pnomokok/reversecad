@@ -19,7 +19,7 @@ function cardHTML(part) {
     + `<span class="part-name" title="${esc(part.title || part.name)} (${esc(part.name)})">${esc(part.title || part.name)}</span>`
     + `<span class="part-facts" title="Outline measured from the photo">Measured ${part.length_mm.toFixed(2)} × ${part.width_mm.toFixed(2)} mm · ${holes}</span>`
     + `<span class="part-chips"><span class="status-chip">${esc(part.source)}</span>`
-    + `<span class="status-chip">${esc(part.kind)}</span></span>`;
+    + `<span class="status-chip">${esc(part.kind)}</span>${part.recorded ? `<span class="status-chip">Recorded run</span>` : ""}</span>`;
 }
 
 function ensurePreview(name) {

@@ -66,10 +66,9 @@ def card(name):
         # recorded live run in samples/, which says so. (One older exception:
         # live-20261028-013118-d23896, a synthetic render uploaded as a test.)
         kind = replay.run_kind(name)  # the same source as the run chip
-        if kind == "Real photo" and _is_sample(folder):
-            kind = "Real photo · recorded live run"
+        recorded = kind == "Real photo" and _is_sample(folder)  # a recorded live run shipped in samples/
         return {"name": name, "title": replay.display_name(name), "length_mm": outline["length_mm"], "width_mm": outline["width_mm"],
-                "hole_count": len(table["holes"]), "source": label, "kind": kind}
+                "hole_count": len(table["holes"]), "source": label, "kind": kind, "recorded": recorded}
     except (FileNotFoundError, KeyError, ValueError, TypeError, OSError):
         return None  # unfinished or unreadable: no card, never a guess
 
@@ -81,4 +80,5 @@ def gallery_runs():
         entry = card(name)
         if entry is not None:
             cards.append(entry)
-    return cards
+    # Real photos first (the case the app is for), then the synthetic scenes; by name within each.
+    return sorted(cards, key=lambda c: (c["kind"] != "Real photo", c["name"]))

@@ -226,7 +226,29 @@ def features(result):
             holes.append({"center": [round(center.x, 3), round(center.y, 3), round(center.z, 3)],
                           "diameter": round(2 * edge.radius(), 3)})
     return {"box": [round(v, 3) for v in (box.xmin, box.ymin, box.zmin, box.xmax, box.ymax, box.zmax)],
-            "holes": holes}
+            "holes": holes, "hole_kinds": hole_kinds(result, top), "solids": len(result.solids().vals())}
+
+
+def hole_kinds(result, top):
+    """How many holes of each shape the top faces have, for naming the count ("1 round hole + 1 slot"):
+    a single circle is round, two arcs joined by two lines a slot, four lines a rectangular hole, anything
+    else shaped. Read from the built model's edges; no measurement involved."""
+    kinds = {"round": 0, "slot": 0, "rectangular": 0, "shaped": 0}
+    for solid in result.solids().vals():
+        for face in solid.Faces():
+            if face.normalAt().z < 0.99 or abs(face.Center().z - top) > 1e-3:
+                continue
+            for wire in face.innerWires():
+                types = sorted(edge.geomType() for edge in wire.Edges())
+                if types == ["CIRCLE"]:
+                    kinds["round"] += 1
+                elif types == ["CIRCLE", "CIRCLE", "LINE", "LINE"]:
+                    kinds["slot"] += 1
+                elif types == ["LINE"] * 4:
+                    kinds["rectangular"] += 1
+                else:
+                    kinds["shaped"] += 1
+    return kinds
 
 
 def main():

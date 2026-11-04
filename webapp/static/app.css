@@ -581,3 +581,4 @@ table.values tr.heading td { padding-top: var(--space-2); color: var(--color-tex
 .model-code { font-family: var(--font-mono); font-size: 0.92em; background: var(--color-container); padding: 0 3px; }
 .subbar-keep { flex-shrink: 0; }  /* the model's size never shortens; names and notes do */
 .best-box table.values tr.heading td, .fit-inset table.values tr.heading td { white-space: normal; }  /* long headings wrap, values keep their column */
+.inline-link { color: var(--color-selected); text-decoration: underline; }

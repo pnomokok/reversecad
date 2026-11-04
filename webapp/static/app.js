@@ -139,6 +139,7 @@ function updateHeader() {
   const finished = state.live ? "Search finished" : "Replay finished";
   $("progress-label").textContent = repaired ? `${finished} · repaired by Muse Wonder`
     : state.done ? `${finished} · Muse Spark Open`
+    : state.streamStopped ? (state.live ? "Search stopped" : "Replay stopped")
     : state.live ? "Generating with Muse Spark Open · Checking against the SAM 3.1 mask" : "Replaying a saved candidate round";
   $("progress-count").textContent = total ? `${Math.round((100 * count) / total)}% | ${count} / ${total}` : `${count}`;
   $("progress-fill").style.width = total ? `${(100 * count) / total}%` : "0";
@@ -545,13 +546,15 @@ function holeGroups(holes) {
   return groups;
 }
 
+// The card's opposite-edge differences, written the same way wherever they appear (sign kept, 2 decimals).
+const edgeDifferences = (a) => `${a.card_edge_differences_pct.map((d) => `${d < 0 ? "−" : ""}${Math.abs(d).toFixed(2)}`).join(" / ")} %`;
 const holeSize = (hole) => Number(hole.size.match(/[\d.]+/)[0]);  // diameter, or length for other shapes
 
 function holeGroupText(group) {
   const count = group.holes.length > 1 ? `${group.holes.length}× ` : "";
   if (group.shape === "circle") {
     const mean = group.holes.reduce((sum, h) => sum + holeSize(h), 0) / group.holes.length;
-    return `${count}Ø${mean.toFixed(1)}`;
+    return `${count}Ø${mean.toFixed(2)}`;  // the measurement table's precision
   }
   return `${count}${group.holes[0].size.replace(" mm", "")}`;
 }
@@ -715,7 +718,7 @@ function updateProcedure() {
   $("step-click").classList.toggle("current", !!state.image && !steps.click);
   $("step-card-sub").textContent = a ? `Card found · ${a.card_mm_per_pixel} mm/px` : "Card found when measured";
   $("step-photo-sub").textContent = a
-    ? `Card edges differ ${a.card_edge_differences_pct.map((d) => Math.abs(d).toFixed(1)).join(" / ")} %`
+    ? `Card edges differ ${edgeDifferences(a)}`
     : "Checked from the card's edges";
   $("step-click-sub").textContent = a
     ? `Part found · ${plural(a.outline_mm.corners, "corner")} · ${plural(a.holes.length, "hole")}`
@@ -749,7 +752,7 @@ function updateCaptureBars() {
     ? `<span>SCALE <strong>1 px = ${a.card_mm_per_pixel} mm</strong> (${a.scale_used})</span>`
       + `<span>MASKS <strong>SAM 3.1</strong></span>` : "";
   $("capture-footer-values").innerHTML = a
-    ? `<span>Card edges <strong>${a.card_edge_differences_pct.join(" / ")} %</strong></span>`
+    ? `<span>Card edges <strong>${edgeDifferences(a)}</strong></span>`
       + `<span>Keypoints <strong>${plural(a.outline_mm.corners, "corner")} / ${plural(a.holes.length, "hole")}</strong></span>`
       + `<span>Holes by <strong>${a.hole_method}</strong></span>` : "";
 }
@@ -1115,8 +1118,9 @@ function updateSummary() {
   if (usage) $("usage-table").innerHTML = tableHTML(usageRows(usage));
   const a = state.analysis;
   $("search-target").innerHTML = a ? `Target · measured from photo <strong>${a.outline_mm.length.toFixed(2)} × ${a.outline_mm.width.toFixed(2)} mm · ${plural(a.holes.length, "hole")}</strong>` : "";
-  $("search-state").innerHTML = state.done ? "" : `<span class="pulse"></span>Checking ${seen.length + 1}${state.expected ? ` / ${state.expected}` : ""}`;
-  $("stream-dot").classList.toggle("idle", !!state.done);
+  $("search-state").innerHTML = state.done ? "" : state.streamStopped ? `<span class="tag-bad">Stopped</span>`
+    : `<span class="pulse"></span>Checking ${seen.length + 1}${state.expected ? ` / ${state.expected}` : ""}`;
+  $("stream-dot").classList.toggle("idle", !!state.done || !!state.streamStopped);
   updateHeader();
 }
 
@@ -1162,6 +1166,7 @@ function streamCandidates() {
     if (state.stream) state.stream.close();
     wonderCard.hide();
     state.done = null;
+    state.streamStopped = false;
     state.winner = null;
     state.seen = [];
     state.expected = state.live ? Number($("candidate-count").value) : null;
@@ -1234,7 +1239,12 @@ function streamCandidates() {
     state.stream.addEventListener("error", (m) => {
       state.stream.close();
       wonderCard.hide();
-      streamItem("ERROR", "tag-bad", m.data ? JSON.parse(m.data).message : "The candidate stream stopped unexpectedly.");
+      // A replayed round that does not exist (a bad ?round= link) says so; nothing is checked any more.
+      const unknownRound = !state.live && state.round && !state.seen.length;
+      streamItem("ERROR", "tag-bad", m.data ? JSON.parse(m.data).message
+        : unknownRound ? `No saved round "${esc(state.round)}" for this run.` : "The candidate stream stopped unexpectedly.");
+      state.streamStopped = true;
+      updateSummary();
       watch.pause();
       resolve();
     });
@@ -1367,8 +1377,11 @@ async function rebuild() {
   if (features) {
     const [x0, y0, z0, x1, y1, z1] = features.box;
     $("model-size").title = "Program values: the built model's size";
-    $("model-size").innerHTML = `<strong>${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${(z1 - z0).toFixed(2)} mm</strong>`
-      + ` · ${holeCountText(features)}`;
+    // A gasket that splits has no single size: the header says so instead of one piece's box.
+    $("model-size").innerHTML = features.solids > 1
+      ? `<strong>Splits into ${features.solids} pieces</strong> · ${(z1 - z0).toFixed(2)} mm thick`
+      : `<strong>${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} × ${(z1 - z0).toFixed(2)} mm</strong>`
+        + ` · ${holeCountText(features)}`;
   }
   if (state.matching) await showAlignment(build);
   if (build !== state.builds) return;
@@ -1382,7 +1395,14 @@ function holeCountText(features) {
   // copies); everywhere else the built round holes are counted.
   const counts = state.matching?.kind === "adapter" && state.matching.holeStyle === "slotted"
     ? state.matching.slottedInfo?.hole_counts : null;
-  if (!counts) return plural(features.holes.length, "round hole");
+  if (!counts) {
+    // Each shape by name, from the built model's top face ("1 rectangular hole + 1 slot").
+    const kinds = features.hole_kinds;
+    if (!kinds) return plural(features.holes.length, "round hole");
+    const named = [[kinds.round, "round hole"], [kinds.slot, "slot"], [kinds.rectangular, "rectangular hole"],
+      [kinds.shaped, "shaped hole"]].filter(([n]) => n > 0).map(([n, word]) => plural(n, word));
+    return named.join(" + ") || "no holes";
+  }
   const parts = [];
   if (counts.slots) parts.push(`${counts.slots} slot${counts.slots === 1 ? "" : "s"}`);
   if (counts.shaped) parts.push(`${counts.shaped} shaped hole${counts.shaped === 1 ? "" : "s"}`);
@@ -1592,7 +1612,7 @@ async function showAlignment(build) {
 
 function drawOverlay(original, matching, holesB, labelB, holesA) {
   // Top view in mm (SVG's y runs down, so y is negated): the original see-through, the matching part as a line.
-  const closed = (points) => `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z`;
+  const closed = (points) => (points.length ? `M${points.map(([x, y]) => `${x},${-y}`).join("L")}Z` : "");  // never "MZ"
   const circle = ([x, y], d) => `M${x - d / 2},${-y}a${d / 2},${d / 2} 0 1,0 ${d},0a${d / 2},${d / 2} 0 1,0 ${-d},0Z`;
   const shape = (p) => closed(p.outline) + p.holes.map((h) => (h.type === "circle" ? circle(h.center, h.diameter) : closed(h.points))).join("");
   const slotPath = (h) => {  // a capsule sampled as a polygon (slotted style: length/width/angle set)
@@ -1625,7 +1645,10 @@ function drawOverlay(original, matching, holesB, labelB, holesA) {
   const bPath = (holesB || []).map((h) => (h.length === undefined ? circle([h.x, h.y], h.d) : slotPath(h))).join("");
   const aPath = (holesA || []).map(slotPath).join("");  // slotted style: pattern A's slots, dashed like B's
 
-  view.innerHTML = `<path class="overlay-original" d="${shape(original)}"/><path class="overlay-matching" d="${shape(matching)}"/><path class="overlay-pattern-b" d="${bPath}"/><path class="overlay-pattern-a" d="${aPath}"/>`;
+  // Only paths that have something to draw: an empty d="" or "MZ" makes the browser warn.
+  view.innerHTML = [["overlay-original", shape(original)], ["overlay-matching", shape(matching)],
+    ["overlay-pattern-b", bPath], ["overlay-pattern-a", aPath]]
+    .filter(([, d]) => d).map(([kind, d]) => `<path class="${kind}" d="${d}"/>`).join("");
   $("overlay-b-item").classList.toggle("hidden", !holesB?.length);
   // A photo pattern's full summary stays in the line below; the legend keeps only its source.
   if (holesB?.length) $("overlay-b-label").textContent = `Pattern B · ${labelB.endsWith("from photo") ? "from photo" : labelB}`;
@@ -2713,7 +2736,8 @@ function drawingSVG(data) {
   // Front view (third-angle: below the top view): thickness and hidden holes.
   const fy = Y(y0) + 22;
   const ft = Math.max(thickness * s, 2);
-  out.push(`<text class="view-title" x="${area.left}" y="${fy - 4}">VIEW B · FRONT</text>`);
+  // The title starts over the view itself, right of the thickness dimension line (which runs at X(x0) - 12).
+  out.push(`<text class="view-title" x="${X(x0)}" y="${fy - 4}">VIEW B · FRONT</text>`);
   out.push(`<rect class="part" x="${X(x0)}" y="${fy}" width="${length * s}" height="${ft}"/>`);
   p.holes.forEach((hole) => {
     const xs = hole.type === "circle" ? [hole.center[0] - hole.diameter / 2, hole.center[0] + hole.diameter / 2]
@@ -2782,6 +2806,9 @@ function drawingSVG(data) {
   const run = params.get("run");
   if (params.get("step") === "parts") await openParts();
   else if (run && runs.includes(run)) await openDeepLink(run, params);
+  else if (run) {  // a link to a run this server does not have: say so, point to the examples
+    $("stage-empty").innerHTML = `Run not found: "${esc(run)}". <a href="/" class="inline-link">Try one of the examples</a>.`;
+  }
   document.body.dataset.ready = "true";  // webapp/screenshot.py waits for this
 })();
 

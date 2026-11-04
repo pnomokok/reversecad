@@ -28,7 +28,7 @@ def test_card_fields_come_from_saved_files(tmp_path, monkeypatch):
     """Size, holes, source and kind mirror the run folder; a new folder needs no code."""
     monkeypatch.setattr(replay, "SOURCES", [tmp_path])
     _write_run(tmp_path / "plate")
-    assert gallery.card("plate") == {"name": "plate", "title": replay.display_name("plate"), "length_mm": 80.0, "width_mm": 40.0,
+    assert gallery.card("plate") == {"name": "plate", "title": replay.display_name("plate"), "recorded": False, "length_mm": 80.0, "width_mm": 40.0,
                                       "hole_count": 3, "source": "Winner", "kind": "Synthetic"}
 
 
@@ -91,23 +91,23 @@ def test_unfinished_run_has_no_card(tmp_path, monkeypatch):
 
 def test_samples_keep_their_cards():
     """The committed samples: pinned sources, sizes and hole counts."""
-    assert gallery.card("A_light") == {"name": "A_light", "title": replay.display_name("A_light"), "length_mm": pytest.approx(79.46, abs=0.01),
+    assert gallery.card("A_light") == {"name": "A_light", "title": replay.display_name("A_light"), "recorded": False, "length_mm": pytest.approx(79.46, abs=0.01),
                                         "width_mm": pytest.approx(40.54, abs=0.01), "hole_count": 4,
                                         "source": "Winner", "kind": "Synthetic"}
     assert gallery.card("A_light_repair")["source"] == "Muse Wonder repair"
     assert gallery.card("A_torn_fallback")["source"] == "Fallback"
     assert gallery.card("D_tab_broken")["source"] == "Winner"
-    assert gallery.card("A_brushed") == {"name": "A_brushed", "title": replay.display_name("A_brushed"), "length_mm": pytest.approx(79.51, abs=0.01),
+    assert gallery.card("A_brushed") == {"name": "A_brushed", "title": replay.display_name("A_brushed"), "recorded": False, "length_mm": pytest.approx(79.51, abs=0.01),
                                          "width_mm": pytest.approx(40.51, abs=0.01), "hole_count": 4,
                                          "source": "Winner", "kind": "Synthetic"}
-    assert gallery.card("C_wood") == {"name": "C_wood", "title": replay.display_name("C_wood"), "length_mm": pytest.approx(69.67, abs=0.01),
+    assert gallery.card("C_wood") == {"name": "C_wood", "title": replay.display_name("C_wood"), "recorded": False, "length_mm": pytest.approx(69.67, abs=0.01),
                                       "width_mm": pytest.approx(50.59, abs=0.01), "hole_count": 2,
                                       "source": "Winner", "kind": "Synthetic"}
-    assert gallery.card("D_black_plastic") == {"name": "D_black_plastic", "title": replay.display_name("D_black_plastic"),
+    assert gallery.card("D_black_plastic") == {"name": "D_black_plastic", "title": replay.display_name("D_black_plastic"), "recorded": False,
                                                "length_mm": pytest.approx(49.66, abs=0.01),
                                                "width_mm": pytest.approx(37.41, abs=0.01), "hole_count": 2,
                                                "source": "Winner", "kind": "Synthetic"}
-    assert gallery.card("E_glossy_white") == {"name": "E_glossy_white", "title": replay.display_name("E_glossy_white"),
+    assert gallery.card("E_glossy_white") == {"name": "E_glossy_white", "title": replay.display_name("E_glossy_white"), "recorded": False,
                                               "length_mm": pytest.approx(69.56, abs=0.01),
                                               "width_mm": pytest.approx(40.45, abs=0.01), "hole_count": 2,
                                               "source": "Winner", "kind": "Synthetic"}
@@ -126,17 +126,17 @@ def test_demo_recorded_live_run_card(monkeypatch):
     """The real-photo sample's card: recorded-live-run label, repair source, measured size."""
     monkeypatch.setattr(replay, "SOURCES", [replay.SAMPLES_DIR])
     card = next(c for c in gallery.gallery_runs() if c["name"] == "live-20261103-224610-c8b8df")
-    assert card["kind"] == "Real photo · recorded live run"
+    assert card["kind"] == "Real photo" and card["recorded"] is True  # two chips: REAL PHOTO + RECORDED RUN
     assert card["source"] == "Muse Wonder repair"
     assert (card["length_mm"], card["width_mm"], card["hole_count"]) == (107.0, 96.76, 4)
 
 
 def test_parts_endpoint_shape():
-    """GET /api/parts: every card carries the seven fields; marked runs never appear."""
+    """GET /api/parts: every card carries the eight fields; marked runs never appear."""
     body = TestClient(app).get("/api/parts").json()
     assert isinstance(body["parts"], list) and body["parts"]
     for card in body["parts"]:
-        assert sorted(card) == ["hole_count", "kind", "length_mm", "name", "source", "title", "width_mm"]
+        assert sorted(card) == ["hole_count", "kind", "length_mm", "name", "recorded", "source", "title", "width_mm"]
     names = {c["name"] for c in body["parts"]}
     assert "live-20261031-161042-2ab58f" not in names  # marked private on this machine
     assert "A_light" in names
