@@ -61,6 +61,15 @@ symmetric rectangular hole pattern (and rectangular outline), but the measured h
 form an asymmetric quadrilateral and the outline corners are skewed, causing hole
 errors up to 2.45 mm." Result: `repair · Muse Wonder`.
 
+TILTED, second live run of the same photo (`outputs/e2e/live-20261031-172820-c91fa3`,
+`5_summary_candidates_arcs_effort_medium.json`): all 5 Muse Spark Open candidates
+compiled (IoU 0.9616–0.9619) and all 5 were rejected on hole positions (limit 0.5 mm;
+0.563–2.757 mm, four candidates identical at 1.266 / 2.378 / 0.977 / 2.624 mm for holes
+1–4). Muse Wonder repair round 1 passed (IoU 0.9669, every deviation within limits,
+16.1 s, $0.067): "All three candidates used pk.symmetric_points with averaged spacing,
+forcing a symmetric hole pattern; the measured holes are asymmetric, shifting each hole
+by 1.0–2.6 mm beyond the 0.5 mm limit." Result: `repair · Muse Wonder`.
+
 PARALLEL logged the same pattern: 5/5 rejected on hole positions (0.898–2.742 mm),
 repair round 1 passed (IoU 0.9829): "the measured holes are asymmetric by up to
 ~2.7 mm". So the Spark failures come from the hand-punched asymmetric layout, not
