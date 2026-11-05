@@ -54,7 +54,7 @@ Code measures, the model decides the structure, every program is checked against
 
 ## The agent loop
 
-In one run the system decides on its own: it writes candidates in three approaches (fewest parameters, feature based, symmetry first), builds each program and checks it against the photo, rejects failures with a stated reason, and stops the search once 3 passing candidates build the same shape (early stop on 258 of 300 random parts, 3.42 of 5 requests on average). When no candidate passes, it calls Muse Wonder to diagnose and repair (at most 2 rounds): 6/6 synthetic cases repaired in round 1, and on the real cardboard both photos had all 5 candidates rejected with the repair passing in round 1. It then looks for break cues and asks Wonder for a completion, or falls back to the measured shape and says why. The user keeps the final say on anything the photo cannot show: estimated values in a completion come with a suggested value, and the suggestion waits for Apply / Ignore.
+In one run the system decides on its own: it writes candidates in three approaches (fewest parameters, feature based, symmetry first), builds each program and checks it against the photo, rejects failures with a stated reason, and stops the search once 3 passing candidates build the same shape (early stop on 258 of 300 random parts, 3.42 of 5 requests on average). When no candidate passes, it calls Muse Wonder to diagnose and repair (at most 2 rounds): 6/6 synthetic cases repaired in round 1, and on the real hand-punched cardboard both photos had all 5 candidates rejected with the repair passing in round 1. It then looks for break cues and asks Wonder for a completion, or falls back to the measured shape and says why. The user keeps the final say on anything the photo cannot show: estimated values in a completion come with a suggested value, and the suggestion waits for Apply / Ignore.
 
 ## Where Meta models are used
 
@@ -66,13 +66,13 @@ Running on Muse Spark Open: candidate CadQuery programs; part-name suggestions f
 | Muse Spark Open | Baseten (`meta-models/muse-spark-open-1026`) | Candidate CadQuery programs; part-name suggestions for SAM; spoken/typed edit commands to JSON parameter changes; adapter outline programs; free-text adapter patterns to JSON | candidates.py, prompt_suggestions.py, voice_edit.py, adapter_outline.py, adapter_pattern.py |
 | Muse Wonder | Meta Model API (`muse-wonder-1.0`) | Repair of failed candidates; break completion; adapter outline repair (text-only) | repair.py, completion.py, adapter_outline.py |
 | Muse Voice Transcribe | Meta Model API (`muse-voice-transcribe-1.0`) | Speech to text for voice editing | voice_edit.py, webapp/server.py |
-| Muse Code | Development (not called by the app) | Main coding agent | [muse-code] commits, starting with the adapter 2dba37f..8ebaa30 |
+| Muse Code | Development (not called by the app) | Main coding agent | 57 [muse-code] commits, 2dba37f..1d5adc3, starting with the adapter (2dba37f..8ebaa30) |
 
 Three concrete examples:
 
 1. **Spark Open names the part for SAM.** When the click finds nothing, Spark Open suggests names; every suggestion is tried on SAM and the most confident mask wins (about half the suggestions find nothing). It once called a tabbed part a "camera icon" — and the part still segmented as "camera icon" at 0.82 confidence.
 2. **Wonder explains and repairs a failed candidate.** On a plate with one hole moved 4 mm, Wonder diagnosed "shifted about 4 mm in u" and wrote a corrected program in round 1 (IoU 0.988, $0.043).
-3. **Voice command to adapter outline.** "2 × M5, 60 mm apart", spoken or typed, becomes text (Muse Voice Transcribe), then a hole pattern in JSON (Spark Open), which deterministic code places by trying fixed candidates (centred, rotated 90°, then ±10/20/30 mm); Spark Open then designs the plate outline around both hole patterns (9/9 outlines passed on the first try, about $0.10).
+3. **Voice command to adapter outline.** "2 × M5, 60 mm apart", spoken or typed, becomes text (Muse Voice Transcribe), then a hole pattern in JSON (Spark Open), which deterministic code places by trying fixed candidates (centred, rotated 90°, then ±10/20/30 mm); Spark Open then designs the plate outline around both hole patterns (9/9 outlines passed on the first try in the first local test, about $0.10).
 
 ## Results
 
@@ -100,9 +100,9 @@ From [reports/real_parts.md](reports/real_parts.md): a hand-cut, hand-punched ca
 
 On both photos all 5 Spark candidates were rejected on hole positions (the hand-punched layout is asymmetric by up to ~2.7 mm) and the Muse Wonder repair passed in round 1 (tilted: IoU 0.9953, 52.7 s, $0.174 — "the measured holes form an asymmetric quadrilateral and the outline corners are skewed").
 
-Broken corners of the same part: BREAK1 (corner cut, holes intact) restored to −0.05 / +0.47 mm (−0.0 / +0.5%) of the intact extents; BREAK2 (cut through a hole) to +0.93 / +1.12 mm (+0.9 / +1.2%), with the restored hole 6.19 mm off by mirroring but 0.60 mm off by arc fit. BREAK3 (a second broken corner, held out: no code changed before or during its run) restored the big corner only — extents −0.35 / −0.3% and +0.10 / +0.1%, outline deviation max 12.36 / mean 1.21 mm, 2 of 4 holes — because the small cut was invisible to every cue. After the scope fix (after-fix, not held-out), two runs both restored the corner with no invented notch: max/mean 12.36/0.72 and 13.09/1.43 mm.
+Broken corners of the same part (Oct 31 live runs on the original photos): BREAK1 (corner cut, holes intact) restored to −0.05 / +0.47 mm (−0.0 / +0.5%) of the intact extents; BREAK2 (cut through a hole) to +0.93 / +1.12 mm (+0.9 / +1.2%), with the restored hole 6.19 mm off by mirroring but 0.60 mm off by arc fit. BREAK3 (a second broken corner, held out: no code changed before or during its run) restored the big corner only — extents −0.35 / −0.3% and +0.10 / +0.1%, outline deviation max 12.36 / mean 1.21 mm, 2 of 4 holes — because the small cut was invisible to every cue. After the scope fix (after-fix, not held-out), two runs both restored the corner with no invented notch: max/mean 12.36/0.72 and 13.09/1.43 mm.
 
-The BREAK1 photo went through the live app twice, and both runs ship as samples. In the second run (Nov 4, the run in the demo video) all 5 of 5 Spark candidates were rejected — 4 on hole position (0.90–2.28 mm against the 0.5 mm limit), 1 on hole count — and the Muse Wonder repair passed in round 1 (IoU 0.9674, fit 1.14 mm); its completion adds 253.5 mm³. The first run (Nov 3) also ended with a round-1 repair (IoU 0.9688, fit 0.43 mm). Both are kept to show that model results vary between runs.
+A copy of the BREAK1 photo with the card's QR code removed went through the live app twice more (Nov 3 and Nov 4), and both runs ship as samples. In the second run (Nov 4, the run in the demo video) all 5 of 5 Spark candidates were rejected — 4 on hole position (0.90–2.28 mm against the 0.5 mm limit), 1 on hole count — and the Muse Wonder repair passed in round 1 (IoU 0.9674, fit 1.14 mm); its completion adds 253.5 mm³. The first run (Nov 3) also ended with a round-1 repair (IoU 0.9688, fit 0.43 mm). Both are kept to show that model results vary between runs.
 
 Details, including what did not work and why, are in [CLAUDE.md](CLAUDE.md) (the project's working notes).
 
@@ -126,7 +126,7 @@ The Parts screen shows every finished run as a card with a rotating 3D preview �
 
 - **Without keys** you can replay the ten samples: each replays recorded outputs from an earlier run (measurements, candidates, repairs, completions); no model is called in replay. Works on a local server and in the online demo. On the video run, the "2 × M5 · 60 mm" adapter preset replays the recorded Muse Spark Open outline after Apply, as in the video (labeled "recorded"); anywhere else the adapter gets the deterministic fallback outline. Voice commands cannot be replayed.
 - **With keys** you get live mode: new photos, voice editing, and new candidate searches and repairs.
-- Eight samples are **synthetic renders** (`A_light`, `A_light_repair`, `A_torn_fallback`, `D_tab_broken`, `A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`); two are **real photos** of the same BREAK1 cardboard part (the QR code on its card was removed with a generative-erase tool before the runs, nothing else changed; ruler truth ±0.5 mm): `live-20261104-220642-d6003c`, the run shown in the demo video, and `live-20261103-224610-c8b8df`, an earlier recorded live run.
+- Eight samples are **synthetic renders** (`A_light`, `A_light_repair`, `A_torn_fallback`, `D_tab_broken`, `A_brushed`, `C_wood`, `D_black_plastic`, `E_glossy_white`); two are **real-photo runs**, both on the same photo of the BREAK1 cardboard part (the QR code on its card was removed with a generative-erase tool before the runs, nothing else changed; ruler truth ±0.5 mm): `live-20261104-220642-d6003c`, the run shown in the demo video, and `live-20261103-224610-c8b8df`, an earlier recorded live run.
 
 ## Run it
 
@@ -168,7 +168,7 @@ copy .env.example .env      # then write your keys into .env
 
 Every model call is logged per run with its tokens and estimated cost (`usage.jsonl`, shown on the search screen).
 
-Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the ten samples in the browser (two real photos, eight synthetic renders); live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
+Prefer no install at all? The **[online demo](https://zeynepsdklc--reversecad-demo-web.us-east.modal.run)** replays the ten samples in the browser (two runs on one real photo, eight synthetic renders); live mode, repair, and voice editing need keys and are off there. The first request after a quiet spell takes a little longer (the server starts).
 
 ## Taking a photo
 
@@ -230,12 +230,12 @@ All scripts run from the repository root with the virtual environment's Python. 
 | `sam_decode.py`, `usage_ledger.py` | Fast SAM mask decoding (identical to the library's), per-run model usage and cost |
 | `webapp/` | FastAPI back end (`server.py`, `replay.py`, `live.py`, `builder.py`, `gallery.py`) and the page (`static/`; all styling variables in `tokens.css`) |
 | `parts/`, `synthetic_scene.py` | Template test parts with ground truth, broken versions with their intact design, and their synthetic photos |
-| `samples/` | Compact saved runs for replay without API keys (8 synthetic, 2 recorded real photos) |
+| `samples/` | Compact saved runs for replay without API keys (8 synthetic, 2 recorded runs on one real photo) |
 | `tests/` | pytest suite |
 
 ## Built with
 
-Muse Code is the main coding agent: 57 [muse-code] commits, from the adapter (2dba37f) to the capture-overlay labels (1d5adc3). The 58 commits before them and the final fixes after them (9 commits, including this README pass) were made with Claude Code.
+Muse Code is the main coding agent: 57 [muse-code] commits, from the adapter (2dba37f) to the capture-overlay labels (1d5adc3). The 58 commits before them and the final fixes after them (12 commits, including the final README passes) were made with Claude Code.
 
 ## License
 
