@@ -98,7 +98,7 @@ From [reports/real_parts.md](reports/real_parts.md): a hand-cut, hand-punched ca
 | Parallel (tilt 1.10%, simple scale) | bbox +0.09 / +0.06 mm (+0.1 / +0.1%); one hand-cut edge −2.5% | Ø +0.09 … −0.12 mm (+1.5 … −2.0%) | −0.96 (−1.2%) and −1.28 mm (−1.6%) |
 | Tilted (tilt 2.72%, warned, homography) | bbox +4.63 / +4.71 mm (+4.3 / +4.9%) | Ø +0.06 … +0.30 mm (+1.0 … +5.0%) | +2.28 (+2.9%) and +2.66 mm (+3.3%) |
 
-On both photos all 5 Spark candidates were rejected on hole positions (the hand-punched layout is asymmetric by up to ~2.7 mm) and the Muse Wonder repair passed in round 1 (tilted: IoU 0.9953, 52.7 s, $0.174 — "the measured holes form an asymmetric quadrilateral and the outline corners are skewed"). A second live run of the tilted photo (`live-20261031-172820-c91fa3`) went the same way: all 5 candidates rejected on hole positions (0.56–2.76 mm), repair passed in round 1 (IoU 0.9669, 16.1 s, $0.067).
+On both photos all 5 Spark candidates were rejected on hole positions (the hand-punched layout is asymmetric by up to ~2.7 mm) and the Muse Wonder repair passed in round 1 (tilted: IoU 0.9953, 52.7 s, $0.174 — "the measured holes form an asymmetric quadrilateral and the outline corners are skewed"). A second live run of the tilted photo (`live-20261031-172820-c91fa3`) went the same way: all 5 candidates rejected on hole positions (0.56–2.76 mm), repair passed in round 1 (IoU 0.9669, 16.1 s, $0.067); a third run of it (`live-20261031-173446-3c861b`) stopped after the SAM masks and measurements, with no candidates generated.
 
 Broken corners of the same part (Oct 31 live runs on the original photos): BREAK1 (corner cut, holes intact) restored to −0.05 / +0.47 mm (−0.0 / +0.5%) of the intact extents; BREAK2 (cut through a hole) to +0.93 / +1.12 mm (+0.9 / +1.2%), with the restored hole 6.19 mm off by mirroring but 0.60 mm off by arc fit. BREAK3 (a second broken corner, held out: no code changed before or during its run) restored the big corner only — extents −0.35 / −0.3% and +0.10 / +0.1%, outline deviation max 12.36 / mean 1.21 mm, 2 of 4 holes — because the small cut was invisible to every cue. After the scope fix (after-fix, not held-out), two runs both restored the corner with no invented notch: max/mean 12.36/0.72 and 13.09/1.43 mm.
 
@@ -235,7 +235,7 @@ All scripts run from the repository root with the virtual environment's Python. 
 
 ## Built with
 
-Muse Code is the main coding agent: 57 [muse-code] commits, from the adapter (2dba37f) to the capture-overlay labels (1d5adc3). The 58 commits before them and the final fixes after them (12 commits, including the final README passes) were made with Claude Code.
+Muse Code is the main coding agent: 57 [muse-code] commits, from the adapter (2dba37f) to the capture-overlay labels (1d5adc3). The 58 commits before them and the commits after 1d5adc3 (the final fixes) were made with Claude Code.
 
 ## License
 

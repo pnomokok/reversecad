@@ -68,7 +68,9 @@ compiled (IoU 0.9616–0.9619) and all 5 were rejected on hole positions (limit 
 1–4). Muse Wonder repair round 1 passed (IoU 0.9669, every deviation within limits,
 16.1 s, $0.067): "All three candidates used pk.symmetric_points with averaged spacing,
 forcing a symmetric hole pattern; the measured holes are asymmetric, shifting each hole
-by 1.0–2.6 mm beyond the 0.5 mm limit." Result: `repair · Muse Wonder`.
+by 1.0–2.6 mm beyond the 0.5 mm limit." Result: `repair · Muse Wonder`. A third run of
+the same photo (`outputs/e2e/live-20261031-173446-3c861b`) stopped after the SAM masks
+and measurements, with no candidates generated.
 
 PARALLEL logged the same pattern: 5/5 rejected on hole positions (0.898–2.742 mm),
 repair round 1 passed (IoU 0.9829): "the measured holes are asymmetric by up to
